@@ -1,5 +1,5 @@
 /* ---------- 주소 & ABI ---------- */
-const BATTLE_CONTRACT_ADDR = "0x4b7c4641844EC478cd0B5263174CFEe6a6e0d2E3";
+const BATTLE_CONTRACT_ADDR = "0x455516a6d57A17615cD829eC13C3d01854591CAA";
 const BATTLE_ABI = [
   "function bpid() view returns(uint8)",
   "function jack() view returns(uint256)",
@@ -17,8 +17,8 @@ const BATTLE_ABI = [
 async function renderJackpot() {
   try {
     const jackpot = await battleContractRead.jack();
-    // GP 단위 변환 필요시(1e18 기준) → ethers.utils.formatEther(jackpot)
-    document.getElementById('jackpotValue').textContent = parseFloat(jackpot/1e18/100).toFixed(2);
+    
+    document.getElementById('jackpotValue').textContent = parseFloat(jackpot/100).toFixed(2);
   } catch (e) {
     document.getElementById('jackpotValue').textContent = "알수없음";
 }
@@ -137,21 +137,21 @@ async function battle(slot) {
         const name = parsed.name;
         const args = parsed.args;
 
-        if (name === "RewardGiven") {
-          foundResult = true;
-          document.getElementById("battleResult").innerHTML =
-            `<span class='text-blue-600 font-bold'>🎉 승리! GP 보상: ${ethers.utils.formatEther(args.amount)}</span>`;
-          logEvent(`🎉 Reward: ${ethers.utils.formatEther(args.amount)} GP, 내 파워: ${args.myPower}`);
-        }
-        if (name === "Bonus") {
-          logEvent(`🎁 Bonus: ${ethers.utils.formatEther(args.amount)} GP (능력치 ${args.reward})`);
-        }
-        if (name === "lost") {
-          foundResult = true;
-          document.getElementById("battleResult").innerHTML =
-            `<span class='text-red-500 font-bold'>😢 패배! GP 소멸. 내 파워: ${args.myPower}</span>`;
-          logEvent(`😢 Lost: ${ethers.utils.formatEther(args.amount)} GP, 내 파워: ${args.myPower}`);
-        }
+     if (name === "RewardGiven") {
+  foundResult = true;
+  document.getElementById("battleResult").innerHTML =
+    `<span class='text-blue-600 font-bold'>🎉 승리! GP 보상: ${args.amount}</span>`;
+  logEvent(`🎉 Reward: ${args.amount} GP, 내 파워: ${args.myPower}`);
+}
+if (name === "Bonus") {
+  logEvent(`🎁 Bonus: ${args.amount} GP (능력치 ${args.reward})`);
+}
+if (name === "lost") {
+  foundResult = true;
+  document.getElementById("battleResult").innerHTML =
+    `<span class='text-red-500 font-bold'>😢 패배! GP 소멸. 내 파워: ${args.myPower}</span>`;
+  logEvent(`😢 Lost: ${args.amount} GP, 내 파워: ${args.myPower}`);
+}
       } catch (e) {
         // 이벤트 파싱 오류는 무시 (ex. 내 이벤트 아닌 로그)
       }

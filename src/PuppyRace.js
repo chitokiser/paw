@@ -1,5 +1,5 @@
 // PuppyRace 컨트랙트 주소 & ABI(필요한 함수만 포함)
-const PUPPYRACE_ADDR = "0xE3957CB30Ca5cCaaA559a5538f5004280Fed0A39"; //PuppyRace
+const PUPPYRACE_ADDR = "0xb6a69e142389E0fBE76ced0503C7fBfB2893c238"; //PuppyRace
 const ABI = [
   "function getbt() view returns(uint8)",
   "function myPuppy(address) view returns(uint8)",
@@ -38,14 +38,14 @@ async function renderStatus() {
   // 잭팟
   try {
     let jackpot = await contractRead.getreward();
-    document.getElementById("jackpotValue").textContent = Number(jackpot/1e18).toFixed(2);
-      document.getElementById("jackpotValue2").textContent = Number(jackpot/1e18/2).toFixed(2);
-        document.getElementById("jackpotValue3").textContent = Number(jackpot/1e18/3).toFixed(2);
-          document.getElementById("jackpotValue4").textContent = Number(jackpot/1e18/4).toFixed(2);
-            document.getElementById("jackpotValue5").textContent = Number(jackpot/1e18/5).toFixed(2);
-              document.getElementById("jackpotValue6").textContent = Number(jackpot/1e18/6).toFixed(2);
-                document.getElementById("jackpotValue7").textContent = Number(jackpot/1e18/7).toFixed(2);
-                  document.getElementById("jackpotValue8").textContent = Number(jackpot/1e18/8).toFixed(2);
+    document.getElementById("jackpotValue").textContent = Number(jackpot).toFixed(2);
+      document.getElementById("jackpotValue2").textContent = Number(jackpot/2).toFixed(2);
+        document.getElementById("jackpotValue3").textContent = Number(jackpot/3).toFixed(2);
+          document.getElementById("jackpotValue4").textContent = Number(jackpot/4).toFixed(2);
+            document.getElementById("jackpotValue5").textContent = Number(jackpot/5).toFixed(2);
+              document.getElementById("jackpotValue6").textContent = Number(jackpot/6).toFixed(2);
+                document.getElementById("jackpotValue7").textContent = Number(jackpot/7).toFixed(2);
+                  document.getElementById("jackpotValue8").textContent = Number(jackpot/8).toFixed(2);
 
   } catch (e) {
     document.getElementById("jackpotValue").textContent = "-";

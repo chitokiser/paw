@@ -1,0 +1,27 @@
+/* 이미지 버튼 그리드 */
+.emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 260px;
+  margin: auto;
+}
+.emoji-btn {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  padding: 2px;
+  width: 40px;
+  height: 40px;
+}
+.emoji-btn.selected {
+  border: 2px solid #007bff;
+  background: #e6f0ff;
+}
+/* 선택한 이미지 표시 영역 */
+.selected-display {
+  text-align: center;
+  font-size: 20px;
+  margin-top: 8px;
+}

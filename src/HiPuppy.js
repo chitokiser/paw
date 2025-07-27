@@ -1,6 +1,6 @@
 /* ---------- 주소 & ABI ---------- */
 let pupaddr = {
-  hipuppy: "0xc6e31C06aB97b25b373730870F05bE1bbE7F6c76"//HiPuppy
+  hipuppy: "0x188A8747a2D477206885D9f8f4FB00e95941a661"//HiPuppy
 };
 
 let pupabi = {
@@ -102,21 +102,24 @@ document.getElementById("log").innerHTML += `<p>✅ Transaction Completed: ${tx.
           const name = parsed.name;
           const args = parsed.args;
 
-          if (name === "RewardGiven") {
-            const [user, amount, matchCount] = args;
-            document.getElementById("matchCount").textContent = matchCount.toString();
-            document.getElementById("rewardAmount").textContent = ethers.utils.formatEther(amount);
-           document.getElementById("log").innerHTML += `<p>🎉 Reward Earned: ${ethers.utils.formatEther(amount)} GP, ${matchCount} matches</p>`;
-          }
-      if (name === "Bonus") { 
-const [user, amount, reward] = args; 
-document.getElementById("bonusAmount").textContent = `${ethers.utils.formatEther(amount)} GP (stat ${reward})`; 
-document.getElementById("log").innerHTML += `<p>🎁 Obtain bonus: ${ethers.utils.formatEther(amount)} GP (stat ${reward})</p>`;
-} 
-if (name === "lost") { 
-const [amount] = args; 
-document.getElementById("log").innerHTML += `<p>😢 Failed: ${ethers.utils.formatEther(amount)} GP loss</p>`; 
+        if (name === "RewardGiven") {
+  const [user, amount, matchCount] = args;
+  document.getElementById("matchCount").textContent = matchCount.toString();
+  document.getElementById("rewardAmount").textContent = amount.toString(); // 정수 그대로 사용
+  document.getElementById("log").innerHTML += `<p>🎉 Reward Earned: ${amount.toString()} GP, ${matchCount} matches</p>`;
 }
+
+if (name === "Bonus") { 
+  const [user, amount, reward] = args; 
+  document.getElementById("bonusAmount").textContent = `${amount.toString()} GP (stat ${reward})`; 
+  document.getElementById("log").innerHTML += `<p>🎁 Obtain bonus: ${amount.toString()} GP (stat ${reward})</p>`;
+}
+
+if (name === "lost") { 
+  const [amount] = args; 
+  document.getElementById("log").innerHTML += `<p>😢 Failed: ${amount.toString()} GP loss</p>`; 
+}
+
 if (name === "DebugBreed") {
 const [myPuppy, matchCount, slots] = args;
 // Show my puppy image

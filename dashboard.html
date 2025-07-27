@@ -139,18 +139,8 @@
                     <li class="nav-item">
                         <a class="nav-link" href="../mypage.html">My page</a>
                     </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            MT5 DemoAccount
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="../p2e/mt5_10.html">MT5 1/10</a></li>
-                            <li><a class="dropdown-item" href="../p2e/mt5_20.html">MT5 1/20 </a></li>
-                            <li><a class="dropdown-item" href="../p2e/mt5_50.html">MT5 1/50</a></li>
-                            <li><a class="dropdown-item" href="../p2e/mt5_100.html">MT5 1/100</a></li>
-                            <li><a class="dropdown-item" href="../p2e/mt5_200.html">MT5 1/200</a></li>
-                        </ul>
-                    </li>
+                
+                
 
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
@@ -158,9 +148,9 @@
                         </a>
                         <ul class="dropdown-menu">
                         
-                            <li><a class="dropdown-item" href="../p2e/dicefootball.html">DiceSoccer</a></li>
-                             <li><a class="dropdown-item" href="../p2e/ZumLotto.html">ZumLotto</a></li>
-                            <li><a class="dropdown-item" href="../p2e/PuppyZum.html">PuppyZum</a></li>
+                            <li><a class="dropdown-item" href="../p2e/PuppyWar.html">PuppyWar</a></li>
+                             <li><a class="dropdown-item" href="../p2e/PawLotto.html">PuppyLotto</a></li>
+                            <li><a class="dropdown-item" href="../p2e/WithPuppy.html">WithPuppy</a></li>
                         </ul>
                     </li>
                   
@@ -169,26 +159,40 @@
                             Token Exchange
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="../zemex.html">ZEM Token</a></li>
-                            <li><a class="dropdown-item" href="../zumex.html">ZUM Token</a></li>
+                            <li><a class="dropdown-item" href="../zemex.html">PAW Token</a></li>
+                            <li><a class="dropdown-item" href="../zumex.html">PUP Token</a></li>
                         </ul>
                     </li>
-                    <li class="nav-item dropdown">
+                  
+                 <ul class="navbar-nav me-auto mb-2 mb-md-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="../Puppymarket.html">Puppy market</a>
+                    </li>
+                     </ul>
+                      <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             Connection Wallet
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="../memberjoin.html">Sign up</a></li>
-                            <li><a class="dropdown-item" href="#" onclick="addTokenZEM()">Add ZEM</a></li>
-                            <li><a class="dropdown-item" href="#" onclick="addTokenZUM()">Add ZUM</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="addTokenPAW()">Add PAW</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="addTokenPUP()">Add PUP</a></li>
                         </ul>
                     </li>
-                </ul>
             </div>
     </nav>
 
    <!-- Main alert section -->
 <div class="container">
+       <!-- Holder-->
+      <div class="col-12 col-sm-6 col-md-3">
+        <div class="card shadow-sm rounded-3 border-0 h-100">
+          <div class="card-body text-center">
+            <h6 class="card-title text-muted">Holder</h6>
+            <h5 class="fw-bold"><span id="Sum"></span></h5>
+          </div>
+        </div>
+        </div>
  <div class="row g-3">
       <!-- 1BNB = $ Price -->
       <div class="col-12 col-sm-6 col-md-3">
@@ -203,16 +207,17 @@
       <div class="col-12 col-sm-6 col-md-3">
         <div class="card shadow-sm rounded-3 border-0 h-100">
           <div class="card-body text-center">
-            <h6 class="card-title text-muted">1 ZEM</h6>
+            <h6 class="card-title text-muted">1 PAW</h6>
             <h5 class="fw-bold text-success">$1</h5>
           </div>
         </div>
       </div>
+      
       <!-- 1ZEM in BNB -->
       <div class="col-12 col-sm-6 col-md-3">
         <div class="card shadow-sm rounded-3 border-0 h-100">
           <div class="card-body text-center">
-            <h6 class="card-title text-muted">1 ZEM =</h6>
+            <h6 class="card-title text-muted">1 PUP =</h6>
             <h5 class="fw-bold"><span id="cPrice2">-</span> BNB</h5>
           </div>
         </div>
@@ -225,10 +230,10 @@
             <h5 class="fw-bold"><span id="Tvl">-</span></h5>
           </div>
         </div>
+      
 </div>    
-    
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+   
 </body>
 
 </html>

@@ -1,5 +1,5 @@
 // ========== 컨트랙트 주소 & ABI ==========
-const CONTRACT_ADDRESS = "0x20cc8FaFEBAd351a57963a6f454bd99aA28E5F61"; // 실제 컨트랙트 주소로 교체!
+const CONTRACT_ADDRESS = "0x27c00bEa1D140851b63598824FF7E98C11618289"; // 실제 컨트랙트 주소로 교체!
 const ABI = [
   "function myprey(address) view returns(uint[5] memory prey, uint8 sp, address owner)",
   "function getPreyArr(address) view returns(uint[5] memory)",
@@ -30,7 +30,7 @@ let providerRead, contractRead, signer, contractWrite, userAddress;
 async function updateJackValue() {
   try {
     const value = await contractRead.jack();   // 인수 없이 호출
-    document.getElementById("jackValue").textContent = (value / 1e18).toFixed(2);
+    document.getElementById("jackValue").textContent =  Number(value).toFixed(2)
   } catch (err) {  
     console.error("jack error:", err);
   }
@@ -99,7 +99,7 @@ async function renderPreyPrices() {
     for (let i = 1; i <= 5; i++) {
       let p = await contractRead[`getprey${i}`]();
       // ethers.utils.formatEther(p) → 소수점 2자리로 변환
-      prices.push(Number(ethers.utils.formatEther(p)).toFixed(2));
+      prices.push( Number(p).toFixed(2));
     }
     document.getElementById("getprey1").textContent = prices[0];
     document.getElementById("getprey2").textContent = prices[1];
@@ -120,7 +120,7 @@ async function renderJackpot() {
   try {
     if (!userAddress) await connectWallet();
     let jackpot = await contractRead.getjack(userAddress); // 잭팟은 유저레벨 기반
-    document.getElementById("jackpot").textContent = (jackpot/1e18).toFixed(2);
+    document.getElementById("jackpot").textContent = Number(jackpot).toFixed(2);
   } catch (e) {
     document.getElementById("jackpot").textContent = "?";
     logEvent("❌ Bear price query failed");
@@ -228,28 +228,35 @@ logEvent("❌ Special withdrawal failure: " + shortError(e));
 
 // ========== Event Parsing ==========
 function parseEvents(receipt) {
-const iface = new ethers.utils.Interface(ABI);
-const preyNames = ["rabbit", "raccoon", "deer", "fox", "boar"];
-for (const log of receipt.logs) {
-try {
-const parsed = iface.parseLog(log);
-if (parsed.name === "RewardGiven") {
-const [user, amount, kind] = parsed.args;
-const preyName = preyNames[kind] || `${kind}`;
-logEvent(`🎯 Hunting Result: ${amount}(${preyName})`); }
-if (parsed.name === "Bonus") {
-const [user, amount, reward] = parsed.args;
-logEvent(`🎁 Bonus: ${ethers.utils.formatEther(amount)} GP (ability ${reward})`);
-}
-if (parsed.name === "getdepo") {
-logEvent(`💰 Reward GP paid!`);//empty..
-}
-if (parsed.name === "Sp") {
-const [bear] = parsed.args;
-logEvent(`🐻 ${bear} bears!`);
-}
-} catch {}
-}
+  const iface = new ethers.utils.Interface(ABI);
+  const preyNames = ["rabbit", "raccoon", "deer", "fox", "boar"];
+
+  for (const log of receipt.logs) {
+    try {
+      const parsed = iface.parseLog(log);
+
+      if (parsed.name === "RewardGiven") {
+        const [user, amount, kind] = parsed.args;
+        const preyName = preyNames[kind] || `${kind}`;
+        logEvent(`🎯 Hunting Result: ${amount} (${preyName})`); // 정수 그대로 출력
+      }
+
+      if (parsed.name === "Bonus") {
+        const [user, amount, reward] = parsed.args;
+        logEvent(`🎁 Bonus: ${amount} GP (ability ${reward})`); // formatEther 제거
+      }
+
+      if (parsed.name === "getdepo") {
+        logEvent(`💰 Reward GP paid!`);
+      }
+
+      if (parsed.name === "Sp") {
+        const [bear] = parsed.args;
+        logEvent(`🐻 ${bear} bears!`);
+      }
+
+    } catch {}
+  }
 }
 
 

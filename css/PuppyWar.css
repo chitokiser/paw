@@ -1,0 +1,126 @@
+.battlefield {
+  position: relative;
+  width: 100%;
+  height: 250px;
+  background: url('/images/background/field.png') center/cover no-repeat;
+  overflow: hidden;
+}
+
+.team {
+  position: absolute;
+  bottom: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 45%;
+}
+
+.team.home {
+  left: 0;
+  justify-content: flex-start;
+}
+
+.team.away {
+  right: 0;
+  justify-content: flex-end;
+}
+
+.dog-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 30px;
+  transition: transform 0.5s ease, filter 0.5s ease, opacity 0.5s ease;
+}
+
+.dog {
+  width: 30px;
+  height: 30px;
+}
+
+.hp-bar {
+  width: 100%;
+  height: 3px;
+  background: green;
+  border-radius: 2px;
+  margin-bottom: 2px;
+  transition: width 0.3s ease;
+}
+/* 쓰러짐 효과 */
+.dog-wrapper.fallen .dog {
+  filter: grayscale(100%);
+  transform: rotate(90deg);
+  opacity: 0.6;
+  transition: transform 0.5s ease, opacity 0.5s ease, filter 0.5s ease;
+}
+
+
+/* 격돌 애니메이션 */
+.dog.attack.home {
+  transform: translateX(120px) scale(1.2);
+}
+
+.dog.attack.away {
+  transform: translateX(-120px) scale(1.2);
+}
+
+.dog.collide {
+  animation: collide-effect 0.3s ease;
+}
+
+@keyframes collide-effect {
+  0%   { transform: scale(1.2) translateY(0); }
+  50%  { transform: scale(1.3) translateY(-5px); }
+  100% { transform: scale(1.2) translateY(0); }
+}
+
+
+/* 점수 보드 */
+.score-board {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.win {
+  color: #4caf50;
+  font-weight: bold;
+  animation: pop 1s ease;
+}
+
+.lose {
+  color: #f44336;
+  font-weight: bold;
+  animation: shake 0.5s ease;
+}
+
+@keyframes pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+
+ .score-board {
+    margin: 10px 0;
+    padding: 8px;
+    font-size: 16px;
+    text-align: center;
+    border-radius: 6px;
+  }
+  .win {
+    color: #28a745; /* 초록색 */
+    font-weight: bold;
+  }
+  .lose {
+    color: #dc3545; /* 붉은색 */
+    font-weight: bold;
+  }
+  .highlight {
+    background-color: #f8f9fa;
+    border: 1px solid #ccc;
+  }

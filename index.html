@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 
 <head>
     <meta charset="utf-8">
@@ -17,103 +17,109 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Protest+Guerrilla&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
-    <title>ZEM DAO</title>
+    <title>Paw DAO</title>
 </head>
 <body>
   
     <!-- Placeholder for dynamic header -->
     <div id="menu-placeholder"></div>
 
-    <script>
-      // Load header dynamically from dashboard.html
-      fetch('dashboard.html')
-          .then(response => response.text())
-          .then(data => {
-              document.getElementById('menu-placeholder').innerHTML = data;
-              
-              // After injecting content, dynamically load the topinfo.js script
-              const script = document.createElement('script');
-              script.src = '../src/topinfo.js';
-              script.type = 'text/javascript';
-              document.body.appendChild(script);  // Append the script to the body
-          })
-          .catch(error => console.error('Error loading the dashboard content:', error));
-  </script>
+<script>
+  fetch('dashboard.html')
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById('menu-placeholder').innerHTML = data;
+
+      // DOM 삽입 후 스크립트 로드
+      const script = document.createElement('script');
+      script.src = '../src/topinfo.js';
+      script.type = 'text/javascript';
+
+      // 스크립트가 로드된 이후 실행 보장
+      script.onload = () => {
+        if (typeof topData === 'function') {
+          topData();  // topinfo.js 내부 함수 실행
+        }
+      };
+
+      document.body.appendChild(script);
+    })
+    .catch(error => console.error('Error loading the dashboard content:', error));
+</script>
+
     
 <!-- Welcome Section -->
 <div class="text-center">
-    <p><strong> ZEM DAO (ZenEconomyMoney)</strong></p>
+    <p><strong> PAW DAO (PuppyAndWith)</strong></p>
     <p> Decentralized P2E DAO service</p>
     <p> To use the site, install a wallet (Rabby Wallet recommended) and select the opBNB network</p>
-    <p><strong>1ZEM token = 1 USD</strong></p>
-    <p>ZEM value is guaranteed by <strong>opBNB coins</strong>.</p>
-    <p>Holders of ZUM tokens can participate in DAO management.</p>
-    <p><strong>Profits are distributed in proportion to ZUM tokens.</strong></p>
+    <p><strong>1PAW token = 1 USD</strong></p>
+    <p>PAW value is guaranteed by <strong>opBNB coins</strong>.</p>
     <p>Transparent and fair based on platform contribution</p>
     <img src="/images/poster.png" class="img-fluid w-100 rounded" alt="MetaTrader5">
   </div>
+<div class="container my-4">
+  <div class="row row-cols-1 row-cols-md-3 g-4">
+    
 
-
-<!-- Services Section -->
-
-  <div class="card">
-    <div class="card-header text-center bg-secondary text-white">
-      <h4>ZEM Services</h4>
+  <!-- card Section -->  
+    <!-- Game Points -->
+    <div class="col">
+      <div class="card h-100">
+        <img src="/images/card/gpcharge.png" class="card-img-top img-fluid" alt="GP Charge">
+        <div class="card-body text-center">
+          <h5 class="card-title">Charge GP using PAW</h5>
+          <p>Charge (GP) using PAW to play the game and raise puppies.</p>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">1 PAW = 1000 GP (Fixed)</li>
+            <li class="list-group-item">Join the game using game points</li>
+            <li class="list-group-item">Sell the puppies you've raised</li>
+            <li class="list-group-item">Free 5000 GP on first sign up</li>
+          </ul>
+          <a href="../gpcharg.html" class="btn btn-primary w-100 mt-2">Let's go</a>
+        </div>
+      </div>
     </div>
+
+    <!-- opBNB Exchange -->
+    <div class="col">
+      <div class="card h-100">
+        <img src="/images/card/pawex.png" class="card-img-top img-fluid" alt="opBNB Exchange">
+        <div class="card-body text-center">
+          <h5 class="card-title">opBNB:PAW Exchange</h5>
+          <p>Exchange PAW according to the opBNB price.</p>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">1 PAW = $1 (stabilized)</li>
+            <li class="list-group-item">Connected to opBNB</li>
+            <li class="list-group-item">Required to charge game points</li>
+          </ul>
+          <a href="../pawex.html" class="btn btn-primary w-100 mt-2">Let's go</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- PUP Exchange -->
+    <div class="col">
+      <div class="card h-100">
+        <img src="/images/card/pupex.png" class="card-img-top img-fluid" alt="PUP Exchange">
+        <div class="card-body text-center">
+          <h5 class="card-title">PAW:PUT Exchange</h5>
+          <p>Buy PUT at market price with PAW</p>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">Weekly Dividends</li>
+            <li class="list-group-item">Required for DAO Governance</li>
+            <li class="list-group-item">PUP token price depends on DAO performance</li>
+          </ul>
+          <a href="../pupex.html" class="btn btn-primary w-100 mt-2">Move</a>
+        </div>
+      </div>
+    </div>
+
   </div>
-     
-      <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
-        <!-- MetaTrader5 -->
-        <div class="col">
-          <div class="card h-100">
-            <img src="/images/MT5.png" class="card-img-top img-fluid" alt="MetaTrader5">
-            <div class="card-body text-center">
-              <h5 class="card-title">MetaTrader5 Simulated Trading</h5>
-              <p class="card-text">Register an MT5 demo account ($10000) and earn token rewards upon profit realization.</p>
-              <ul class="list-group list-group-flush">
-                <li class="list-group-item">Opening account: $10,000</li>
-                <li class="list-group-item">Leverage: Free choice</li>
-              </ul>
-              <a href="../p2e/mt5_10.html" class="btn btn-primary w-100 mt-2">GO</a>
-            </div>
-          </div>
-        </div>
+</div>
 
-        <!-- opBNB Exchange -->
-        <div class="col">
-          <div class="card h-100">
-            <img src="/images/bnb.png" class="card-img-top img-fluid" alt="BNB Exchange">
-            <div class="card-body text-center">
-              <h5 class="card-title">opBNB:ZEM Exchange</h5>
-              <p>Exchange ZEM based on opBNB price.</p>
-              <ul class="list-group list-group-flush">
-                <li class="list-group-item">1 ZEM = $1 (Stable)</li>
-                <li class="list-group-item">Linked to opBNB</li>
-                <li class="list-group-item">Payment token for Cheongchodam</li>
-              </ul>
-              <a href="../zemex.html" class="btn btn-primary w-100 mt-2">GO</a>
-            </div>
-          </div>
-        </div>
-
-        <!-- ZUM Exchange -->
-        <div class="col">
-          <div class="card h-100">
-            <img src="/images/zum.png" class="card-img-top img-fluid" alt="ZUM Exchange">
-            <div class="card-body text-center">
-              <h5 class="card-title">ZEM:ZUM Exchange</h5>
-              <p>Buy ZUM with ZEM at market price</p>
-              <ul class="list-group list-group-flush">
-                <li class="list-group-item">Weekly dividends</li>
-                <li class="list-group-item">Required for DAO governance</li>
-                <li class="list-group-item">Price depends on DAO performance</li>
-              </ul>
-              <a href="../zumex.html" class="btn btn-primary w-100 mt-2">GO</a>
-            </div>
-          </div>
-        </div>
-    </div>    
 
 
  
@@ -123,20 +129,19 @@
 <!-- Notice Section -->
 <div class="card">
     <div class="card-header text-center">
-      <h4>ZEM DAO Agenda Proposal</h4>
+      <h4>PAW DAO Agenda Proposal</h4>
     </div>
 
-      <p>Contract balance: <span id="Ntvl"></span> ZUM</p>
-      <p>You must hold at least 1 ZUM token to post a comment</p>
-      <p>100+ Comments: 1% of Contract ZUM Balance to Proposer ZUM Payment</p>
-      <button class="btn btn-secondary mt-2" onclick="togglePostForm()">Create a new proposal (-500ZUM)</button>
+      <p>Contract balance: <span id="Ntvl"></span>PUP</p>
+
+      <button class="btn btn-secondary mt-2" onclick="togglePostForm()">Create a new proposal (-10PUP)</button>
 
       <div id="post-notice-form" class="mt-3" style="display: none;">
         <textarea class="form-control mb-2" id="post-content" rows="3" placeholder="Enter your proposal..."></textarea>
         <button class="btn btn-success w-100" onclick="postNotice()">Submit Proposal</button>
       </div>
-
-      <div id="notices-container" class="accordion accordion-flush mt-3"></div>
+       <div id="notices-container" class="row"></div>
+    
     </div>
   
 
@@ -167,10 +172,11 @@
         </main>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js" integrity="sha384-..." crossorigin="anonymous"></script>
-
+          <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+       <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-        <script src="..\src\ZumVote.js"></script>
+
+        <script src="..\src\PawVote.js"></script>
    
        
 
