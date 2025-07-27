@@ -122,18 +122,20 @@
     }
 
     /* ---------------------------
-       내 위치 마커(강아지 아이콘) 갱신 함수
+       내 위치 마커(강아지 아이콘) 갱신
     --------------------------- */
     function updateUserMarker(lat, lon) {
       const puppyIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png', // 강아지 아이콘 URL
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-        popupAnchor: [0, -20]
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
+        iconSize: [80, 80],      // 2배 확대
+        iconAnchor: [40, 40],
+        popupAnchor: [0, -40]
       });
 
       if (!map.userMarker) {
-        map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
+        map.userMarker = L.marker([lat, lon], { icon: puppyIcon })
+          .addTo(map)
+          .bindPopup("내 강아지 위치");
         map.setView([lat, lon], 17);
       } else {
         map.userMarker.setLatLng([lat, lon]);
@@ -145,9 +147,30 @@
     }
 
     /* ---------------------------
+       위치 권한 체크
+    --------------------------- */
+    async function checkPermissionAndStart() {
+      if (!navigator.geolocation) {
+        alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
+        return;
+      }
+
+      // 권한 상태 확인
+      if (navigator.permissions) {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        if (status.state === 'denied') {
+          alert("위치 권한이 거부되었습니다. 브라우저 설정에서 허용으로 변경하세요.");
+          return;
+        }
+      }
+
+      startTracking();
+    }
+
+    /* ---------------------------
        위치 추적 및 사냥 로직
     --------------------------- */
-    async function initGame() {
+    async function startTracking() {
       await connectWallet();
       await loadMonsters();
 
@@ -164,7 +187,8 @@
             if (!monster.marker) {
               const icon = L.icon({
                 iconUrl: monster.imagesURL,
-                iconSize: [40, 40]
+                iconSize: [80, 80],   // 2배 확대
+                iconAnchor: [40, 40]
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
@@ -189,7 +213,7 @@
       }, err => {
         console.warn("위치 추적 실패:", err);
 
-        // 실패 시 fallback 좌표 (서울)
+        // fallback
         userLat = 37.5665;
         userLon = 126.9780;
         updateUserMarker(userLat, userLon);
@@ -209,7 +233,7 @@
       }
     });
 
-    initGame();
+    checkPermissionAndStart();
   </script>
 </body>
 </html>
