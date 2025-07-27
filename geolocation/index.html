@@ -47,7 +47,7 @@
   <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
     /* ---------------------------
        Firebase 초기화
@@ -68,7 +68,7 @@
     /* ---------------------------
        컨트랙트 정보
     --------------------------- */
-    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS"; // 배포 주소 입력
+    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS"; // 실제 배포 주소 입력
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external"
     ];
@@ -114,15 +114,16 @@
     const monsters = [];
     async function loadMonsters() {
       const querySnapshot = await getDocs(collection(db, "monsters"));
-      querySnapshot.forEach(doc => {
-        const data = doc.data();
+      querySnapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        data.id = docSnap.id; // Firebase 문서 ID 저장
         data.marker = null;
         monsters.push(data);
       });
     }
 
     /* ---------------------------
-       내 위치 마커(강아지 아이콘) 갱신
+       내 위치 마커 갱신 (강아지 아이콘)
     --------------------------- */
     function updateUserMarker(lat, lon) {
       const puppyIcon = L.icon({
@@ -157,7 +158,20 @@
     }
 
     /* ---------------------------
-       위치 요청 (getCurrent + watchPosition 병행)
+       권한 상태 확인 및 안내
+    --------------------------- */
+    async function checkPermission() {
+      if (navigator.permissions) {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        console.log("권한 상태:", status.state);
+        if (status.state === 'denied') {
+          alert("위치 권한이 거부되었습니다. 브라우저 설정에서 허용 후 새로고침하세요.");
+        }
+      }
+    }
+
+    /* ---------------------------
+       위치 추적 시작
     --------------------------- */
     function requestLocation() {
       if (!navigator.geolocation) {
@@ -165,16 +179,7 @@
         return;
       }
 
-      // 권한 상태 확인
-      if (navigator.permissions) {
-        navigator.permissions.query({ name: 'geolocation' }).then(status => {
-          if (status.state === 'denied') {
-            alert("위치 권한이 거부되었습니다. 브라우저 설정에서 허용 후 새로고침하세요.");
-          }
-        });
-      }
-
-      // 최초 현재 위치
+      // 최초 위치 한 번 가져오기
       navigator.geolocation.getCurrentPosition(pos => {
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
@@ -203,10 +208,17 @@
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
+              // 사냥 클릭 이벤트
               monster.marker.on('click', async () => {
                 try {
                   const tx = await contract.hunt(monster.mid, monster.pass);
                   await tx.wait();
+
+                  // Firebase에서 제거 + 지도에서 마커 제거
+                  await deleteDoc(doc(db, "monsters", monster.id));
+                  map.removeLayer(monster.marker);
+                  monster.marker = null;
+
                   alert(`사냥 성공! mid: ${monster.mid}`);
                 } catch (err) {
                   console.error("hunt 호출 실패:", err);
@@ -244,6 +256,7 @@
     (async () => {
       await connectWallet();
       await loadMonsters();
+      await checkPermission();
       requestLocation();
     })();
 
