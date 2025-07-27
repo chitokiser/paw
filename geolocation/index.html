@@ -5,12 +5,24 @@
   <title>GeoHunt 게임</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    #map { height: 800px; }
+    #map { height: 400px; }
+    #locateBtn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #888;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <h2>강아지 사냥 게임</h2>
   <div id="map"></div>
+  <button id="locateBtn">현재 위치</button>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
@@ -62,10 +74,17 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     /* ---------------------------
-       4. 거리 계산 함수 (Haversine)
+       4. 전역 변수 (위치 저장용)
+    --------------------------- */
+    let userLat = null;
+    let userLon = null;
+    let userCircle = null;
+
+    /* ---------------------------
+       5. 거리 계산 함수
     --------------------------- */
     function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371000; // 지구 반경(m)
+      const R = 6371000;
       const toRad = (deg) => deg * Math.PI / 180;
       const φ1 = toRad(lat1), φ2 = toRad(lat2);
       const Δφ = toRad(lat2 - lat1);
@@ -75,33 +94,30 @@
     }
 
     /* ---------------------------
-       5. Firebase에서 몬스터 불러오기
+       6. Firebase에서 몬스터 불러오기
     --------------------------- */
     const monsters = [];
     async function loadMonsters() {
       const querySnapshot = await getDocs(collection(db, "monsters"));
       querySnapshot.forEach(doc => {
         const data = doc.data();
-        data.marker = null; // 추후 마커 참조 저장
+        data.marker = null; // 마커 참조 저장용
         monsters.push(data);
       });
     }
 
     /* ---------------------------
-       6. 사용자 위치 추적 + 5m 범위 체크
+       7. 위치 추적 및 사냥 로직
     --------------------------- */
     async function initGame() {
-      await connectWallet(); // 페이지 시작 시 지갑 연결
+      await connectWallet();
       await loadMonsters();
 
-      // 5m 범위 원(circle) 추가
-      let userCircle = null;
-
       navigator.geolocation.watchPosition(pos => {
-        const userLat = pos.coords.latitude;
-        const userLon = pos.coords.longitude;
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
 
-        // 지도 사용자 위치 중심 이동
+        // 지도 사용자 위치 갱신
         if (!map.userMarker) {
           map.setView([userLat, userLon], 17);
           map.userMarker = L.marker([userLat, userLon]).addTo(map).bindPopup("내 위치");
@@ -109,7 +125,7 @@
           map.userMarker.setLatLng([userLat, userLon]);
         }
 
-        // 5m 범위 원 그리기
+        // 5m 범위 원 갱신
         if (userCircle) map.removeLayer(userCircle);
         userCircle = L.circle([userLat, userLon], { radius: 5, color: 'blue', fillOpacity: 0.1 }).addTo(map);
 
@@ -125,6 +141,8 @@
                 iconSize: [40, 40]
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
+
+              // 마커 클릭 시 사냥
               monster.marker.on('click', async () => {
                 try {
                   const tx = await contract.hunt(monster.mid, monster.pass);
@@ -149,6 +167,17 @@
         alert("위치 정보를 가져올 수 없습니다. 브라우저 위치 권한을 확인하세요.");
       }, { enableHighAccuracy: true });
     }
+
+    /* ---------------------------
+       8. 현재 위치 버튼
+    --------------------------- */
+    document.getElementById("locateBtn").addEventListener("click", () => {
+      if (userLat && userLon) {
+        map.setView([userLat, userLon], 17);
+      } else {
+        alert("현재 위치 정보를 불러오는 중입니다.");
+      }
+    });
 
     initGame();
   </script>
