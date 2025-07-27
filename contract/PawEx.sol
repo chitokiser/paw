@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.7.0 <0.9.0;
 
-interface Izem {
+interface Ipaw {
     function balanceOf(address account) external view returns (uint256);
     function allowance(address owner, address spender) external view returns (uint256);
     function transfer(address recipient, uint256 amount) external returns (bool);
@@ -9,7 +9,7 @@ interface Izem {
     function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 }
 
-interface Izumbank {
+interface Ipupbank {
     function levelcheck(address user) external view returns (uint8);
     function expup(address user, uint256 pay) external returns (bool);
 }
@@ -27,8 +27,8 @@ interface AggregatorV3Interface {
         );
 }
 
-contract zemex {
-    uint256 public price; // ZEM per BNB (scaled by 1000)
+contract pawex {
+    uint256 public price; // paw per BNB (scaled by 1000)
     uint256 public tax;
     address public allow;
     address public admin;
@@ -36,23 +36,24 @@ contract zemex {
     mapping(address => uint8) public black;
     mapping(address => uint8) public staff;
 
-    Izem public zem;
-    Izumbank public zumbank;
+    Ipaw public paw;
+    Ipupbank public pupbank;
     AggregatorV3Interface public priceFeed;
 
     uint256 public bnbUsdPrice;       // 8 decimals (ex: 250.00 = 25000000000)
     uint256 public lastPriceFetchTime;
 
-    event ZemPurchased(address indexed buyer, uint256 bnbSent, uint256 zemReceived);
-    event ZemSold(address indexed seller, uint256 zemSent, uint256 bnbReceived);
+    event pawPurchased(address indexed buyer, uint256 bnbSent, uint256 pawReceived);
+    event pawSold(address indexed seller, uint256 pawSent, uint256 bnbReceived);
     event PriceUpdated(uint256 newPrice, uint256 bnbUsdPrice);
 
-    constructor(address _zem, address _zumbank, address _allow) {
-        zem = Izem(_zem);
-        zumbank = Izumbank(_zumbank);
+    constructor(address _paw, address _pupbank, address _allow) {
+        paw = Ipaw(_paw);
+        pupbank = Ipupbank(_pupbank);
         allow = _allow;
         admin = msg.sender;
         staff[msg.sender] = 10;
+        price = 780*1e18;
     }
 
     modifier onlyAdmin() {
@@ -82,39 +83,39 @@ contract zemex {
         black[_black] = 5;
     }
 
-    // ZEM 구매 (BNB → ZEM)
-    function zembuy() external payable {
+    // paw 구매 (BNB → paw)
+    function pawbuy() external payable {
         uint256 pay = msg.value*price/1000;
-        require(pay <= zembalances(), "Not enough tokens");
-        zem.transfer(msg.sender,pay); 
-        emit ZemPurchased(msg.sender, msg.value, pay);
+        require(pay <= pawbalances(), "Not enough tokens");
+        paw.transfer(msg.sender,pay); 
+        emit pawPurchased(msg.sender, msg.value, pay);
     }
 
-    // ZEM 판매 (ZEM → BNB)
+    // paw 판매 (paw → BNB)
     function bnbsell(uint256 num) external {
         require(black[msg.sender] == 0, "You are blacklisted");
 
         uint256 pay = (num / price) * g1(msg.sender);
         uint256 ttax = (num / price) * 1000;
 
-        require(zem.balanceOf(msg.sender) >= num, "Not enough ZEM tokens");
+        require(paw.balanceOf(msg.sender) >= num, "Not enough paw tokens");
         require(address(this).balance >= pay, "Contract has insufficient BNB");
 
-        uint256 allowanceAmt = zem.allowance(msg.sender, address(this));
+        uint256 allowanceAmt = paw.allowance(msg.sender, address(this));
         require(allowanceAmt >= num, "Insufficient allowance. Approve first.");
 
-        require(zem.transferFrom(msg.sender, address(this), num), "ZEM transferFrom failed");
+        require(paw.transferFrom(msg.sender, address(this), num), "paw transferFrom failed");
         payable(msg.sender).transfer(pay);
 
         tax += ttax - pay;
-        emit ZemSold(msg.sender, num, pay);
+        emit pawSold(msg.sender, num, pay);
     }
 
     // 수동 가격 설정
     function priceup(uint256 newPrice) external onlyStaff(1) {
         price = newPrice;
         if (tax >= 1e18) {
-            require(zem.transfer(allow, tax), "Tax transfer failed");
+            require(paw.transfer(allow, tax), "Tax transfer failed");
             tax = 0;
         }
     }
@@ -129,7 +130,7 @@ contract zemex {
         bnbUsdPrice = uint256(answer); // 8 decimals
         lastPriceFetchTime = block.timestamp;
 
-        // price = ZEM per BNB (1 ZEM = 1 USD 기준)
+        // price = paw per BNB (1 paw = 1 USD 기준)
         // 보정: price = (bnbUsdPrice * 1000) / 1e8
         price = (bnbUsdPrice * 1000) / 1e8;
 
@@ -153,16 +154,16 @@ contract zemex {
         return address(this).balance;
     }
 
-    function zembalances() public view returns (uint256) {
-        return zem.balanceOf(address(this));
+    function pawbalances() public view returns (uint256) {
+        return paw.balanceOf(address(this));
     }
 
     function g1(address user) public view returns (uint256) {
-        return 900 + zumbank.levelcheck(user);
+        return 900 + pupbank.levelcheck(user);
     }
 
     function g2(address user) public view returns (uint256) {
-        return zem.balanceOf(user);
+        return paw.balanceOf(user);
     }
 
     function deposit() external payable {}

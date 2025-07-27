@@ -13,7 +13,7 @@
         crossorigin="anonymous">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/font.css">
-    <title>ZEM DAO</title>
+    <title>PAW DAO</title>
 </head>
 <body>
     <!-- Placeholder for dynamic header -->
@@ -39,17 +39,17 @@
             <div class="container-box">
             <div class="card">
               <div class="card-header">
-                ZUM(ZEM Utility Token)
+                PUP(PAW Utility Token)
               </div>
               <div class="card-body">
 
            
-<li class="list-group-item">ZEM is distributed once a week in proportion to the amount of ZUM held.</li>
-<li class="list-group-item">You can sell ZUM to smart contracts if you are at least level 6 and have a transaction status of 3.</li>
+<li class="list-group-item">PAW is distributed once a week in proportion to the amount of PUP held.</li>
+<li class="list-group-item">You can sell PUP to smart contracts if you are at least level 6 and have a transaction status of 3.</li>
                 
                 <link href="../css/dashboard.css" rel="stylesheet">
                 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                <h3 class="h5">ZUM price change</h>
+                <h3 class="h5">PUP price change</h>
                 <div class="btn-toolbar mb-2 mb-md-0">
                 <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle">
                 <span data-feather="calendar"></span>
@@ -76,20 +76,20 @@
         
    <div class="card">
 <div class="card-header">
-ZUM Basic Information
+PUP Basic Information
 </div>
 <div class="card-body">
 
 <li class="list-group-item">Tradable Status: <span id="Act">-</span> </li>
 <p class="small-text">Status Description 1=Purchase 2=Distribute 3=Sell</p>
 
-<li class="list-group-item">Smart Contract ZEM Balance: <span id="Cyabal">-</span>ZEM</li>
-<li class="list-group-item">Smart Contract ZUM Balance: <span id="Mutbal">-</span>ZUM</li>
-<li class="list-group-item">ZUM Distribution: <span id="Mutcir">-</span>ZUM</li>
-<li class="list-group-item">1ZUM Price: <span id="Mprice">-</span>ZEM</li>
-<li class="list-group-item">1ZUM Dividend (Level 10): <span id="Mallow">-</span>ZEM</li>
-<li class="list-group-item">You must have purchased at least 1 ZUM on this exchange at least once to receive the dividend. </li>
-<li class="list-group-item">Members with more than 5,000 ZUM can receive dividends every week<a class="btn btn-light" href="./memberjoin.html"
+<li class="list-group-item">Smart Contract PAW Balance: <span id="Cyabal">-</span>PAW</li>
+<li class="list-group-item">Smart Contract PUP Balance: <span id="Mutbal">-</span>PUP</li>
+<li class="list-group-item">PUP Distribution: <span id="Mutcir">-</span>PUP</li>
+<li class="list-group-item">1PUP Price: <span id="Mprice">-</span>PAW</li>
+<li class="list-group-item">1PUP Dividend (Level 10): <span id="Mallow">-</span>PAW</li>
+<li class="list-group-item">You must have purchased at least 1 PUP on this exchange at least once to receive the dividend. </li>
+<li class="list-group-item">Members with more than 5,000 PUP can receive dividends every week<a class="btn btn-light" href="./memberjoin.html"
 role="button">My Page &raquo;</a> </li>
 
 <!-- List Group -->
@@ -99,9 +99,9 @@ My Status (Wallet Link)
 </button>
 
 
-<li class="list-group-item">My ZUM: <span id="myCut">-</span>ZUM</li>
-<li class="list-group-item">My ZUM Market Cap: <span id="myCutvalue">-</span>ZEM</li>
-<li class="list-group-item">This Dividend Amount: <span id="myAllow">-</span>ZEM</li>
+<li class="list-group-item">My PUP: <span id="myCut">-</span>PUP</li>
+<li class="list-group-item">My PUP Market Cap: <span id="myCutvalue">-</span>PAW</li>
+<li class="list-group-item">This Dividend Amount: <span id="myAllow">-</span>PAW</li>
 <li class="list-group-item">Time Left Until Next Dividend <span id="epsLeftTime">-</span></li>
 
 
@@ -109,28 +109,45 @@ My Status (Wallet Link)
 </div>
 </div>
         
-        <div class="card">
-        <div class="card-header">
-        ZUM Exchange
-        </div>
-        <div class="card-body">
-         <div><span style="color:red">Available for purchase at level 1 or higher</span></div>
-        <div class="input-group mb-3">
-        <input type="text" id="buyAmount" class="form-control" placeholder="Enter the number of ZUM to purchase. (No decimal points allowed.)" aria-label="ZEM"
-        aria-describedby="basic-addon2">
-        <span class="input-group-text" id="basic-addon2" style="cursor: pointer;" onclick="Buymut()">Buy ZUM</span>
-        </div>
-        <div><span style="color:red">You can sell ZUM only if you are level 6 or higher and the tradable status is 3</span></div>
-        
-        <div class="input-group mb-3">
-        <input type="text" class="form-control" id="sellAmount" placeholder="If you are level 6 or higher, enter the number of ZUMs to sell. (decimal points are not allowed.)" aria-label="ZEM"
-        aria-describedby="basic-addon2">
-        <span class="input-group-text" id="basic-addon2" style="cursor: pointer;" onclick="Sellmut()">Sell ZUM</span>
-        </div>
-        </div>
-        </div>
-      </div>
- 
+      <div class="card shadow-lg border-0 rounded-3 my-4">
+  <div class="card-header bg-gradient text-white text-center fw-bold fs-5"
+       style="background: linear-gradient(135deg, #6a11cb, #2575fc);">
+    PUP Exchange
+  </div>
+
+  <div class="card-body p-4">
+    <!-- 구매 안내 -->
+    <div class="alert alert-warning text-center mb-4" role="alert">
+      <i class="bi bi-info-circle-fill"></i>
+      Available for purchase at <strong>Level 1</strong> or higher
+    </div>
+
+    <!-- 구매 입력 -->
+    <div class="input-group mb-4">
+      <input type="text" id="buyAmount" class="form-control form-control-lg"
+             placeholder="Enter PUP amount (no decimals)" aria-label="PUP amount">
+      <button class="btn btn-primary px-4 fw-bold" type="button" onclick="Buymut()">
+        Buy PUP
+      </button>
+    </div>
+
+    <!-- 판매 안내 -->
+    <div class="alert alert-danger text-center mb-4" role="alert">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      You can sell PUP only if you are <strong>Level 6+</strong> and tradable status is <strong>3</strong>
+    </div>
+
+    <!-- 판매 입력 -->
+    <div class="input-group">
+      <input type="text" id="sellAmount" class="form-control form-control-lg"
+             placeholder="Enter PUP amount (no decimals)" aria-label="PUP amount">
+      <button class="btn btn-outline-danger px-4 fw-bold" type="button" onclick="Sellmut()">
+        Sell PUP
+      </button>
+    </div>
+  </div>
+</div>
+
  <!--Start footer -->
   
  <div id="footer"></div>
@@ -158,7 +175,7 @@ crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js" integrity="sha384-..." crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script type="text/javascript"></script>
-<script src="..\src\zumex.js"></script> 
+<script src="..\src\PupBank.js"></script> 
 
 
 

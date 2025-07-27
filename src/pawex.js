@@ -1,17 +1,16 @@
 
    
       const contractAddress = {
-        cyadexAddr: "0x547c1A704d610bb76988d6ff6aE0121a4A7cfE9b", //zemex
-        cyamemAddr: "0x3Fa37ba88e8741Bf681b911DB5C0F9d6DF99046f",   
-        cyabankAddr:"0x8EBAA1f6fBb4197e83f88238e7386cB3A37bE355", //zumbank
-        erc20: "0xB4C12Bf7491D70c91A2c272D191B7a3D4ED27bE5" //zem
+        cyadexAddr: "0xa100276E165895d09A58f7ea27321943F50e7E61", //pawex  
+        cyabankAddr:"0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D", //pupbank
+        erc20: "0xCC1ce312b7A7C4A78ffBf51F8fc0e087C1D4c72f" //paw
       };
       const contractAbi = {
         cyadex: [
           "function getprice() public view returns(uint256)",
           "function balance() public view returns(uint256)",
-          "function zembalances() public view returns(uint256)",
-          "function zembuy() external payable",
+          "function pawbalances() public view returns(uint256)",
+          "function pawbuy() external payable",
           "function bnbsell(uint256 num) external",
           "function priceup(uint256 newPrice) external",
         ],
@@ -42,9 +41,9 @@
        let provider = new ethers.providers.JsonRpcProvider('https://opbnb-mainnet-rpc.bnbchain.org');
        let cyadexContract = new ethers.Contract(contractAddress.cyadexAddr, contractAbi.cyadex, provider);
        let price = await cyadexContract.getprice();  //bnb설정가격
-        let zembal = await cyadexContract.zembalances();  //zem잔고
+        let pawbal = await cyadexContract.pawbalances();  //잔고
        document.getElementById("currentPrice").innerHTML= (price/1e18).toFixed(2);;
-       document.getElementById("Zembalan").innerHTML = (zembal / 1e18).toFixed(2);
+       document.getElementById("PAWbalan").innerHTML = (pawbal / 1e18).toFixed(2);
         };
      
         
