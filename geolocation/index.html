@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Puppy Hunt Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 0; background: #f2f2f2; }
+    #puppy-container { margin-top: 20px; }
+    .puppy { display: none; margin: 20px auto; }
+    .puppy img { width: 200px; border-radius: 10px; }
+    #getBtn { padding: 10px 20px; font-size: 16px; background: #ff7f50; color: #fff; border: none; border-radius: 5px; display: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>🐾 위치기반 강아지 찾기 게임</h2>
+  <p>근처 강아지를 찾아보세요!</p>
+  <button onclick="getLocation()">내 위치 확인</button>
+  <div id="puppy-container"></div>
+  <button id="getBtn" onclick="getPuppy()">강아지 GET!</button>
+
+  <script>
+    // === 관리자 지정 강아지 데이터 (서버/DB 대체용) ===
+    const puppyData = [
+      { id: 1, name: "Puppy 1", lat: 37.5665, lon: 126.9780, img: "https://place-puppy.com/200x200" },
+      { id: 2, name: "Puppy 2", lat: 37.5651, lon: 126.9895, img: "https://place-puppy.com/201x201" }
+    ];
+
+    let foundPuppy = null; // 사용자가 근처에 있을 때 표시할 강아지
+
+    // === 거리 계산 함수 (Haversine Formula) ===
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3; // 지구 반지름(m)
+      const toRad = (deg) => deg * Math.PI / 180;
+      const φ1 = toRad(lat1), φ2 = toRad(lat2);
+      const Δφ = toRad(lat2 - lat1);
+      const Δλ = toRad(lon2 - lon1);
+
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c; // meters
+    }
+
+    // === 사용자 위치 확인 ===
+    function getLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(checkNearbyPuppy, showError, { enableHighAccuracy: true });
+      } else {
+        alert("Geolocation을 지원하지 않는 브라우저입니다.");
+      }
+    }
+
+    // === 강아지 근접 여부 확인 ===
+    function checkNearbyPuppy(position) {
+      const userLat = position.coords.latitude;
+      const userLon = position.coords.longitude;
+
+      // 50m 이내 강아지 탐색
+      foundPuppy = puppyData.find(p => getDistance(userLat, userLon, p.lat, p.lon) <= 50);
+
+      const container = document.getElementById("puppy-container");
+      container.innerHTML = "";
+
+      if (foundPuppy) {
+        const div = document.createElement("div");
+        div.classList.add("puppy");
+        div.style.display = "block";
+        div.innerHTML = `<h3>${foundPuppy.name} 발견!</h3><img src="${foundPuppy.img}" alt="Puppy">`;
+        container.appendChild(div);
+
+        document.getElementById("getBtn").style.display = "inline-block";
+      } else {
+        container.innerHTML = "<p>근처에 강아지가 없습니다. 더 가까이 이동하세요.</p>";
+        document.getElementById("getBtn").style.display = "none";
+      }
+    }
+
+    // === 강아지 GET 처리 ===
+    function getPuppy() {
+      if (!foundPuppy) return;
+      alert(`${foundPuppy.name} 을(를) GET했습니다!`);
+      document.getElementById("getBtn").style.display = "none";
+    }
+
+    // === 에러 처리 ===
+    function showError(error) {
+      switch(error.code) {
+        case error.PERMISSION_DENIED: alert("위치 권한이 거부되었습니다."); break;
+        case error.POSITION_UNAVAILABLE: alert("위치 정보를 사용할 수 없습니다."); break;
+        case error.TIMEOUT: alert("위치 요청이 시간 초과되었습니다."); break;
+        default: alert("알 수 없는 오류가 발생했습니다.");
+      }
+    }
+  </script>
+</body>
+</html>
