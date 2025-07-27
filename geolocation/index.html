@@ -13,7 +13,7 @@
       font-family: Arial, sans-serif;
     }
     #map {
-      height: 100vh; /* 모바일에서 전체 화면 */
+      height: 100vh;
       width: 100%;
     }
     #locateBtn {
@@ -29,7 +29,6 @@
       cursor: pointer;
       box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     }
-    /* 모바일 최적화 - 작은 화면일 때 버튼 크기 조정 */
     @media (max-width: 600px) {
       #locateBtn {
         padding: 10px 14px;
@@ -50,7 +49,9 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
     import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-    /* Firebase 초기화 */
+    /* ---------------------------
+       Firebase 초기화
+    --------------------------- */
     const firebaseConfig = {
       apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
       authDomain: "puppi-d67a1.firebaseapp.com",
@@ -64,8 +65,10 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    /* 컨트랙트 설정 */
-    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS";
+    /* ---------------------------
+       컨트랙트 정보
+    --------------------------- */
+    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS"; // 실제 배포 주소 입력
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external"
     ];
@@ -82,7 +85,9 @@
       contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
     }
 
-    /* 지도 초기화 */
+    /* ---------------------------
+       지도 초기화
+    --------------------------- */
     const map = L.map('map').setView([37.5665, 126.9780], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -90,7 +95,9 @@
     let userLon = null;
     let userCircle = null;
 
-    /* 거리 계산 함수 */
+    /* ---------------------------
+       거리 계산 함수
+    --------------------------- */
     function getDistance(lat1, lon1, lat2, lon2) {
       const R = 6371000;
       const toRad = (deg) => deg * Math.PI / 180;
@@ -101,7 +108,9 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    /* Firebase 몬스터 불러오기 */
+    /* ---------------------------
+       Firebase에서 몬스터 불러오기
+    --------------------------- */
     const monsters = [];
     async function loadMonsters() {
       const querySnapshot = await getDocs(collection(db, "monsters"));
@@ -112,7 +121,32 @@
       });
     }
 
-    /* 위치 추적 및 사냥 로직 */
+    /* ---------------------------
+       내 위치 마커(강아지 아이콘) 갱신 함수
+    --------------------------- */
+    function updateUserMarker(lat, lon) {
+      const puppyIcon = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png', // 강아지 아이콘 URL
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
+        popupAnchor: [0, -20]
+      });
+
+      if (!map.userMarker) {
+        map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
+        map.setView([lat, lon], 17);
+      } else {
+        map.userMarker.setLatLng([lat, lon]);
+      }
+
+      // 5m 원 갱신
+      if (userCircle) map.removeLayer(userCircle);
+      userCircle = L.circle([lat, lon], { radius: 5, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+    }
+
+    /* ---------------------------
+       위치 추적 및 사냥 로직
+    --------------------------- */
     async function initGame() {
       await connectWallet();
       await loadMonsters();
@@ -120,18 +154,7 @@
       navigator.geolocation.watchPosition(pos => {
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
-
-        // 최초에만 지도 중심 이동
-        if (!map.userMarker) {
-          map.userMarker = L.marker([userLat, userLon], {icon: L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/684/684908.png',iconSize:[30,30]})}).addTo(map).bindPopup("내 위치");
-          map.setView([userLat, userLon], 17);
-        } else {
-          map.userMarker.setLatLng([userLat, userLon]);
-        }
-
-        // 5m 범위 원 갱신
-        if (userCircle) map.removeLayer(userCircle);
-        userCircle = L.circle([userLat, userLon], { radius: 5, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+        updateUserMarker(userLat, userLon);
 
         // 몬스터 거리 체크
         monsters.forEach(monster => {
@@ -164,12 +187,20 @@
           }
         });
       }, err => {
-        console.error("위치 추적 실패:", err);
-        alert("위치 정보를 가져올 수 없습니다. 브라우저 위치 권한을 확인하세요.");
+        console.warn("위치 추적 실패:", err);
+
+        // 실패 시 fallback 좌표 (서울)
+        userLat = 37.5665;
+        userLon = 126.9780;
+        updateUserMarker(userLat, userLon);
+
+        alert("실제 위치를 가져올 수 없어 기본 위치(서울)로 표시합니다.");
       }, { enableHighAccuracy: true });
     }
 
-    /* 현재 위치 버튼 */
+    /* ---------------------------
+       현재 위치 버튼
+    --------------------------- */
     document.getElementById("locateBtn").addEventListener("click", () => {
       if (userLat && userLon) {
         map.setView([userLat, userLon], 17);
