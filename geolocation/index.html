@@ -23,243 +23,217 @@
       z-index: 1000;
       background: white;
       border: 1px solid #888;
-      padding: 12px 16px;
-      border-radius: 50px;
-      font-size: 14px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      font-size: 24px;
       cursor: pointer;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    @media (max-width: 600px) {
-      #locateBtn {
-        padding: 10px 14px;
-        font-size: 13px;
-        bottom: 15px;
-        right: 15px;
-      }
+    #locateBtn:hover {
+      background: #f1f1f1;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <button id="locateBtn">내 위치</button>
+  <button id="locateBtn">📍</button>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-    import { getFirestore, collection, getDocs, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  <!-- ethers.js CDN 변경 (jsDelivr 안정판) -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <script>
+    (async () => {
+      // Firebase 모듈 로드
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js");
+      const { getFirestore, collection, getDocs, doc, deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js");
 
-    /* ---------------------------
-       Firebase 초기화
-    --------------------------- */
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
-      authDomain: "puppi-d67a1.firebaseapp.com",
-      projectId: "puppi-d67a1",
-      storageBucket: "puppi-d67a1.appspot.com",
-      messagingSenderId: "552900371836",
-      appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
-      measurementId: "G-9TZ81RW0PL"
-    };
+      /* ---------------------------
+         Firebase 초기화
+      --------------------------- */
+      const firebaseConfig = {
+        apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
+        authDomain: "puppi-d67a1.firebaseapp.com",
+        projectId: "puppi-d67a1",
+        storageBucket: "puppi-d67a1.appspot.com",
+        messagingSenderId: "552900371836",
+        appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
+        measurementId: "G-9TZ81RW0PL"
+      };
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+      /* ---------------------------
+         컨트랙트 정보
+      --------------------------- */
+      const CONTRACT_ADDRESS = "0xD36b5769b3eea86ecB352E8DF200e1B09462ffc5";
+      const CONTRACT_ABI = ["function hunt(uint256 mid, uint256 pass) external"];
 
-    /* ---------------------------
-       컨트랙트 정보
-    --------------------------- */
-    const CONTRACT_ADDRESS = "0xD36b5769b3eea86ecB352E8DF200e1B09462ffc5"; // 실제 배포 주소 입력
-    const CONTRACT_ABI = [
-      "function hunt(uint256 mid, uint256 pass) external"
-    ];
-
-    let provider, signer, contract;
-    async function connectWallet() {
-      if (!window.ethereum) {
-        alert("Metamask 또는 Rabby 지갑이 필요합니다!");
-        return;
-      }
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      signer = provider.getSigner();
-      contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-    }
-
-    /* ---------------------------
-       지도 초기화
-    --------------------------- */
-    const map = L.map('map').setView([37.5665, 126.9780], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-    let userLat = null;
-    let userLon = null;
-    let userCircle = null;
-
-    /* ---------------------------
-       거리 계산 함수
-    --------------------------- */
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371000;
-      const toRad = (deg) => deg * Math.PI / 180;
-      const φ1 = toRad(lat1), φ2 = toRad(lat2);
-      const Δφ = toRad(lat2 - lat1);
-      const Δλ = toRad(lon2 - lon1);
-      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    /* ---------------------------
-       Firebase에서 몬스터 불러오기
-    --------------------------- */
-    const monsters = [];
-    async function loadMonsters() {
-      const querySnapshot = await getDocs(collection(db, "monsters"));
-      querySnapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        data.id = docSnap.id; // Firebase 문서 ID 저장
-        data.marker = null;
-        monsters.push(data);
-      });
-    }
-
-    /* ---------------------------
-       내 위치 마커 갱신 (강아지 아이콘)
-    --------------------------- */
-    function updateUserMarker(lat, lon) {
-      const puppyIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
-        iconSize: [80, 80],      // 2배 확대
-        iconAnchor: [40, 40],
-        popupAnchor: [0, -40]
-      });
-
-      if (!map.userMarker) {
-        map.userMarker = L.marker([lat, lon], { icon: puppyIcon })
-          .addTo(map)
-          .bindPopup("내 강아지 위치");
-        map.setView([lat, lon], 17);
-      } else {
-        map.userMarker.setLatLng([lat, lon]);
+      let provider, signer, contract;
+      async function connectWallet() {
+        if (!window.ethereum) {
+          alert("Metamask 또는 Rabby 지갑이 필요합니다!");
+          return;
+        }
+        provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
       }
 
-      // 5m 원 갱신
-      if (userCircle) map.removeLayer(userCircle);
-      userCircle = L.circle([lat, lon], { radius: 5, color: 'blue', fillOpacity: 0.2 }).addTo(map);
-    }
+      /* ---------------------------
+         지도 초기화
+      --------------------------- */
+      const map = L.map('map').setView([37.5665, 126.9780], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    /* ---------------------------
-       fallback 위치 처리
-    --------------------------- */
-    function fallbackLocation() {
-      userLat = 37.5665;
-      userLon = 126.9780;
-      updateUserMarker(userLat, userLon);
-      alert("위치 정보를 가져올 수 없어 기본 위치(서울)로 표시합니다.");
-    }
+      let userLat = null;
+      let userLon = null;
+      let userCircle = null;
 
-    /* ---------------------------
-       권한 상태 확인 및 안내
-    --------------------------- */
-    async function checkPermission() {
-      if (navigator.permissions) {
-        const status = await navigator.permissions.query({ name: 'geolocation' });
-        console.log("권한 상태:", status.state);
-        if (status.state === 'denied') {
-          alert("위치 권한이 거부되었습니다. 브라우저 설정에서 허용 후 새로고침하세요.");
+      function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const toRad = (deg) => deg * Math.PI / 180;
+        const φ1 = toRad(lat1), φ2 = toRad(lat2);
+        const Δφ = toRad(lat2 - lat1);
+        const Δλ = toRad(lon2 - lon1);
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      }
+
+      const monsters = [];
+      async function loadMonsters() {
+        const querySnapshot = await getDocs(collection(db, "monsters"));
+        querySnapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          data.id = docSnap.id;
+          data.marker = null;
+          monsters.push(data);
+        });
+      }
+
+      function updateUserMarker(lat, lon) {
+        const puppyIcon = L.icon({
+          iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
+          iconSize: [160, 160],   // 2배 확대
+          iconAnchor: [80, 80],
+          popupAnchor: [0, -80]
+        });
+
+        if (!map.userMarker) {
+          map.userMarker = L.marker([lat, lon], { icon: puppyIcon })
+            .addTo(map)
+            .bindPopup("내 강아지 위치");
+          map.setView([lat, lon], 17);
+        } else {
+          map.userMarker.setLatLng([lat, lon]);
+        }
+
+        if (userCircle) map.removeLayer(userCircle);
+        userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+      }
+
+      function fallbackLocation() {
+        userLat = 37.5665;
+        userLon = 126.9780;
+        updateUserMarker(userLat, userLon);
+        alert("위치 정보를 가져올 수 없어 기본 위치(서울)로 표시합니다.");
+      }
+
+      async function checkPermission() {
+        if (navigator.permissions) {
+          try {
+            const status = await navigator.permissions.query({ name: 'geolocation' });
+            console.log("권한 상태:", status.state);
+            if (status.state === 'denied') {
+              alert("위치 권한이 거부되었습니다.\n브라우저 설정 → 사이트 권한에서 위치 허용으로 변경 후 새로고침하세요.");
+            } else if (status.state === 'prompt') {
+              alert("위치 권한 요청 팝업이 나타나면 반드시 '허용'을 눌러주세요.");
+            }
+          } catch (e) {
+            console.warn("권한 상태 확인 불가:", e);
+          }
         }
       }
-    }
 
-    /* ---------------------------
-       위치 추적 시작
-    --------------------------- */
-    function requestLocation() {
-      if (!navigator.geolocation) {
-        alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
-        return;
+      function requestLocation() {
+        if (!navigator.geolocation) {
+          alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(pos => {
+          userLat = pos.coords.latitude;
+          userLon = pos.coords.longitude;
+          updateUserMarker(userLat, userLon);
+        }, err => {
+          console.warn("현재 위치 가져오기 실패:", err);
+          fallbackLocation();
+        });
+
+        navigator.geolocation.watchPosition(pos => {
+          userLat = pos.coords.latitude;
+          userLon = pos.coords.longitude;
+          updateUserMarker(userLat, userLon);
+
+          monsters.forEach(monster => {
+            const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
+
+            if (distance <= 50) {
+              if (!monster.marker) {
+                const icon = L.icon({
+                  iconUrl: monster.imagesURL,
+                  iconSize: [160, 160],   // 2배 확대
+                  iconAnchor: [80, 80]
+                });
+                monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
+
+                monster.marker.on('click', async () => {
+                  try {
+                    const tx = await contract.hunt(monster.mid, monster.pass);
+                    await tx.wait();
+
+                    await deleteDoc(doc(db, "monsters", monster.id));
+                    map.removeLayer(monster.marker);
+                    monster.marker = null;
+
+                    alert(`사냥 성공! mid: ${monster.mid}`);
+                  } catch (err) {
+                    console.error("hunt 호출 실패:", err);
+                    alert("사냥 실패: " + err.message);
+                  }
+                });
+              }
+            } else {
+              if (monster.marker) {
+                map.removeLayer(monster.marker);
+                monster.marker = null;
+              }
+            }
+          });
+        }, err => {
+          console.warn("위치 추적 실패:", err);
+          fallbackLocation();
+        }, { enableHighAccuracy: true });
       }
 
-      // 최초 위치 한 번 가져오기
-      navigator.geolocation.getCurrentPosition(pos => {
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-        updateUserMarker(userLat, userLon);
-      }, err => {
-        console.warn("현재 위치 가져오기 실패:", err);
-        fallbackLocation();
+      document.getElementById("locateBtn").addEventListener("click", () => {
+        if (userLat && userLon) {
+          map.setView([userLat, userLon], 17);
+        } else {
+          alert("현재 위치 정보를 불러오는 중입니다.");
+        }
       });
 
-      // 지속 추적
-      navigator.geolocation.watchPosition(pos => {
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-        updateUserMarker(userLat, userLon);
-
-        // 몬스터 거리 체크
-        monsters.forEach(monster => {
-          const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
-
-          if (distance <= 50) {
-            if (!monster.marker) {
-              const icon = L.icon({
-                iconUrl: monster.imagesURL,
-                iconSize: [80, 80],   // 2배 확대
-                iconAnchor: [40, 40]
-              });
-              monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
-
-              // 사냥 클릭 이벤트
-              monster.marker.on('click', async () => {
-                try {
-                  const tx = await contract.hunt(monster.mid, monster.pass);
-                  await tx.wait();
-
-                  // Firebase에서 제거 + 지도에서 마커 제거
-                  await deleteDoc(doc(db, "monsters", monster.id));
-                  map.removeLayer(monster.marker);
-                  monster.marker = null;
-
-                  alert(`사냥 성공! mid: ${monster.mid}`);
-                } catch (err) {
-                  console.error("hunt 호출 실패:", err);
-                  alert("사냥 실패: " + err.message);
-                }
-              });
-            }
-          } else {
-            if (monster.marker) {
-              map.removeLayer(monster.marker);
-              monster.marker = null;
-            }
-          }
-        });
-      }, err => {
-        console.warn("위치 추적 실패:", err);
-        fallbackLocation();
-      }, { enableHighAccuracy: true });
-    }
-
-    /* ---------------------------
-       현재 위치 버튼
-    --------------------------- */
-    document.getElementById("locateBtn").addEventListener("click", () => {
-      if (userLat && userLon) {
-        map.setView([userLat, userLon], 17);
-      } else {
-        alert("현재 위치 정보를 불러오는 중입니다.");
-      }
-    });
-
-    /* ---------------------------
-       초기 실행
-    --------------------------- */
-    (async () => {
+      // 초기 실행
       await connectWallet();
       await loadMonsters();
       await checkPermission();
       requestLocation();
     })();
-
   </script>
 </body>
 </html>
