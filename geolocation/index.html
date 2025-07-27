@@ -1,98 +1,156 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Puppy Hunt Game</title>
+  <title>GeoHunt 게임</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 0; background: #f2f2f2; }
-    #puppy-container { margin-top: 20px; }
-    .puppy { display: none; margin: 20px auto; }
-    .puppy img { width: 200px; border-radius: 10px; }
-    #getBtn { padding: 10px 20px; font-size: 16px; background: #ff7f50; color: #fff; border: none; border-radius: 5px; display: none; cursor: pointer; }
+    #map { height: 400px; }
   </style>
 </head>
 <body>
-  <h2>🐾 위치기반 강아지 찾기 게임</h2>
-  <p>근처 강아지를 찾아보세요!</p>
-  <button onclick="getLocation()">내 위치 확인</button>
-  <div id="puppy-container"></div>
-  <button id="getBtn" onclick="getPuppy()">강아지 GET!</button>
+  <h2>강아지 사냥 게임</h2>
+  <div id="map"></div>
 
-  <script>
-    // === 관리자 지정 강아지 데이터 (서버/DB 대체용) ===
-    const puppyData = [
-      { id: 1, name: "Puppy 1", lat: 37.5665, lon: 126.9780, img: "https://place-puppy.com/200x200" },
-      { id: 2, name: "Puppy 2", lat: 37.5651, lon: 126.9895, img: "https://place-puppy.com/201x201" }
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+
+    /* ---------------------------
+       1. Firebase 초기화
+    --------------------------- */
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
+      authDomain: "puppi-d67a1.firebaseapp.com",
+      projectId: "puppi-d67a1",
+      storageBucket: "puppi-d67a1.appspot.com",
+      messagingSenderId: "552900371836",
+      appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
+      measurementId: "G-9TZ81RW0PL"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    /* ---------------------------
+       2. 컨트랙트 정보
+    --------------------------- */
+    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS"; // 실제 배포 주소 입력
+    const CONTRACT_ABI = [
+      "function hunt(uint256 mid, uint256 pass) external"
     ];
 
-    let foundPuppy = null; // 사용자가 근처에 있을 때 표시할 강아지
+    let provider, signer, contract;
 
-    // === 거리 계산 함수 (Haversine Formula) ===
+    async function connectWallet() {
+      if (!window.ethereum) {
+        alert("Metamask 지갑이 필요합니다!");
+        return;
+      }
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+    }
+
+    /* ---------------------------
+       3. 지도 초기화
+    --------------------------- */
+    const map = L.map('map').setView([37.5665, 126.9780], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    /* ---------------------------
+       4. 거리 계산 함수 (Haversine)
+    --------------------------- */
     function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371e3; // 지구 반지름(m)
+      const R = 6371000; // 지구 반경(m)
       const toRad = (deg) => deg * Math.PI / 180;
       const φ1 = toRad(lat1), φ2 = toRad(lat2);
       const Δφ = toRad(lat2 - lat1);
       const Δλ = toRad(lon2 - lon1);
-
-      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c; // meters
+      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // === 사용자 위치 확인 ===
-    function getLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(checkNearbyPuppy, showError, { enableHighAccuracy: true });
-      } else {
-        alert("Geolocation을 지원하지 않는 브라우저입니다.");
-      }
+    /* ---------------------------
+       5. Firebase에서 몬스터 불러오기
+    --------------------------- */
+    const monsters = [];
+    async function loadMonsters() {
+      const querySnapshot = await getDocs(collection(db, "monsters"));
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        data.marker = null; // 추후 마커 참조 저장
+        monsters.push(data);
+      });
     }
 
-    // === 강아지 근접 여부 확인 ===
-    function checkNearbyPuppy(position) {
-      const userLat = position.coords.latitude;
-      const userLon = position.coords.longitude;
+    /* ---------------------------
+       6. 사용자 위치 추적 + 5m 범위 체크
+    --------------------------- */
+    async function initGame() {
+      await connectWallet(); // 페이지 시작 시 지갑 연결
+      await loadMonsters();
 
-      // 50m 이내 강아지 탐색
-      foundPuppy = puppyData.find(p => getDistance(userLat, userLon, p.lat, p.lon) <= 50);
+      // 5m 범위 원(circle) 추가
+      let userCircle = null;
 
-      const container = document.getElementById("puppy-container");
-      container.innerHTML = "";
+      navigator.geolocation.watchPosition(pos => {
+        const userLat = pos.coords.latitude;
+        const userLon = pos.coords.longitude;
 
-      if (foundPuppy) {
-        const div = document.createElement("div");
-        div.classList.add("puppy");
-        div.style.display = "block";
-        div.innerHTML = `<h3>${foundPuppy.name} 발견!</h3><img src="${foundPuppy.img}" alt="Puppy">`;
-        container.appendChild(div);
+        // 지도 사용자 위치 중심 이동
+        if (!map.userMarker) {
+          map.setView([userLat, userLon], 17);
+          map.userMarker = L.marker([userLat, userLon]).addTo(map).bindPopup("내 위치");
+        } else {
+          map.userMarker.setLatLng([userLat, userLon]);
+        }
 
-        document.getElementById("getBtn").style.display = "inline-block";
-      } else {
-        container.innerHTML = "<p>근처에 강아지가 없습니다. 더 가까이 이동하세요.</p>";
-        document.getElementById("getBtn").style.display = "none";
-      }
+        // 5m 범위 원 그리기
+        if (userCircle) map.removeLayer(userCircle);
+        userCircle = L.circle([userLat, userLon], { radius: 5, color: 'blue', fillOpacity: 0.1 }).addTo(map);
+
+        // 몬스터 거리 체크
+        monsters.forEach(monster => {
+          const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
+
+          if (distance <= 5) {
+            // 5m 이내 → 마커 표시
+            if (!monster.marker) {
+              const icon = L.icon({
+                iconUrl: monster.imagesURL,
+                iconSize: [40, 40]
+              });
+              monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
+              monster.marker.on('click', async () => {
+                try {
+                  const tx = await contract.hunt(monster.mid, monster.pass);
+                  await tx.wait();
+                  alert(`사냥 성공! mid: ${monster.mid}`);
+                } catch (err) {
+                  console.error("hunt 호출 실패:", err);
+                  alert("사냥 실패: " + err.message);
+                }
+              });
+            }
+          } else {
+            // 5m 밖 → 마커 제거
+            if (monster.marker) {
+              map.removeLayer(monster.marker);
+              monster.marker = null;
+            }
+          }
+        });
+      }, err => {
+        console.error("위치 추적 실패:", err);
+        alert("위치 정보를 가져올 수 없습니다. 브라우저 위치 권한을 확인하세요.");
+      }, { enableHighAccuracy: true });
     }
 
-    // === 강아지 GET 처리 ===
-    function getPuppy() {
-      if (!foundPuppy) return;
-      alert(`${foundPuppy.name} 을(를) GET했습니다!`);
-      document.getElementById("getBtn").style.display = "none";
-    }
-
-    // === 에러 처리 ===
-    function showError(error) {
-      switch(error.code) {
-        case error.PERMISSION_DENIED: alert("위치 권한이 거부되었습니다."); break;
-        case error.POSITION_UNAVAILABLE: alert("위치 정보를 사용할 수 없습니다."); break;
-        case error.TIMEOUT: alert("위치 요청이 시간 초과되었습니다."); break;
-        default: alert("알 수 없는 오류가 발생했습니다.");
-      }
-    }
+    initGame();
   </script>
 </body>
 </html>

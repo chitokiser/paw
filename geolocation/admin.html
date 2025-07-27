@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>GeoHunt 관리자 페이지</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 400px; margin-bottom: 15px; }
+    input { display:block; margin:5px 0; width:95%; padding:8px; }
+    button { padding:10px; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <h2>GeoHunt 관리자 페이지</h2>
+
+  <div id="map"></div>
+
+  <form id="monsterForm">
+    <input type="text" id="imageURL" placeholder="이미지 URL" required>
+    <input type="number" id="mid" placeholder="몬스터 ID(mid)" required>
+    <input type="number" id="pass" placeholder="비밀번호(pass)" required>
+    <button type="submit">몬스터 등록</button>
+  </form>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+    import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+
+    // Firebase 설정
+    const firebaseConfig = {
+      apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
+      authDomain: "puppi-d67a1.firebaseapp.com",
+      projectId: "puppi-d67a1",
+      storageBucket: "puppi-d67a1.appspot.com",
+      messagingSenderId: "552900371836",
+      appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
+      measurementId: "G-9TZ81RW0PL"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // 지도 초기화
+    const map = L.map('map').setView([37.5665, 126.9780], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let clickedLatLng = null;
+    map.on('click', (e) => {
+      clickedLatLng = e.latlng;
+      L.marker(clickedLatLng).addTo(map).bindPopup("위치 선택됨").openPopup();
+    });
+
+    // Firebase 저장
+    document.getElementById("monsterForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!clickedLatLng) return alert("지도를 클릭해 위치를 선택하세요");
+
+      const imageURL = document.getElementById("imageURL").value;
+      const mid = parseInt(document.getElementById("mid").value);
+      const pass = parseInt(document.getElementById("pass").value);
+
+      await addDoc(collection(db, "monsters"), {
+        imagesURL: imageURL,
+        lat: clickedLatLng.lat,
+        lon: clickedLatLng.lng,
+        mid: mid,
+        pass: pass
+      });
+
+      alert("몬스터 등록 완료!");
+      document.getElementById("monsterForm").reset();
+      clickedLatLng = null;
+    });
+  </script>
+</body>
+</html>
