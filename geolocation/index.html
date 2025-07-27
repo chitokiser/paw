@@ -5,7 +5,7 @@
   <title>GeoHunt 게임</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    #map { height: 400px; }
+    #map { height: 800px; }
     #locateBtn {
       position: absolute;
       top: 10px;
@@ -74,7 +74,7 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     /* ---------------------------
-       4. 전역 변수 (위치 저장용)
+       4. 전역 변수
     --------------------------- */
     let userLat = null;
     let userLon = null;
@@ -101,7 +101,7 @@
       const querySnapshot = await getDocs(collection(db, "monsters"));
       querySnapshot.forEach(doc => {
         const data = doc.data();
-        data.marker = null; // 마커 참조 저장용
+        data.marker = null; // 마커 참조 저장
         monsters.push(data);
       });
     }
@@ -117,15 +117,15 @@
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
 
-        // 지도 사용자 위치 갱신
+        // 내 위치 마커 항상 표시 (최초 1회 생성 후 위치 갱신)
         if (!map.userMarker) {
-          map.setView([userLat, userLon], 17);
           map.userMarker = L.marker([userLat, userLon]).addTo(map).bindPopup("내 위치");
+          map.setView([userLat, userLon], 17);
         } else {
           map.userMarker.setLatLng([userLat, userLon]);
         }
 
-        // 5m 범위 원 갱신
+        // 5m 범위 원 항상 갱신
         if (userCircle) map.removeLayer(userCircle);
         userCircle = L.circle([userLat, userLon], { radius: 5, color: 'blue', fillOpacity: 0.1 }).addTo(map);
 
@@ -134,7 +134,6 @@
           const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
 
           if (distance <= 5) {
-            // 5m 이내 → 마커 표시
             if (!monster.marker) {
               const icon = L.icon({
                 iconUrl: monster.imagesURL,
@@ -142,7 +141,6 @@
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
-              // 마커 클릭 시 사냥
               monster.marker.on('click', async () => {
                 try {
                   const tx = await contract.hunt(monster.mid, monster.pass);
@@ -155,7 +153,6 @@
               });
             }
           } else {
-            // 5m 밖 → 마커 제거
             if (monster.marker) {
               map.removeLayer(monster.marker);
               monster.marker = null;
