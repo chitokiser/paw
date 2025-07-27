@@ -23,16 +23,24 @@
       z-index: 1000;
       background: white;
       border: 1px solid #888;
-      padding: 12px 16px;
-      border-radius: 50px;
-      font-size: 14px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      font-size: 24px;
       cursor: pointer;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #locateBtn:hover {
+      background: #f1f1f1;
     }
     @media (max-width: 600px) {
       #locateBtn {
-        padding: 10px 14px;
-        font-size: 13px;
+        width: 48px;
+        height: 48px;
+        font-size: 20px;
         bottom: 15px;
         right: 15px;
       }
@@ -41,7 +49,7 @@
 </head>
 <body>
   <div id="map"></div>
-  <button id="locateBtn">내 위치</button>
+  <button id="locateBtn">📍</button>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js"></script>
@@ -68,7 +76,7 @@
     /* ---------------------------
        컨트랙트 정보
     --------------------------- */
-    const CONTRACT_ADDRESS = "0xD36b5769b3eea86ecB352E8DF200e1B09462ffc5"; // 실제 배포 주소 입력
+    const CONTRACT_ADDRESS = "0xD36b5769b3eea86ecB352E8DF200e1B09462ffc5"; // 실제 배포 주소
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external"
     ];
@@ -142,9 +150,9 @@
         map.userMarker.setLatLng([lat, lon]);
       }
 
-      // 5m 원 갱신
+      // 50m 원 갱신
       if (userCircle) map.removeLayer(userCircle);
-      userCircle = L.circle([lat, lon], { radius: 5, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+      userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
     }
 
     /* ---------------------------
@@ -195,11 +203,11 @@
         userLon = pos.coords.longitude;
         updateUserMarker(userLat, userLon);
 
-        // 몬스터 거리 체크
+        // 몬스터 거리 체크 (50m 반경)
         monsters.forEach(monster => {
           const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
 
-          if (distance <= 5) {
+          if (distance <= 50) { // 50m 반경
             if (!monster.marker) {
               const icon = L.icon({
                 iconUrl: monster.imagesURL,
