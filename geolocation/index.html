@@ -68,7 +68,7 @@
     /* ---------------------------
        컨트랙트 정보
     --------------------------- */
-    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS"; // 실제 배포 주소 입력
+    const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS"; // 배포 주소 입력
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external"
     ];
@@ -76,7 +76,7 @@
     let provider, signer, contract;
     async function connectWallet() {
       if (!window.ethereum) {
-        alert("Metamask 지갑이 필요합니다!");
+        alert("Metamask 또는 Rabby 지갑이 필요합니다!");
         return;
       }
       provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -147,9 +147,19 @@
     }
 
     /* ---------------------------
-       위치 권한 체크
+       fallback 위치 처리
     --------------------------- */
-    async function checkPermissionAndStart() {
+    function fallbackLocation() {
+      userLat = 37.5665;
+      userLon = 126.9780;
+      updateUserMarker(userLat, userLon);
+      alert("위치 정보를 가져올 수 없어 기본 위치(서울)로 표시합니다.");
+    }
+
+    /* ---------------------------
+       위치 요청 (getCurrent + watchPosition 병행)
+    --------------------------- */
+    function requestLocation() {
       if (!navigator.geolocation) {
         alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
         return;
@@ -157,23 +167,24 @@
 
       // 권한 상태 확인
       if (navigator.permissions) {
-        const status = await navigator.permissions.query({ name: 'geolocation' });
-        if (status.state === 'denied') {
-          alert("위치 권한이 거부되었습니다. 브라우저 설정에서 허용으로 변경하세요.");
-          return;
-        }
+        navigator.permissions.query({ name: 'geolocation' }).then(status => {
+          if (status.state === 'denied') {
+            alert("위치 권한이 거부되었습니다. 브라우저 설정에서 허용 후 새로고침하세요.");
+          }
+        });
       }
 
-      startTracking();
-    }
+      // 최초 현재 위치
+      navigator.geolocation.getCurrentPosition(pos => {
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+        updateUserMarker(userLat, userLon);
+      }, err => {
+        console.warn("현재 위치 가져오기 실패:", err);
+        fallbackLocation();
+      });
 
-    /* ---------------------------
-       위치 추적 및 사냥 로직
-    --------------------------- */
-    async function startTracking() {
-      await connectWallet();
-      await loadMonsters();
-
+      // 지속 추적
       navigator.geolocation.watchPosition(pos => {
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
@@ -212,13 +223,7 @@
         });
       }, err => {
         console.warn("위치 추적 실패:", err);
-
-        // fallback
-        userLat = 37.5665;
-        userLon = 126.9780;
-        updateUserMarker(userLat, userLon);
-
-        alert("실제 위치를 가져올 수 없어 기본 위치(서울)로 표시합니다.");
+        fallbackLocation();
       }, { enableHighAccuracy: true });
     }
 
@@ -233,7 +238,15 @@
       }
     });
 
-    checkPermissionAndStart();
+    /* ---------------------------
+       초기 실행
+    --------------------------- */
+    (async () => {
+      await connectWallet();
+      await loadMonsters();
+      requestLocation();
+    })();
+
   </script>
 </body>
 </html>
