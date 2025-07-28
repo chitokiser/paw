@@ -5,26 +5,35 @@
   <title>GeoHunt 게임</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; width: 100%; font-family: Arial, sans-serif; }
-    #map { height: 100vh; width: 100%; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: Arial, sans-serif;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
 
     /* 상단 토스트 메시지 */
     #eventToast {
       position: fixed;
-      top: 10px; left: 50%;
+      top: 15px; left: 50%;
       transform: translateX(-50%);
-      padding: 8px 16px;
-      border-radius: 8px;
+      padding: 12px 20px;
+      border-radius: 10px;
       font-weight: bold;
-      font-size: 14px;
+      font-size: 18px;
       color: #fff;
       display: none;
       z-index: 2000;
       animation: fadeInOut 4s forwards;
     }
-    #eventToast.lost { background: rgba(255,0,0,0.8); }
-    #eventToast.reward { background: rgba(0,200,0,0.8); }
-    #eventToast.bonus { background: rgba(0,100,255,0.8); }
+    #eventToast.lost { background: rgba(255,0,0,0.85); }
+    #eventToast.reward { background: rgba(0,200,0,0.85); }
+    #eventToast.bonus { background: rgba(0,100,255,0.85); }
 
     @keyframes fadeInOut {
       0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
@@ -35,57 +44,59 @@
     /* 최근 이벤트 리스트 */
     #eventLog {
       position: fixed;
-      bottom: 80px;
+      bottom: 110px;
       left: 50%;
       transform: translateX(-50%);
-      width: 90%;
-      max-width: 400px;
+      width: 92%;
+      max-width: 420px;
       background: rgba(0,0,0,0.5);
       color: white;
-      font-size: 12px;
-      border-radius: 8px;
-      padding: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 10px;
+      padding: 8px 10px;
       z-index: 1500;
     }
     #eventLog ul { list-style: none; margin: 0; padding: 0; }
-    #eventLog li { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
+    #eventLog li { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
     #eventLog li:last-child { border-bottom: none; }
 
     /* 하단 버튼 */
     .bottom-controls {
       position: fixed;
-      bottom: 15px;
+      bottom: 20px;
       width: 100%;
       display: flex;
       justify-content: space-between;
-      padding: 0 20px;
+      padding: 0 25px;
       z-index: 1000;
     }
     .bottom-controls button {
-      width: 60px; height: 60px;
+      width: 80px; height: 80px;
       border-radius: 50%;
       border: none;
-      font-size: 24px;
+      font-size: 30px;
       background: white;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
     }
     #homeBtn {
-      width: 100px;
-      border-radius: 12px;
-      font-size: 16px;
+      width: 120px;
+      border-radius: 14px;
+      font-size: 20px;
+      font-weight: bold;
     }
 
     /* 사운드 토글 */
     #soundToggle {
       position: fixed;
-      top: 15px;
-      right: 15px;
+      top: 20px;
+      right: 20px;
       background: white;
       border: none;
       border-radius: 50%;
-      width: 48px; height: 48px;
-      font-size: 20px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      width: 60px; height: 60px;
+      font-size: 24px;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
     }
   </style>
 </head>
@@ -169,21 +180,16 @@
     const eventToast = document.getElementById("eventToast");
     const eventList = document.getElementById("eventList");
     function showEvent(type, message) {
-      // 토스트
       eventToast.className = type;
       eventToast.textContent = message;
       eventToast.style.display = "block";
       setTimeout(() => eventToast.style.display = "none", 4000);
 
-      // 로그 (최근 3개)
       const li = document.createElement("li");
       li.textContent = message;
       eventList.insertBefore(li, eventList.firstChild);
-      while (eventList.children.length > 3) {
-        eventList.removeChild(eventList.lastChild);
-      }
+      while (eventList.children.length > 3) eventList.removeChild(eventList.lastChild);
 
-      // 사운드 효과
       if (soundOn) {
         const audio = new Audio(type === "lost"
           ? "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
@@ -224,24 +230,6 @@
       userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
     }
 
-    /* 위치 실패 fallback */
-    function fallbackLocation() {
-      userLat = 37.5665;
-      userLon = 126.9780;
-      updateUserMarker(userLat, userLon);
-      alert("위치 정보를 가져올 수 없어 기본 위치(서울)로 표시합니다.");
-    }
-
-    /* 위치 권한 체크 */
-    async function checkPermission() {
-      if (navigator.permissions) {
-        const status = await navigator.permissions.query({ name: 'geolocation' });
-        if (status.state === 'denied') {
-          alert("위치 권한 거부됨. 브라우저 설정에서 허용 후 새로고침하세요.");
-        }
-      }
-    }
-
     /* 위치 추적 */
     function requestLocation() {
       if (!navigator.geolocation) {
@@ -253,7 +241,11 @@
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
         updateUserMarker(userLat, userLon);
-      }, fallbackLocation);
+      }, () => {
+        userLat = 37.5665;
+        userLon = 126.9780;
+        updateUserMarker(userLat, userLon);
+      });
 
       navigator.geolocation.watchPosition(pos => {
         userLat = pos.coords.latitude;
@@ -272,23 +264,14 @@
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
-              // 사냥 이벤트
               monster.marker.on('click', async () => {
                 try {
                   const tx = await contract.hunt(monster.mid, monster.pass);
                   await tx.wait();
-
-                  // 예시: Lost or Reward 랜덤 처리 (실제는 이벤트 리스너 필요)
-                  if (Math.random() > 0.5) {
-                    showEvent('lost', `Lost! my 2542 : enemy ${monster.power || 35000}`);
-                  } else {
-                    showEvent('reward', `보상 획득! +${monster.power || 100} GP`);
-                  }
-
+                  showEvent('reward', `보상 획득! ${monster.mid}번 몬스터`);
                   await deleteDoc(doc(db, "monsters", monster.id));
                   map.removeLayer(monster.marker);
                   monster.marker = null;
-
                 } catch (err) {
                   showEvent('lost', "사냥 실패: " + err.message);
                 }
@@ -301,15 +284,15 @@
             }
           }
         });
-      }, fallbackLocation, { enableHighAccuracy: true });
+      });
     }
 
-    /* 버튼 기능 */
+    /* 버튼 */
     document.getElementById("locateBtn").addEventListener("click", () => {
       if (userLat && userLon) map.setView([userLat, userLon], 17);
     });
     document.getElementById("homeBtn").addEventListener("click", () => {
-      window.location.href = "/"; // 메인 페이지로 이동
+      window.location.href = "/";
     });
 
     /* 사운드 토글 */
@@ -319,11 +302,10 @@
       document.getElementById("soundToggle").textContent = soundOn ? "🔊" : "🔇";
     });
 
-    /* 초기 실행 */
+    /* 실행 */
     (async () => {
       await connectWallet();
       await loadMonsters();
-      await checkPermission();
       requestLocation();
     })();
   </script>
