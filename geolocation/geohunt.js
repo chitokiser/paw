@@ -1,10 +1,9 @@
 
 // geohunt.js (전역 방식)
-const CONTRACT_ADDRESS = "0xD36b5769b3eea86ecB352E8DF200e1B09462ffc5"; // 배포 주소 넣기
+const CONTRACT_ADDRESS = "0xfc6914941f16Af5d1e25a178e9c44f5bC1e4015B"; // 배포 주소 넣기
 const CONTRACT_ABI = [
-  "function createmon(string memory name, uint power,uint breed,uint pass) external",
   "function hunt(uint _mid,uint pass ) external",
-  "function mons(uint) view returns (string memory name,uint breed,uint mid,uint power)",
+  "function mons(uint) view returns (string memory name,uint mid,uint power)",
   "function mid() view returns (uint)"
 ];
 
@@ -30,21 +29,6 @@ async function connectWallet() {
   document.getElementById("walletAddress").innerText = `지갑: ${addr}`;
 }
 
-// 몬스터 등록
-async function createMonster(name, power, breed, pass) {
-  if (!window.contract) {
-    alert("먼저 지갑을 연결하세요");
-    return;
-  }
-  try {
-    const tx = await window.contract.createmon(name, power, breed, pass);
-    await tx.wait();
-    alert("몬스터 등록 성공!");
-  } catch (err) {
-    console.error(err);
-    alert("몬스터 등록 실패: " + err.message);
-  }
-}
 
 // 몬스터 목록 불러오기
 async function getMonsters() {
@@ -56,25 +40,10 @@ async function getMonsters() {
       id: mon.mid.toString(),
       name: mon.name,
       power: mon.power.toString(),
-      breed: mon.breed.toString()
     });
   }
   return monsters;
 }
 
-// 사냥하기
-async function huntMonster(monId, pass) {
-  if (!window.contract) {
-    alert("먼저 지갑을 연결하세요");
-    return;
-  }
-  try {
-    const tx = await window.contract.hunt(monId, pass);
-    await tx.wait();
-    alert("사냥 완료!");
-  } catch (err) {
-    console.error(err);
-    alert("사냥 실패: " + err.message);
-  }
-}
+
 connectWallet();

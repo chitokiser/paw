@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PuppyRescue</title>
+  <style>
+    body { background: #cce7ff; display: flex; flex-direction: column; align-items: center; font-family: Arial, sans-serif; margin: 0; }
+    #scoreboard { margin: 10px; font-size: 18px; font-weight: bold; }
+    canvas {
+      position: relative;
+      z-index: 1;
+      background: #aadd88;
+      border: 3px solid #555;
+      width: 90vw;
+      max-width: 400px;
+    }
+
+    #startBtn, #restartBtn {
+      margin: 10px;
+      padding: 10px 20px;
+      background: #ff7f50;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    #skinSelect { margin: 10px; padding: 5px; }
+
+    /* 컨트롤러 디자인 개선 - 게임 화면 밑에 배치 */
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, 60px);
+      grid-template-rows: repeat(2, 60px);
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 40px;
+      margin-top: 20px;
+      position: relative;
+      z-index: 2;
+    }
+    .controls .btn {
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 50%;
+      font-size: 24px;
+      color: #333;
+      border: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      transition: background 0.1s, transform 0.1s;
+    }
+    .controls .btn:active {
+      background: rgba(255, 255, 255, 1);
+      transform: scale(0.95);
+    }
+
+    .up    { grid-column: 2; grid-row: 1; }
+    .left  { grid-column: 1; grid-row: 2; }
+    .down  { grid-column: 2; grid-row: 2; }
+    .right { grid-column: 3; grid-row: 2; }
+
+    #flashOverlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: white;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+ <a href="WithPuppy.html" class="block w-full bg-gray-200 text-gray-700 text-center font-medium py-2 rounded-lg hover:bg-gray-300 transition">🏠 Puppy Home</a>
+<div id="scoreboard">Number of puppies saved: 0</div>
+<select id="skinSelect">
+<option value="1">Puppy 1</option>
+<option value="2">Puppy 2</option>
+<option value="3">Puppy 3</option>
+</select>
+
+<button id="startBtn">게임 시작 (GP 차감)</button>
+  <button id="restartBtn" style="display:none;">다시하기</button>
+
+  <canvas id="gameCanvas"></canvas>
+<p>10 rescue mission completed (testing..)</p>
+  <!-- 컨트롤러: 클릭 전용 -->
+  <div class="controls">
+    <button class="btn up" onclick="setDirection('UP')">&#9650;</button>
+    <button class="btn left" onclick="setDirection('LEFT')">&#9664;</button>
+    <button class="btn down" onclick="setDirection('DOWN')">&#9660;</button>
+    <button class="btn right" onclick="setDirection('RIGHT')">&#9654;</button>
+  </div>
+
+  <div id="flashOverlay"></div>
+
+<!-- ethers.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js" integrity="sha384-..." crossorigin="anonymous"></script>
+  
+<!-- PuppyRescue.js -->
+<script src="./PuppyRescue.js"></script>
+
+</body>
+</html>

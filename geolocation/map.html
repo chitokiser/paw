@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>GeoHunt 게임</title>
+  <title>GeoHunt</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     html, body {
@@ -142,8 +142,12 @@
     const db = getFirestore(app);
 
     /* 컨트랙트 정보 */
-    const CONTRACT_ADDRESS = "0xD36b5769b3eea86ecB352E8DF200e1B09462ffc5";
-    const CONTRACT_ABI = ["function hunt(uint256 mid, uint256 pass) external"];
+    const CONTRACT_ADDRESS = "0xfc6914941f16Af5d1e25a178e9c44f5bC1e4015B";
+    const CONTRACT_ABI = [
+      "function hunt(uint256 mid, uint256 pass) external",
+      "function mons(uint) view returns (string memory name,uint mid,uint power)",
+      "function mid() view returns (uint)"
+    ];
 
     let provider, signer, contract;
     async function connectWallet() {
