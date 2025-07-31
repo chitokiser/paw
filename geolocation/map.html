@@ -142,7 +142,7 @@
     const db = getFirestore(app);
 
     /* 컨트랙트 정보 */
-    const CONTRACT_ADDRESS = "0xfc6914941f16Af5d1e25a178e9c44f5bC1e4015B";
+    const CONTRACT_ADDRESS = "0x04635E711fAd7ba117c07D93bafF906Cc1aAf833";
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external",
       "function mons(uint) view returns (string memory name,uint mid,uint power)",
@@ -164,7 +164,7 @@
     /* 지도 초기화 */
     const map = L.map('map', {
       maxZoom: 22 // 최대 확대 허용
-    }).setView([41.6955932, 44.8357820], 22);
+    }).setView([41.6955932, 44.8357820], 19);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19 // 타일 최대 확대
@@ -269,12 +269,12 @@
         monsters.forEach(monster => {
           const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
 
-          if (distance <= 50) {
+          if (distance <= 20) {
             if (!monster.marker) {
               const icon = L.icon({
                 iconUrl: monster.imagesURL,
-                iconSize: [40, 40],
-                iconAnchor: [20, 20]
+                iconSize: [60, 60],
+                iconAnchor: [30, 30]
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
@@ -300,7 +300,9 @@
                   }, 60000);
 
                 } catch (err) {
-                  showEvent('lost', "사냥 실패: " + err.message);
+                   // execution reverted: 이후 메시지만 추출
+  const originalMsg = err.message.split('reverted:')[1]?.trim() || "실패";
+  showEvent('lost', originalMsg);
                 }
               });
             }
@@ -316,7 +318,7 @@
 
     /* 버튼 */
     document.getElementById("locateBtn").addEventListener("click", () => {
-      if (userLat && userLon) map.setView([userLat, userLon], 22);
+      if (userLat && userLon) map.setView([userLat, userLon], 19);
     });
     document.getElementById("homeBtn").addEventListener("click", () => {
       window.location.href = "/";
