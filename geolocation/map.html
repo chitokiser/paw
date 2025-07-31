@@ -121,12 +121,12 @@
 
   <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- ethers.js (안정 CDN) -->
+  <!-- ethers.js -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-    import { getFirestore, collection, getDocs, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
     /* Firebase 설정 */
     const firebaseConfig = {
@@ -162,7 +162,7 @@
     }
 
     /* 지도 초기화 */
-    const map = L.map('map').setView([37.5665, 126.9780], 13);
+    const map = L.map('map').setView([41.6955932, 44.8357820], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     let userLat = null;
@@ -192,7 +192,7 @@
       const li = document.createElement("li");
       li.textContent = message;
       eventList.insertBefore(li, eventList.firstChild);
-      while (eventList.children.length > 3) eventList.removeChild(eventList.lastChild);
+      while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild); // 4배 확장
 
       if (soundOn) {
         const audio = new Audio(type === "lost"
@@ -214,13 +214,13 @@
       });
     }
 
-    /* 내 위치 아이콘 갱신 */
+    /* 내 위치 아이콘 갱신 (1/5 사이즈) */
     function updateUserMarker(lat, lon) {
       const puppyIcon = L.icon({
         iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
-        iconSize: [160, 160],
-        iconAnchor: [80, 80],
-        popupAnchor: [0, -80]
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
       });
 
       if (!map.userMarker) {
@@ -234,7 +234,7 @@
       userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
     }
 
-    /* 위치 추적 */
+    /* 위치 추적 & 몬스터 처리 */
     function requestLocation() {
       if (!navigator.geolocation) {
         alert("위치 서비스 미지원 브라우저");
@@ -263,8 +263,8 @@
             if (!monster.marker) {
               const icon = L.icon({
                 iconUrl: monster.imagesURL,
-                iconSize: [160, 160],
-                iconAnchor: [80, 80]
+                iconSize: [40, 40], // 1/4 사이즈
+                iconAnchor: [20, 20]
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
@@ -273,9 +273,22 @@
                   const tx = await contract.hunt(monster.mid, monster.pass);
                   await tx.wait();
                   showEvent('reward', `보상 획득! ${monster.mid}번 몬스터`);
-                  await deleteDoc(doc(db, "monsters", monster.id));
+
+                  // 부활 로직 (60초 후)
                   map.removeLayer(monster.marker);
                   monster.marker = null;
+
+                  setTimeout(() => {
+                    if (!monster.marker) {
+                      const respawnIcon = L.icon({
+                        iconUrl: monster.imagesURL,
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                      });
+                      monster.marker = L.marker([monster.lat, monster.lon], { icon: respawnIcon }).addTo(map);
+                    }
+                  }, 60000);
+
                 } catch (err) {
                   showEvent('lost', "사냥 실패: " + err.message);
                 }

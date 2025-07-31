@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>GeoHunt 관리자 페이지</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
   <style>
     #map { height: 400px; margin-bottom: 15px; }
     input { display:block; margin:5px 0; width:95%; padding:8px; }
@@ -23,6 +24,7 @@
   </form>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
     import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
@@ -44,6 +46,23 @@
     // 지도 초기화
     const map = L.map('map').setView([37.5665, 126.9780], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // 지도 검색 컨트롤 추가
+    L.Control.geocoder({
+      defaultMarkGeocode: false
+    })
+    .on('markgeocode', function(e) {
+      const bbox = e.geocode.bbox;
+      const poly = L.polygon([
+        bbox.getSouthEast(),
+        bbox.getNorthEast(),
+        bbox.getNorthWest(),
+        bbox.getSouthWest()
+      ]);
+      map.fitBounds(poly.getBounds());
+      L.marker(e.geocode.center).addTo(map).bindPopup(e.geocode.name).openPopup();
+    })
+    .addTo(map);
 
     let clickedLatLng = null;
     map.on('click', (e) => {
