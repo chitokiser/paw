@@ -162,12 +162,18 @@
     }
 
     /* 지도 초기화 */
-    const map = L.map('map').setView([41.6955932, 44.8357820], 19);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const map = L.map('map', {
+      maxZoom: 22 // 최대 확대 허용
+    }).setView([41.6955932, 44.8357820], 22);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19 // 타일 최대 확대
+    }).addTo(map);
 
     let userLat = null;
     let userLon = null;
     let userCircle = null;
+    let firstLocationUpdate = true; // 첫 위치 갱신 여부 체크
 
     /* 거리 계산 */
     function getDistance(lat1, lon1, lat2, lon2) {
@@ -192,7 +198,7 @@
       const li = document.createElement("li");
       li.textContent = message;
       eventList.insertBefore(li, eventList.firstChild);
-      while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild); // 4배 확장
+      while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild);
 
       if (soundOn) {
         const audio = new Audio(type === "lost"
@@ -214,7 +220,7 @@
       });
     }
 
-    /* 내 위치 아이콘 갱신 (1/5 사이즈) */
+    /* 내 위치 아이콘 갱신 (첫 위치만 setView 호출) */
     function updateUserMarker(lat, lon) {
       const puppyIcon = L.icon({
         iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
@@ -225,9 +231,13 @@
 
       if (!map.userMarker) {
         map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
-        map.setView([lat, lon], 17);
       } else {
         map.userMarker.setLatLng([lat, lon]);
+      }
+
+      if (firstLocationUpdate) {
+        map.setView([lat, lon], 22); // 첫 위치 시만 최대 확대
+        firstLocationUpdate = false;
       }
 
       if (userCircle) map.removeLayer(userCircle);
@@ -263,7 +273,7 @@
             if (!monster.marker) {
               const icon = L.icon({
                 iconUrl: monster.imagesURL,
-                iconSize: [40, 40], // 1/4 사이즈
+                iconSize: [40, 40],
                 iconAnchor: [20, 20]
               });
               monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
@@ -306,7 +316,7 @@
 
     /* 버튼 */
     document.getElementById("locateBtn").addEventListener("click", () => {
-      if (userLat && userLon) map.setView([userLat, userLon], 17);
+      if (userLat && userLon) map.setView([userLat, userLon], 22);
     });
     document.getElementById("homeBtn").addEventListener("click", () => {
       window.location.href = "/";
