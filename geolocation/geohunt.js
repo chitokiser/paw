@@ -1,6 +1,6 @@
 
 // geohunt.js (전역 방식)
-const CONTRACT_ADDRESS = "0xfc6914941f16Af5d1e25a178e9c44f5bC1e4015B"; // 배포 주소 넣기
+const CONTRACT_ADDRESS = "0x04635E711fAd7ba117c07D93bafF906Cc1aAf833"; // 배포 주소 넣기
 const CONTRACT_ABI = [
   "function hunt(uint _mid,uint pass ) external",
   "function mons(uint) view returns (string memory name,uint mid,uint power)",
