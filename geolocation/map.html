@@ -150,7 +150,7 @@ html, body {
     const db = getFirestore(app);
 
     /* 컨트랙트 정보 */
-    const CONTRACT_ADDRESS = "0x04635E711fAd7ba117c07D93bafF906Cc1aAf833";
+    const CONTRACT_ADDRESS = "0xd6EAef6e546e046770a53F8A95F39d48816f2E8B";
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external",
       "function mons(uint) view returns (string memory name,uint mid,uint power)",
@@ -304,18 +304,29 @@ html, body {
                     }
                   }, 60000);
 
-                } catch (err) {
-                  let msg = (err.message.includes('reverted:')
-                    ? err.message.split('reverted:')[1].trim()
-                    : err.message) || "실패";
+               
+             } catch (err) {
+  // revert 메시지 추출
+  let msg = (err.message.includes('reverted:')
+    ? err.message.split('reverted:')[1].trim()
+    : err.message) || "실패";
 
-                  if (msg === "Not enough GP") msg = "You lost";
-                  else if (msg === "Not an official monster") msg = "Not an official monster!";
-                  else if (msg === "No Puppy") msg = "No puppy!";
-                  else if (msg === "Already caught") msg = "Already caught!";
+  // 긴 estimateGas 관련 로그 생략 처리
+  if (msg.includes("method=\"estimateGas\"")) {
+    msg = "Hunting failure"; // 또는 원하는 짧은 문구
+  }
 
-                  showEvent('lost', msg);
-                }
+  if (msg === "Not enough GP") msg = "GP10 is required.";
+  else if (msg === "Not an official monster") msg = "Not an official monster!";
+  else if (msg === "No Puppy") msg = "No puppy!";
+  else if (msg === "Already caught") msg = "Already caught!";
+
+  showEvent('lost', msg);
+}
+
+
+
+
               });
             }
           } else {

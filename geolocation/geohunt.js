@@ -1,4 +1,4 @@
-const CONTRACT_ADDRESS = "0x04635E711fAd7ba117c07D93bafF906Cc1aAf833"; //geohunt
+const CONTRACT_ADDRESS = "0xd6EAef6e546e046770a53F8A95F39d48816f2E8B"; //geohunt
 const CONTRACT_ABI = [
   "function hunt(uint _mid,uint pass ) external",
   "function mons(uint) view returns (string memory name,uint mid,uint power)",
