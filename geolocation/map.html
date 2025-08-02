@@ -302,8 +302,21 @@
                 } catch (err) {
                    // execution reverted: 이후 메시지만 추출
   const originalMsg = err.message.split('reverted:')[1]?.trim() || "실패";
+
+  // 에러 메시지 변환
+// Convert error message to Korean
+if (originalMsg === "Not enough GP") {
+originalMsg = "lost to the enemy!";
+} else if (originalMsg === "Not an official monster") {
+originalMsg = "This is not an official monster!";
+} else if (originalMsg === "No Puppy") {
+originalMsg = "There is no puppy!";
+} else if (originalMsg === "Already caught") {
+originalMsg = "This monster has already been caught!";
+}
   showEvent('lost', originalMsg);
-                }
+}
+
               });
             }
           } else {
