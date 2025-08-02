@@ -97,7 +97,27 @@ async function Tmemberjoin() {
 
 
 
+// 공통: 로고 URL 매핑
+const tokenLogos = {
+  "PAW": "https://puppi.netlify.app//images/paw.png",
+  "PUP": "https://puppi.netlify.app//images/pup.png"
+};
 
+// 로고를 UI에 표시하는 함수
+function showTokenLogo(symbol) {
+  const logoUrl = tokenLogos[symbol];
+  if (logoUrl) {
+    const container = document.getElementById("tokenLogoContainer");
+    if (container) {
+      container.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+          <img src="${logoUrl}" alt="${symbol} logo" style="width:40px;height:40px;border-radius:50%;">
+          <span style="font-size:18px;font-weight:bold;">${symbol} Token Added!</span>
+        </div>
+      `;
+    }
+  }
+}
 // ================================
 //  메타마스크 토큰 추가 함수
 // ================================
@@ -120,6 +140,7 @@ async function addTokenPAW() {
       },
     });
     alert("PAW Token has been added to MetaMask!");
+    showTokenLogo("PAW"); // 로고 표시
   } catch (error) {
     console.error("Error adding PAW token:", error);
     alert("Failed to add PAW Token");
@@ -145,6 +166,7 @@ async function addTokenPUP() {
       },
     });
     alert("PUP Token has been added to MetaMask!");
+    showTokenLogo("PUP"); // 로고 표시
   } catch (error) {
     console.error("Error adding PUP token:", error);
     alert("Failed to add PUP Token");

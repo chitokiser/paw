@@ -1,0 +1,28 @@
+{
+  "name": "Puppi Token List",
+  "logoURI": "https://puppi.netlify.app/images/logo.png",
+  "keywords": ["paw", "pup", "opbnb"],
+  "version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "tokens": [
+    {
+      "chainId": 204,
+      "address": "0xCC1ce312b7A7C4A78ffBf51F8fc0e087C1D4c72f",
+      "symbol": "PAW",
+      "name": "PAW Token",
+      "decimals": 18,
+      "logoURI": "https://puppi.netlify.app/images/paw.png"
+    },
+    {
+      "chainId": 204,
+      "address": "0x147ce247Ec2B134713fB6De28e8Bf4cAA5B4300C",
+      "symbol": "PUP",
+      "name": "PUP Token",
+      "decimals": 0,
+      "logoURI": "https://puppi.netlify.app/images/pup.png"
+    }
+  ]
+}
