@@ -5,99 +5,107 @@
   <title>GeoHunt</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      width: 100%;
-      font-family: Arial, sans-serif;
-    }
-    #map {
-      height: 100vh;
-      width: 100%;
-    }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: Arial, sans-serif;
+}
+#map {
+  height: 100vh;
+  width: 100%;
+}
 
-    /* 상단 토스트 메시지 */
-    #eventToast {
-      position: fixed;
-      top: 15px; left: 50%;
-      transform: translateX(-50%);
-      padding: 12px 20px;
-      border-radius: 10px;
-      font-weight: bold;
-      font-size: 18px;
-      color: #fff;
-      display: none;
-      z-index: 2000;
-      animation: fadeInOut 4s forwards;
-    }
-    #eventToast.lost { background: rgba(255,0,0,0.85); }
-    #eventToast.reward { background: rgba(0,200,0,0.85); }
-    #eventToast.bonus { background: rgba(0,100,255,0.85); }
+/* 토스트 메시지 (크게 + 그림자) */
+#eventToast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 18px 30px;
+  border-radius: 14px;
+  font-weight: bold;
+  font-size: clamp(22px, 4vw, 32px);  /* 반응형 폰트 */
+  color: #fff;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+  display: none;
+  z-index: 2000;
+  animation: fadeInOut 6s forwards;
+}
+#eventToast.lost { background: rgba(255,0,0,0.85); }
+#eventToast.reward { background: rgba(0,200,0,0.85); }
+#eventToast.bonus { background: rgba(0,100,255,0.85); }
 
-    @keyframes fadeInOut {
-      0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-      10%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
-      100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-    }
+/* 토스트 애니메이션 */
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+  10%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+}
 
-    /* 최근 이벤트 리스트 */
-    #eventLog {
-      position: fixed;
-      bottom: 110px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 92%;
-      max-width: 420px;
-      background: rgba(0,0,0,0.5);
-      color: white;
-      font-size: 16px;
-      font-weight: bold;
-      border-radius: 10px;
-      padding: 8px 10px;
-      z-index: 1500;
-    }
-    #eventLog ul { list-style: none; margin: 0; padding: 0; }
-    #eventLog li { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.2); }
-    #eventLog li:last-child { border-bottom: none; }
+/* 이벤트 로그 */
+#eventLog {
+  position: fixed;
+  bottom: 140px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 95%;
+  max-width: 500px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  font-size: clamp(18px, 3vw, 24px);  /* 반응형 폰트 */
+  font-weight: bold;
+  border-radius: 14px;
+  padding: 12px 15px;
+  z-index: 1500;
+}
+#eventLog ul { list-style: none; margin: 0; padding: 0; }
+#eventLog li {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.3);
+}
+#eventLog li:last-child { border-bottom: none; }
 
-    /* 하단 버튼 */
-    .bottom-controls {
-      position: fixed;
-      bottom: 20px;
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      padding: 0 25px;
-      z-index: 1000;
-    }
-    .bottom-controls button {
-      width: 80px; height: 80px;
-      border-radius: 50%;
-      border: none;
-      font-size: 30px;
-      background: white;
-      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
-    }
-    #homeBtn {
-      width: 120px;
-      border-radius: 14px;
-      font-size: 20px;
-      font-weight: bold;
-    }
+/* 하단 버튼 */
+.bottom-controls {
+  position: fixed;
+  bottom: 20px;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 25px;
+  z-index: 1000;
+}
+.bottom-controls button {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: none;
+  font-size: 30px;
+  background: white;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+}
+#homeBtn {
+  width: 120px;
+  border-radius: 14px;
+  font-size: 20px;
+  font-weight: bold;
+}
 
-    /* 사운드 토글 */
-    #soundToggle {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: white;
-      border: none;
-      border-radius: 50%;
-      width: 60px; height: 60px;
-      font-size: 24px;
-      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
-    }
+/* 사운드 토글 버튼 */
+#soundToggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: white;
+  border: none;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  font-size: 24px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+}
   </style>
 </head>
 <body>
@@ -162,18 +170,15 @@
     }
 
     /* 지도 초기화 */
-    const map = L.map('map', {
-      maxZoom: 22 // 최대 확대 허용
-    }).setView([41.6955932, 44.8357820], 19);
-
+    const map = L.map('map', { maxZoom: 22 }).setView([41.6955932, 44.8357820], 19);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19 // 타일 최대 확대
+      maxZoom: 19
     }).addTo(map);
 
     let userLat = null;
     let userLon = null;
     let userCircle = null;
-    let firstLocationUpdate = true; // 첫 위치 갱신 여부 체크
+    let firstLocationUpdate = true;
 
     /* 거리 계산 */
     function getDistance(lat1, lon1, lat2, lon2) {
@@ -220,7 +225,7 @@
       });
     }
 
-    /* 내 위치 아이콘 갱신 (첫 위치만 setView 호출) */
+    /* 내 위치 아이콘 갱신 */
     function updateUserMarker(lat, lon) {
       const puppyIcon = L.icon({
         iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
@@ -236,7 +241,7 @@
       }
 
       if (firstLocationUpdate) {
-        map.setView([lat, lon], 19); // 첫 위치 시만 최대 확대
+        map.setView([lat, lon], 19);
         firstLocationUpdate = false;
       }
 
@@ -282,7 +287,7 @@
                 try {
                   const tx = await contract.hunt(monster.mid, monster.pass);
                   await tx.wait();
-                  showEvent('reward', `보상 획득! ${monster.mid}번 몬스터`);
+                  showEvent('reward', `+보상 ${monster.mid}`);
 
                   // 부활 로직 (60초 후)
                   map.removeLayer(monster.marker);
@@ -300,23 +305,17 @@
                   }, 60000);
 
                 } catch (err) {
-                   // execution reverted: 이후 메시지만 추출
-  const originalMsg = err.message.split('reverted:')[1]?.trim() || "실패";
+                  let msg = (err.message.includes('reverted:')
+                    ? err.message.split('reverted:')[1].trim()
+                    : err.message) || "실패";
 
-  // 에러 메시지 변환
-// Convert error message to Korean
-if (originalMsg === "Not enough GP") {
-originalMsg = "lost to the enemy!";
-} else if (originalMsg === "Not an official monster") {
-originalMsg = "This is not an official monster!";
-} else if (originalMsg === "No Puppy") {
-originalMsg = "There is no puppy!";
-} else if (originalMsg === "Already caught") {
-originalMsg = "This monster has already been caught!";
-}
-  showEvent('lost', originalMsg);
-}
+                  if (msg === "Not enough GP") msg = "You lost";
+                  else if (msg === "Not an official monster") msg = "Not an official monster!";
+                  else if (msg === "No Puppy") msg = "No puppy!";
+                  else if (msg === "Already caught") msg = "Already caught!";
 
+                  showEvent('lost', msg);
+                }
               });
             }
           } else {
