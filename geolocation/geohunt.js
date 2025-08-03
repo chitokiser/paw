@@ -1,6 +1,5 @@
-const CONTRACT_ADDRESS = "0xd6EAef6e546e046770a53F8A95F39d48816f2E8B"; //geohunt
+const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220"; // geohunt
 const CONTRACT_ABI = [
-  "function hunt(uint _mid,uint pass ) external",
   "function mons(uint) view returns (string memory name,uint mid,uint power)",
   "function mid() view returns (uint)",
   "function getmymon(address user) external view returns (uint256[] memory)"
@@ -50,9 +49,8 @@ async function getMonsterDetails(mid) {
     const mon = await window.contract.mons(mid);
     return {
       id: mon.mid.toString(),
-      name: mon.name,
+      name: mon.name && mon.name.trim() !== "" ? mon.name : "Unknown Monster",
       power: mon.power.toString(),
-      // 로컬 이미지 경로 수정
       image: `/images/mon/${mon.mid}.png`
     };
   } catch (err) {
@@ -61,23 +59,24 @@ async function getMonsterDetails(mid) {
   }
 }
 
-// 카드 UI로 잡은 몬스터 출력
+// 카드 UI로 잡은 몬스터 출력 (순차 조회)
 async function showMyMon() {
   const ids = await getMyMon();
   const container = document.getElementById("myMonsters");
   if (!container) return;
 
   if (ids.length === 0) {
-    container.innerHTML = "<p>잡은 몬스터 없음</p>";
+    container.innerHTML = "<p>No monsters caught</p>";
     return;
   }
 
-  // 각 ID 상세 조회
-  const details = await Promise.all(ids.map(id => getMonsterDetails(id)));
+  let cardsHTML = "";
 
-  container.innerHTML = `
-    <div class="row row-cols-1 row-cols-md-3 g-4">
-      ${details.map(mon => mon ? `
+  for (const id of ids) {
+    const mon = await getMonsterDetails(id);
+
+    if (mon) {
+      cardsHTML += `
         <div class="col">
           <div class="card h-100 shadow-sm">
             <img src="${mon.image}" class="card-img-top" alt="${mon.name}">
@@ -88,7 +87,26 @@ async function showMyMon() {
             </div>
           </div>
         </div>
-      ` : "").join("")}
+      `;
+    } else {
+      // mons() 조회 실패 시 Unknown 카드 출력
+      cardsHTML += `
+        <div class="col">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body">
+              <h5 class="card-title">Unknown Monster</h5>
+              <p class="card-text">Power: 0</p>
+              <p class="text-muted">#${id}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  container.innerHTML = `
+    <div class="row row-cols-1 row-cols-md-3 g-4">
+      ${cardsHTML}
     </div>
   `;
 }
@@ -96,4 +114,5 @@ async function showMyMon() {
 // 전역 등록
 window.showMyMon = showMyMon;
 
+// 지갑 연결
 connectWallet();

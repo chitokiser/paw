@@ -17,7 +17,7 @@ html, body {
   width: 100%;
 }
 
-/* 토스트 메시지 (크게 + 그림자) */
+/* 토스트 메시지 */
 #eventToast {
   position: fixed;
   top: 20px;
@@ -26,18 +26,17 @@ html, body {
   padding: 18px 30px;
   border-radius: 14px;
   font-weight: bold;
-  font-size: clamp(22px, 4vw, 32px);  /* 반응형 폰트 */
+  font-size: clamp(22px, 4vw, 32px);
   color: #fff;
   text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
   display: none;
   z-index: 2000;
-  animation: fadeInOut 6s forwards;
+  animation: fadeInOut 2s forwards; /* 2초 유지 */
 }
 #eventToast.lost { background: rgba(255,0,0,0.85); }
 #eventToast.reward { background: rgba(0,200,0,0.85); }
 #eventToast.bonus { background: rgba(0,100,255,0.85); }
 
-/* 토스트 애니메이션 */
 @keyframes fadeInOut {
   0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
   10%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -54,7 +53,7 @@ html, body {
   max-width: 500px;
   background: rgba(0,0,0,0.6);
   color: white;
-  font-size: clamp(18px, 3vw, 24px);  /* 반응형 폰트 */
+  font-size: clamp(18px, 3vw, 24px);
   font-weight: bold;
   border-radius: 14px;
   padding: 12px 15px;
@@ -150,11 +149,15 @@ html, body {
     const db = getFirestore(app);
 
     /* 컨트랙트 정보 */
-    const CONTRACT_ADDRESS = "0xd6EAef6e546e046770a53F8A95F39d48816f2E8B";
+    const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220";
     const CONTRACT_ABI = [
       "function hunt(uint256 mid, uint256 pass) external",
       "function mons(uint) view returns (string memory name,uint mid,uint power)",
-      "function mid() view returns (uint)"
+      "function mid() view returns (uint)",
+      "event GameStarted(address indexed user, uint256 pay, uint256 nonce)",
+      "event GameRewarded(address indexed user, uint256 reward)",
+      "event Lost(address indexed user, uint256 enemyPower, uint256 myPower)",
+      "event RewardGiven(address indexed user, uint256 rewardAmount)" 
     ];
 
     let provider, signer, contract;
@@ -198,7 +201,7 @@ html, body {
       eventToast.className = type;
       eventToast.textContent = message;
       eventToast.style.display = "block";
-      setTimeout(() => eventToast.style.display = "none", 4000);
+      setTimeout(() => eventToast.style.display = "none", 2000); // 2초 표시
 
       const li = document.createElement("li");
       li.textContent = message;
@@ -287,9 +290,9 @@ html, body {
                 try {
                   const tx = await contract.hunt(monster.mid, monster.pass);
                   await tx.wait();
-                  showEvent('reward', `+보상 ${monster.mid}`);
+                  showEvent('reward', `Catch #${monster.mid}`); // 간결화
 
-                  // 부활 로직 (60초 후)
+                  // 부활 로직
                   map.removeLayer(monster.marker);
                   monster.marker = null;
 
@@ -304,29 +307,22 @@ html, body {
                     }
                   }, 60000);
 
-               
-             } catch (err) {
-  // revert 메시지 추출
-  let msg = (err.message.includes('reverted:')
-    ? err.message.split('reverted:')[1].trim()
-    : err.message) || "실패";
+                } catch (err) {
+                  let msg = (err.message.includes('reverted:')
+                    ? err.message.split('reverted:')[1].trim()
+                    : err.message) || "Fail";
 
-  // 긴 estimateGas 관련 로그 생략 처리
-  if (msg.includes("method=\"estimateGas\"")) {
-    msg = "Hunting failure"; // 또는 원하는 짧은 문구
-  }
+                  if (msg.includes("method=\"estimateGas\"")) {
+                    msg = "Hunting failed";
+                  }
 
-  if (msg === "Not enough GP") msg = "GP10 is required.";
-  else if (msg === "Not an official monster") msg = "Not an official monster!";
-  else if (msg === "No Puppy") msg = "No puppy!";
-  else if (msg === "Already caught") msg = "Already caught!";
+                  if (msg === "Not enough GP") msg = "Need 10 GP";
+                  else if (msg === "Not an official monster") msg = "Invalid monster";
+                  else if (msg === "No Puppy") msg = "No puppy";
+                  else if (msg === "Already caught") msg = "Already caught";
 
-  showEvent('lost', msg);
-}
-
-
-
-
+                  showEvent('lost', msg);
+                }
               });
             }
           } else {

@@ -198,7 +198,8 @@ function withdraw() public {    //gp1000점당 레벨만큼
     require(buffcheck[msg.sender] == false, "Already got the buff"); 
     
     buffcheck[msg.sender] = true;
-    myinfo[msg.sender].level = 2;
+    myinfo[msg.sender].depo = 5000;
+     myinfo[msg.sender].exp = 5000;
   }
 
 

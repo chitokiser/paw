@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT  
+// ver1.0
 
 pragma solidity >=0.7.0 <0.9.0;
 
@@ -32,9 +34,11 @@ contract GeoHunt {
     IpupBank public pupbank;
     address public admin;
     uint public mid;
- 
+    uint public fee;
+    uint public jack;
     mapping(address => mapping(uint => bool)) public myprey;
     mapping(uint256 => monster) public mons;
+    mapping(address => uint256) public mypoint;
     mapping(uint256 => uint256) private password;
     mapping(address => uint[]) public mymons;  //유저가 잡은 몬스터 리스트 
     event GameStarted(address indexed user, uint256 pay, uint256 nonce);
@@ -52,13 +56,14 @@ contract GeoHunt {
         puppy = IWithPuppy(_puppy);
         pupbank = IpupBank(_pupbank);
         admin = msg.sender;
+        fee = 10;
     }
 
     struct monster {
         string name;
         uint mid;
         uint power;
-
+        
     }
 
     function createmon(string memory _name, uint _power,uint pass) external onlyOwner {
@@ -80,44 +85,47 @@ contract GeoHunt {
    
     }
 
+    
+     function feeup(uint _fee) external onlyOwner {
+         fee = _fee;
+   
+    }
+
+   
+
     function hunt(uint _mid,uint pass ) external {
         uint256 enemy = mons[_mid].power;
         require(password[_mid] == pass, "Not an official monster");
         require(puppy.myPuppy(msg.sender) != 0, "No Puppy");
-        require(pupbank.g9(msg.sender) >= enemy, "Not enough GP");
+        require(pupbank.g9(msg.sender) >= fee, "Not enough GP");
         require(myprey[msg.sender][_mid] == false, "Already caught");
 
         uint256 mypid = puppy.myPuppyid(msg.sender);
         uint256 mypower = getmypower(mypid,msg.sender) + puppy.myPuppy(msg.sender);
 
         if (enemy > mypower) {
-            pupbank.depodown(msg.sender, enemy);
-            pupbank.expup(msg.sender, enemy);
+            mypoint[msg.sender] += 1;
+            jack += 1;
             emit Lost(msg.sender, enemy, mypower);
         } else {
-            pupbank.depoup(msg.sender, enemy);
+            mypoint[msg.sender] += (enemy + 1);
+            jack += enemy+1;
             myprey[msg.sender][_mid] = true; // 사냥 성공 기록
             mymons[msg.sender].push(_mid);
-            bonus(msg.sender, enemy);
             emit RewardGiven(msg.sender, enemy);
         }
     }
 
-    function bonus(address user, uint _amount) internal {
-        uint pid = puppy.myPuppyid(user);
-        uint8 rewardType = attack() % 6;
-        uint256 reward;
-        if (rewardType == 0)      { reward = puppy.geti(pid); }
-        else if (rewardType == 1) { reward = puppy.getc(pid); }
-        else if (rewardType == 2) { reward = puppy.gets(pid); }
-        else if (rewardType == 3) { reward = puppy.geta(pid); }
-        else if (rewardType == 4) { reward = puppy.gete(pid); }
-        else                      { reward = puppy.getf(pid); }
+    function claimScore() public {
+    uint256 score = mypoint[msg.sender] * getlevel(msg.sender);
+    require(score > 0, "No score to claim");
+    mypoint[msg.sender] = 0; // 점수 초기화
+    pupbank.depoup(msg.sender, score); // GP 적립
+    pupbank.expup(msg.sender, score); // 경험치 적립
+}
 
-        uint256 amount = (reward + _amount) / 100;
-        pupbank.depoup(user, amount);
-        emit Bonus(user, amount, reward);
-    }
+
+ 
 
     function getlevel(address user) public view returns (uint256) {
         return pupbank.getlevel(user);
