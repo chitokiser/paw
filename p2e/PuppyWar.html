@@ -12,33 +12,20 @@
         crossorigin="anonymous">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/PuppyWar.css">
-    <title>ZEM DAO</title>
+    <title>PAW DAO</title>
 </head>
 
-<body>
-    <!-- Dynamic Header -->
-    <div id="menu-placeholder"></div>
-    <script>
-        fetch('../dashboard.html')
-            .then(response => response.text())
-            .then(data => {
-                document.getElementById('menu-placeholder').innerHTML = data;
-                const script = document.createElement('script');
-                script.src = '../src/topinfo.js';
-                document.body.appendChild(script);
-            })
-            .catch(error => console.error('Error loading the dashboard content:', error));
-    </script>
-
- 
-
- 
 
      <!-- PuppyWar Section -->
 <div class="card mb-4">
-  <div class="card-header text-center">
-    <h5>PuppyWar</h5>
-  </div>
+  <h5 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+    <a class="navbar-brand" href="../p2e/WithPuppy.html" style="display: flex; align-items: center;">
+        <img src="/images/paw.png" alt="Logo" style="width: 30px; height: 30px; object-fit: contain;">
+    </a>
+    PuppyWar
+</h5>
+</div>
+
   <div class="card-body text-center">
 
 <div class="battlefield">
@@ -55,7 +42,8 @@
 <div id="userState" class="score-board"></div>
 
 <!-- 버튼 입력 필드 -->
-<input id="bettingAmount" type="number" value="10" min="1" style="padding:8px; border-radius:6px; border:1px solid #ccc; width:70px; text-align:center; font-weight:bold;">
+ <div><input id="bettingAmount" type="number" value="10" min="1" style="padding:8px; border-radius:6px; border:1px solid #ccc; width:70px; text-align:center; font-weight:bold;"></div>
+
 
 <!-- Home Win 버튼 -->
 <button id="winButton" style="background:linear-gradient(90deg,#4CAF50,#81C784); color:white; border:none; padding:8px 15px; border-radius:8px; cursor:pointer; margin:5px; font-size:14px;">

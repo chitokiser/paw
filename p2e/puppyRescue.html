@@ -28,7 +28,6 @@
     }
     #skinSelect { margin: 10px; padding: 5px; }
 
-    /* 컨트롤러 디자인 개선 - 게임 화면 밑에 배치 */
     .controls {
       display: grid;
       grid-template-columns: repeat(3, 60px);
@@ -80,20 +79,20 @@
   </style>
 </head>
 <body>
- <a href="WithPuppy.html" class="block w-full bg-gray-200 text-gray-700 text-center font-medium py-2 rounded-lg hover:bg-gray-300 transition">🏠 Puppy Home</a>
-<div id="scoreboard">Number of puppies saved: 0</div>
-<select id="skinSelect">
-<option value="1">Puppy 1</option>
-<option value="2">Puppy 2</option>
-<option value="3">Puppy 3</option>
-</select>
+  <a href="WithPuppy.html" class="block w-full bg-gray-200 text-gray-700 text-center font-medium py-2 rounded-lg hover:bg-gray-300 transition">🏠 Puppy Home</a>
+  <div id="scoreboard">Number of puppies saved: 0</div>
+  <select id="skinSelect">
+    <option value="1">Puppy 1</option>
+    <option value="2">Puppy 2</option>
+    <option value="3">Puppy 3</option>
+  </select>
 
-<button id="startBtn">게임 시작 (GP 차감)</button>
+  <button id="startBtn">게임 시작</button>
   <button id="restartBtn" style="display:none;">다시하기</button>
 
   <canvas id="gameCanvas"></canvas>
-<p>10 rescue mission completed (testing..)</p>
-  <!-- 컨트롤러: 클릭 전용 -->
+  <p>10 rescue mission completed (testing..)</p>
+
   <div class="controls">
     <button class="btn up" onclick="setDirection('UP')">&#9650;</button>
     <button class="btn left" onclick="setDirection('LEFT')">&#9664;</button>
@@ -103,11 +102,202 @@
 
   <div id="flashOverlay"></div>
 
-<!-- ethers.js CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js" integrity="sha384-..." crossorigin="anonymous"></script>
-  
-<!-- PuppyRescue.js -->
-<script src="./PuppyRescue.js"></script>
+  <script>
+    // ---------------- 게임 전역 변수 ----------------
+    let score = 0;
+    let snake = [];
+    let direction = null;
+    let food = {};
+    let watchers = [];
+    let gameInterval = null;
+    const MISSION_TARGET = 10;
 
+    // ---------------- 캔버스 초기화 ----------------
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    let box = 20;
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function resizeCanvas() {
+      const size = Math.min(window.innerWidth * 0.9, 400);
+      canvas.width = size;
+      canvas.height = size;
+      box = size / 20;
+    }
+
+    // ---------------- 스킨 선택 ----------------
+    let selectedSkin = localStorage.getItem("dogSkin") || "1";
+    document.getElementById("skinSelect").value = selectedSkin;
+
+    const dogHead = new Image();
+    const rescueDog = new Image();
+    const watcherImg = new Image();
+    const dogBodies = [];
+
+    function loadHeadImage() {
+      dogHead.src = `/images/dogs/${selectedSkin}.png`;
+    }
+
+    function loadImages(callback) {
+      loadHeadImage();
+      rescueDog.src = `/images/dogs/rescue.png`;
+      watcherImg.src = `/images/dogs/watcher.png`;
+      dogBodies.length = 0;
+      for (let i = 1; i <= 10; i++) {
+        const img = new Image();
+        img.src = `/images/dogs/body_${i}.png`;
+        dogBodies.push(img);
+      }
+      setTimeout(callback, 200);
+    }
+
+    document.getElementById("skinSelect").addEventListener("change", e => {
+      selectedSkin = e.target.value;
+      localStorage.setItem("dogSkin", selectedSkin);
+      loadHeadImage();
+    });
+
+    // ---------------- 방향 입력 ----------------
+    document.addEventListener("keydown", e => {
+      if (e.key === "ArrowLeft" && direction !== "RIGHT") direction = "LEFT";
+      else if (e.key === "ArrowUp" && direction !== "DOWN") direction = "UP";
+      else if (e.key === "ArrowRight" && direction !== "LEFT") direction = "RIGHT";
+      else if (e.key === "ArrowDown" && direction !== "UP") direction = "DOWN";
+    });
+
+    // 터치 입력
+    let touchStartX = 0, touchStartY = 0;
+    canvas.addEventListener("touchstart", e => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    });
+    canvas.addEventListener("touchend", e => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      const dy = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 0 && direction !== "LEFT") direction = "RIGHT";
+        else if (dx < 0 && direction !== "RIGHT") direction = "LEFT";
+      } else {
+        if (dy > 0 && direction !== "UP") direction = "DOWN";
+        else if (dy < 0 && direction !== "DOWN") direction = "UP";
+      }
+    });
+
+    function setDirection(dir) {
+      if (dir === "LEFT" && direction !== "RIGHT") direction = "LEFT";
+      else if (dir === "UP" && direction !== "DOWN") direction = "UP";
+      else if (dir === "RIGHT" && direction !== "LEFT") direction = "RIGHT";
+      else if (dir === "DOWN" && direction !== "UP") direction = "DOWN";
+    }
+
+    // ---------------- 게임 로직 ----------------
+    function startGame() {
+      score = 0;
+      snake = [{ x: 9 * box, y: 9 * box }];
+      direction = null;
+      watchers = [];
+      placeFood();
+      document.getElementById("scoreboard").textContent = `Number of puppies saved: 0`;
+      document.getElementById("restartBtn").style.display = "none";
+      clearInterval(gameInterval);
+      gameInterval = setInterval(draw, 160);
+      draw();
+    }
+
+    function endGame(msg) {
+      clearInterval(gameInterval);
+      alert(msg);
+      document.getElementById("restartBtn").style.display = "block";
+    }
+
+    function placeFood() {
+      let valid = false;
+      while (!valid) {
+        const pos = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
+        if (!snake.some(s => s.x === pos.x && s.y === pos.y) && !watchers.some(w => w.x === pos.x && w.y === pos.y)) {
+          food = pos;
+          valid = true;
+        }
+      }
+    }
+
+    function addWatcher() {
+      let valid = false;
+      while (!valid) {
+        const pos = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
+        if (!snake.some(s => s.x === pos.x && s.y === pos.y) && !(pos.x === food.x && pos.y === food.y) && !watchers.some(w => w.x === pos.x && w.y === pos.y)) {
+          watchers.push(pos);
+          valid = true;
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(dogHead, snake[0].x, snake[0].y, box, box);
+      for (let i = 1; i < snake.length; i++) {
+        ctx.drawImage(dogBodies[i % dogBodies.length], snake[i].x, snake[i].y, box, box);
+      }
+      ctx.drawImage(rescueDog, food.x, food.y, box, box);
+      watchers.forEach(w => ctx.drawImage(watcherImg, w.x, w.y, box, box));
+
+      if (!direction) return;
+
+      const nx = snake[0].x + (direction === "LEFT" ? -box : direction === "RIGHT" ? box : 0);
+      const ny = snake[0].y + (direction === "UP" ? -box : direction === "DOWN" ? box : 0);
+
+      if (nx < 0 || ny < 0 || nx >= canvas.width || ny >= canvas.height || snake.some(s => s.x === nx && s.y === ny)) {
+        endGame(`벽이나 몸에 부딪힘! 총 ${score}마리 구조`);
+        return;
+      }
+
+      if (watchers.some(w => w.x === nx && w.y === ny)) {
+        endGame('Caught by the watcher! Game over');
+        return;
+      }
+
+      if (nx === food.x && ny === food.y) {
+        score++;
+        document.getElementById("scoreboard").textContent = `Number of puppies saved: ${score}`;
+        playBarkSound();
+        flashEffect();
+        addWatcher();
+        if (score >= MISSION_TARGET) {
+          endGame(`Mission success! ${MISSION_TARGET} rescue completed!`);
+          return;
+        }
+        placeFood();
+      } else {
+        snake.pop();
+      }
+      snake.unshift({ x: nx, y: ny });
+    }
+
+    // 사운드
+    function playBarkSound() {
+      const bark = new Audio('../sounds/bark.mp3');
+      bark.play();
+    }
+
+    // 플래시 효과
+    function flashEffect() {
+      const flash = document.getElementById('flashOverlay');
+      flash.style.display = 'block';
+      flash.style.opacity = 0.8;
+      setTimeout(() => {
+        flash.style.opacity = 0;
+        setTimeout(() => { flash.style.display = 'none'; }, 200);
+      }, 100);
+    }
+
+    // 버튼 이벤트
+    document.getElementById("startBtn").addEventListener("click", () => loadImages(startGame));
+    document.getElementById("restartBtn").addEventListener("click", () => loadImages(startGame));
+
+    // 초기 이미지 로드
+    loadImages(() => {});
+  </script>
 </body>
 </html>

@@ -12,33 +12,21 @@
         crossorigin="anonymous">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/PawLotto.css">
-    <title>ZEM DAO</title>
+    <title>PAW DAO</title>
 </head>
-
-<body>
-    <!-- Dynamic Header -->
-    <div id="menu-placeholder"></div>
-    <script>
-        fetch('../dashboard.html')
-            .then(response => response.text())
-            .then(data => {
-                document.getElementById('menu-placeholder').innerHTML = data;
-                const script = document.createElement('script');
-                script.src = '../src/topinfo.js';
-                document.body.appendChild(script);
-            })
-            .catch(error => console.error('Error loading the dashboard content:', error));
-    </script>
- 
-
- 
-</div>
-
+     <!-- PuppyWar Section -->
+<div class="card mb-4">
+  <h5 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+    <a class="navbar-brand" href="../p2e/WithPuppy.html" style="display: flex; align-items: center;">
+        <img src="/images/paw.png" alt="Logo" style="width: 30px; height: 30px; object-fit: contain;">
+    </a>
+    PuppyLotto
+</h5>
 
 
 <div class="card mb-3 shadow-sm rounded">
 <div class="card-header" style="background-color: #f8f9fa;">
-<h5>Relay Lotto (only game point)</h5>
+<h5>Puppy Lotto (only game point)</h5>
 </div>
 <div class="card-body">
 <p>This game requires you to match 5 numbers in 6 attempts</p>
@@ -93,7 +81,7 @@
     <!-- 게임 리스트가 표시될 위치 -->
 <div id="gameList"></div>
 
-   
+    </div>
   </div>
  </div>
                  

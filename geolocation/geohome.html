@@ -13,85 +13,19 @@
 
   <title>Paw DAO</title>
 
-  <style>
-    body {
-      font-family: 'Protest Guerrilla', sans-serif;
-      background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
-      color: #333;
-    }
-    h4, h5 {
-      font-weight: 600;
-    }
-    .btn-primary, .btn-outline-primary {
-      border-radius: 25px;
-      padding: 10px 20px;
-      font-weight: bold;
-      transition: 0.2s ease-in-out;
-    }
-    .btn-primary:hover, .btn-outline-primary:hover {
-      transform: scale(1.05);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-    .card {
-      border: none;
-      border-radius: 16px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-      transition: transform 0.2s ease;
-      background-color: #ffffff;
-    }
-    .card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 6px 18px rgba(0,0,0,0.15);
-    }
-    .card-img-top {
-  border-top-left-radius: 16px;
-  border-top-right-radius: 16px;
-  max-height: 180px;
-  width: 100%;
-  object-fit: contain;   /* 변경: 이미지 비율 유지하면서 전체 보임 */
-  background-color: #f8f9fa; /* 여백 배경 색상 */
-  padding: 10px; /* 이미지 주변 여백 */
-}
-    .monster-section {
-      margin-top: 30px;
-      padding: 20px;
-      background: #fff3cd;
-      border-radius: 16px;
-      border: 1px solid #ffeeba;
-    }
-    .proposal-section {
-      margin-top: 30px;
-      padding: 20px;
-      background: #e2f0ff;
-      border-radius: 16px;
-      border: 1px solid #b6d4fe;
-    }
-  </style>
-</head>
- 
-<body>
-  <!-- Header -->
-  <div id="menu-placeholder"></div>
- 
-  <script>
-    fetch('../dashboard.html')
-      .then(response => response.text())
-      .then(data => {
-        document.getElementById('menu-placeholder').innerHTML = data;
-
-        const script = document.createElement('script');
-        script.src = '../src/topinfo.js';
-        script.onload = () => {
-          if (typeof topData === 'function') topData();
-        };
-        document.body.appendChild(script);
-      })
-      .catch(error => console.error('Error loading the dashboard content:', error));
-  </script>
+     <!-- PuppyWar Section -->
+<div class="card mb-4">
+  <h5 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+    <a class="navbar-brand" href="../p2e/WithPuppy.html" style="display: flex; align-items: center;">
+        <img src="/images/paw.png" alt="Logo" style="width: 30px; height: 30px; object-fit: contain;">
+    </a>
+    Location-Based Dog Game
+</h5>
+</div>
 
   <!-- Welcome Section -->
   <div class="text-center my-4">
-    <p class="fs-4 fw-bold text-primary">Location-Based Dog Game</p>
+    <p class="fs-4 fw-bold text-primary">Hunting with a dog</p>
     <p class="text-muted">Mobile Only</p>
     <button onclick="location.href='../geolocation/map.html'" class="btn btn-primary">
       🦴 Start Hunting
