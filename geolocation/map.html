@@ -132,230 +132,263 @@ html, body {
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-    /* Firebase 설정 */
-    const firebaseConfig = {
-      apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
-      authDomain: "puppi-d67a1.firebaseapp.com",
-      projectId: "puppi-d67a1",
-      storageBucket: "puppi-d67a1.appspot.com",
-      messagingSenderId: "552900371836",
-      appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
-      measurementId: "G-9TZ81RW0PL"
-    };
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+/* Firebase 설정 */
+const firebaseConfig = {
+  apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
+  authDomain: "puppi-d67a1.firebaseapp.com",
+  projectId: "puppi-d67a1",
+  storageBucket: "puppi-d67a1.appspot.com",
+  messagingSenderId: "552900371836",
+  appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
+  measurementId: "G-9TZ81RW0PL"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-    /* 컨트랙트 정보 */
-    const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220";
-    const CONTRACT_ABI = [
-      "function hunt(uint256 mid, uint256 pass) external",
-      "function mons(uint) view returns (string memory name,uint mid,uint power)",
-      "function mid() view returns (uint)",
-      "event GameStarted(address indexed user, uint256 pay, uint256 nonce)",
-      "event GameRewarded(address indexed user, uint256 reward)",
-      "event Lost(address indexed user, uint256 enemyPower, uint256 myPower)",
-      "event RewardGiven(address indexed user, uint256 rewardAmount)" 
-    ];
+/* 컨트랙트 정보 */
+const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220";
+const CONTRACT_ABI = [
+  "function hunt(uint256 mid, uint256 pass) external",
+  "function mons(uint) view returns (string memory name,uint mid,uint power)",
+  "function mid() view returns (uint)",
+  "event GameStarted(address indexed user, uint256 pay, uint256 nonce)",
+  "event GameRewarded(address indexed user, uint256 reward)",
+  "event Lost(address indexed user, uint256 enemyPower, uint256 myPower)",
+  "event RewardGiven(address indexed user, uint256 rewardAmount)" 
+];
 
-    let provider, signer, contract;
-    async function connectWallet() {
-      if (!window.ethereum) {
-        alert("Metamask 또는 Rabby 지갑이 필요합니다!");
-        return;
-      }
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      signer = provider.getSigner();
-      contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-    }
+let provider, signer, contract;
+async function connectWallet() {
+  if (!window.ethereum) {
+    alert("Metamask 또는 Rabby 지갑이 필요합니다!");
+    return;
+  }
+  provider = new ethers.providers.Web3Provider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
+  signer = provider.getSigner();
+  contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+}
 
-    /* 지도 초기화 */
-    const map = L.map('map', { maxZoom: 22 }).setView([41.6955932, 44.8357820], 19);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19
-    }).addTo(map);
+/* 지도 초기화 */
+const map = L.map('map', { maxZoom: 22 }).setView([41.6955932, 44.8357820], 19);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
 
-    let userLat = null;
-    let userLon = null;
-    let userCircle = null;
-    let firstLocationUpdate = true;
+let userLat = null;
+let userLon = null;
+let userCircle = null;
+let firstLocationUpdate = true;
 
-    /* 거리 계산 */
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371000;
-      const toRad = deg => deg * Math.PI / 180;
-      const φ1 = toRad(lat1), φ2 = toRad(lat2);
-      const Δφ = toRad(lat2 - lat1);
-      const Δλ = toRad(lon2 - lon1);
-      const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
+/* 거리 계산 */
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = deg => deg * Math.PI / 180;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 
-    /* 이벤트 토스트 + 로그 */
-    const eventToast = document.getElementById("eventToast");
-    const eventList = document.getElementById("eventList");
-    function showEvent(type, message) {
-      eventToast.className = type;
-      eventToast.textContent = message;
-      eventToast.style.display = "block";
-      setTimeout(() => eventToast.style.display = "none", 2000); // 2초 표시
+/* 이벤트 토스트 + 로그 */
+const eventToast = document.getElementById("eventToast");
+const eventList = document.getElementById("eventList");
+let totalScore = 0;  // 점수 누적
 
-      const li = document.createElement("li");
-      li.textContent = message;
-      eventList.insertBefore(li, eventList.firstChild);
-      while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild);
+function showEvent(type, message, reward = 0) {
+  // 점수 누적 (승리 시)
+  if (reward > 0) {
+    totalScore += reward;
+  }
 
-      if (soundOn) {
-        const audio = new Audio(type === "lost"
-          ? "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
-          : "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
-        audio.play();
-      }
-    }
+  // 메시지에 누적 점수 추가
+  const displayMsg = `${message} (Total: ${totalScore} GP)`;
 
-    /* 몬스터 데이터 로드 */
-    const monsters = [];
-    async function loadMonsters() {
-      const querySnapshot = await getDocs(collection(db, "monsters"));
-      querySnapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        data.id = docSnap.id;
-        data.marker = null;
-        monsters.push(data);
-      });
-    }
+  eventToast.className = type;
+  eventToast.textContent = displayMsg;
+  eventToast.style.display = "block";
+  setTimeout(() => eventToast.style.display = "none", 2000); // 2초 표시
 
-    /* 내 위치 아이콘 갱신 */
-    function updateUserMarker(lat, lon) {
-      const puppyIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -16]
-      });
+  const li = document.createElement("li");
+  li.textContent = displayMsg;
+  eventList.insertBefore(li, eventList.firstChild);
+  while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild);
 
-      if (!map.userMarker) {
-        map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
-      } else {
-        map.userMarker.setLatLng([lat, lon]);
-      }
+  if (soundOn) {
+    const audio = new Audio(type === "lost"
+      ? "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
+      : "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+    audio.play();
+  }
+}
 
-      if (firstLocationUpdate) {
-        map.setView([lat, lon], 19);
-        firstLocationUpdate = false;
-      }
+/* 몬스터 데이터 로드 */
+const monsters = [];
+async function loadMonsters() {
+  const querySnapshot = await getDocs(collection(db, "monsters"));
+  querySnapshot.forEach(docSnap => {
+    const data = docSnap.data();
+    data.id = docSnap.id;
+    data.marker = null;
+    monsters.push(data);
+  });
+}
 
-      if (userCircle) map.removeLayer(userCircle);
-      userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
-    }
+/* 내 위치 아이콘 갱신 */
+function updateUserMarker(lat, lon) {
+  const puppyIcon = L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16]
+  });
 
-    /* 위치 추적 & 몬스터 처리 */
-    function requestLocation() {
-      if (!navigator.geolocation) {
-        alert("위치 서비스 미지원 브라우저");
-        return;
-      }
+  if (!map.userMarker) {
+    map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
+  } else {
+    map.userMarker.setLatLng([lat, lon]);
+  }
 
-      navigator.geolocation.getCurrentPosition(pos => {
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-        updateUserMarker(userLat, userLon);
-      }, () => {
-        userLat = 41.6955932;
-        userLon = 44.8357820;
-        updateUserMarker(userLat, userLon);
-      });
+  if (firstLocationUpdate) {
+    map.setView([lat, lon], 19);
+    firstLocationUpdate = false;
+  }
 
-      navigator.geolocation.watchPosition(pos => {
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-        updateUserMarker(userLat, userLon);
+  if (userCircle) map.removeLayer(userCircle);
+  userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+}
 
-        monsters.forEach(monster => {
-          const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
+/* 위치 추적 & 몬스터 처리 */
+function requestLocation() {
+  if (!navigator.geolocation) {
+    alert("위치 서비스 미지원 브라우저");
+    return;
+  }
 
-          if (distance <= 20) {
-            if (!monster.marker) {
-              const icon = L.icon({
-                iconUrl: monster.imagesURL,
-                iconSize: [60, 60],
-                iconAnchor: [30, 30]
-              });
-              monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    updateUserMarker(userLat, userLon);
+  }, () => {
+    userLat = 41.6955932;
+    userLon = 44.8357820;
+    updateUserMarker(userLat, userLon);
+  });
 
-              monster.marker.on('click', async () => {
-                try {
-                  const tx = await contract.hunt(monster.mid, monster.pass);
-                  await tx.wait();
-                  showEvent('reward', `Catch #${monster.mid}`); // 간결화
+  navigator.geolocation.watchPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    updateUserMarker(userLat, userLon);
 
-                  // 부활 로직
-                  map.removeLayer(monster.marker);
-                  monster.marker = null;
+    monsters.forEach(monster => {
+      const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
 
-                  setTimeout(() => {
-                    if (!monster.marker) {
-                      const respawnIcon = L.icon({
-                        iconUrl: monster.imagesURL,
-                        iconSize: [40, 40],
-                        iconAnchor: [20, 20]
-                      });
-                      monster.marker = L.marker([monster.lat, monster.lon], { icon: respawnIcon }).addTo(map);
-                    }
-                  }, 60000);
+      if (distance <= 20) {
+        if (!monster.marker) {
+          const icon = L.icon({
+            iconUrl: monster.imagesURL,
+            iconSize: [60, 60],
+            iconAnchor: [30, 30]
+          });
+          monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
 
-                } catch (err) {
-                  let msg = (err.message.includes('reverted:')
-                    ? err.message.split('reverted:')[1].trim()
-                    : err.message) || "Fail";
+          monster.marker.on('click', async () => {
+            try {
+              const tx = await contract.hunt(monster.mid, monster.pass);
+              const receipt = await tx.wait();
 
-                  if (msg.includes("method=\"estimateGas\"")) {
-                    msg = "Hunting failed";
-                  }
+              let enemyPower = null;
+              let myPower = null;
+              let rewardAmount = 0;
+              let resultMsg = "";
 
-                  if (msg === "Not enough GP") msg = "Need 10 GP";
-                  else if (msg === "Not an official monster") msg = "Invalid monster";
-                  else if (msg === "No Puppy") msg = "No puppy";
-                  else if (msg === "Already caught") msg = "Already caught";
-
-                  showEvent('lost', msg);
+              // 이벤트 파싱
+              receipt.events.forEach(ev => {
+                if (ev.event === "Lost") {
+                  enemyPower = ev.args.enemyPower.toString();
+                  myPower = ev.args.myPower.toString();
+                  resultMsg = `Lost (${myPower} vs ${enemyPower})`;
+                }
+                if (ev.event === "RewardGiven") {
+                  rewardAmount = parseInt(ev.args.rewardAmount.toString());
+                  resultMsg = `Win +${rewardAmount} GP (${myPower || "?"} vs ${enemyPower || "?"})`;
                 }
               });
-            }
-          } else {
-            if (monster.marker) {
+
+              // 메시지 출력
+              const type = resultMsg.includes("Win") ? "reward" : "lost";
+              showEvent(type, resultMsg, rewardAmount);
+
+              // 몬스터 부활 로직
               map.removeLayer(monster.marker);
               monster.marker = null;
+
+              setTimeout(() => {
+                if (!monster.marker) {
+                  const respawnIcon = L.icon({
+                    iconUrl: monster.imagesURL,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20]
+                  });
+                  monster.marker = L.marker([monster.lat, monster.lon], { icon: respawnIcon }).addTo(map);
+                }
+              }, 60000);
+
+            } catch (err) {
+              let msg = (err.message.includes('reverted:')
+                ? err.message.split('reverted:')[1].trim()
+                : err.message) || "Fail";
+
+              if (msg.includes("method=\"estimateGas\"")) {
+                msg = "Hunting failed";
+              }
+
+              if (msg === "Not enough GP") msg = "Need 10 GP";
+              else if (msg === "Not an official monster") msg = "Invalid monster";
+              else if (msg === "No Puppy") msg = "No puppy";
+              else if (msg === "Already caught") msg = "Already caught";
+
+              showEvent('lost', msg, 0);
             }
-          }
-        });
-      });
-    }
-
-    /* 버튼 */
-    document.getElementById("locateBtn").addEventListener("click", () => {
-      if (userLat && userLon) map.setView([userLat, userLon], 19);
+          });
+        }
+      } else {
+        if (monster.marker) {
+          map.removeLayer(monster.marker);
+          monster.marker = null;
+        }
+      }
     });
-    document.getElementById("homeBtn").addEventListener("click", () => {
-      window.location.href = "/";
-    });
+  });
+}
 
-    /* 사운드 토글 */
-    let soundOn = true;
-    document.getElementById("soundToggle").addEventListener("click", () => {
-      soundOn = !soundOn;
-      document.getElementById("soundToggle").textContent = soundOn ? "🔊" : "🔇";
-    });
+/* 버튼 */
+document.getElementById("locateBtn").addEventListener("click", () => {
+  if (userLat && userLon) map.setView([userLat, userLon], 19);
+});
+document.getElementById("homeBtn").addEventListener("click", () => {
+  window.location.href = "/";
+});
 
-    /* 실행 */
-    (async () => {
-      await connectWallet();
-      await loadMonsters();
-      requestLocation();
-    })();
+/* 사운드 토글 */
+let soundOn = true;
+document.getElementById("soundToggle").addEventListener("click", () => {
+  soundOn = !soundOn;
+  document.getElementById("soundToggle").textContent = soundOn ? "🔊" : "🔇";
+});
+
+/* 실행 */
+(async () => {
+  await connectWallet();
+  await loadMonsters();
+  requestLocation();
+})();
+
+
   </script>
 </body>
 </html>
