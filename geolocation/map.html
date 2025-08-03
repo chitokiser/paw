@@ -238,14 +238,17 @@ async function loadMonsters() {
   });
 }
 
+
+
 /* 내 위치 아이콘 갱신 */
 function updateUserMarker(lat, lon) {
-  const puppyIcon = L.icon({
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/616/616408.png',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -16]
-  });
+const puppyIcon = L.icon({
+  iconUrl: '../images/pup.png',  // 로컬 이미지 경로로 변경
+  iconSize: [48, 48],
+  iconAnchor: [16, 16],
+  popupAnchor: [0, -16]
+});
+
 
   if (!map.userMarker) {
     map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
@@ -260,6 +263,20 @@ function updateUserMarker(lat, lon) {
 
   if (userCircle) map.removeLayer(userCircle);
   userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+}
+
+
+function vibrateOnEvent(type) {
+  try {
+    if (!navigator.vibrate) return; // 지원 안 하면 무시
+    if (type === "reward") {
+      navigator.vibrate([200, 100, 200]); // 승리 시 짧게 두 번 진동
+    } else if (type === "lost") {
+      navigator.vibrate(400); // 패배 시 길게 한 번 진동
+    }
+  } catch (e) {
+    console.warn("Vibrate not supported:", e);
+  }
 }
 
 /* 위치 추적 & 몬스터 처리 */
