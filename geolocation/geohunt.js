@@ -23,7 +23,7 @@ async function connectWallet() {
   // 전역에서도 사용 가능하게
   window.contract = contract;
 
-  const addr = await signer.getAddress();
+  const addr = await signer.getAddgitress();
   document.getElementById("walletAddress").innerText = `지갑: ${addr}`;
 }
 

@@ -57,6 +57,7 @@
 
 
 
+
 <div class="card mb-4 shadow-sm">
   <div class="card-body text-center">
 
@@ -71,15 +72,19 @@
       <input id="bnbInput" type="number" class="form-control" placeholder="Enter BNB amount" />
     </div>
 
-    <!-- Output: To -->
-    <div class="input-group mb-3">
-      <input id="bnbOutput" type="text" class="form-control" placeholder="Estimated PAW amount" readonly />
-      <button class="btn btn-success" onclick="buyCya()">Swap to PAW</button>
-    </div>
+   <div class="input-group mb-3">
+  <div id="bnbOutput"
+       class="form-control bg-light text-center fw-bold"
+       style="height: 48px; display: flex; align-items: center; justify-content: center;">
+    Estimated PAW amount
+  </div>
+  <button class="btn btn-success" onclick="buyCya()">Swap to ZEM</button>
+</div>
+
 
    
 
-    <!-- Input: PAW -->
+    <!-- Input: ZEM -->
     <div class="input-group mb-3">
       <span class="input-group-text">
          <img src="../images/logo.png" alt="BNB" style="width: 40px; height: 40px; object-fit: contain;" class="me-2">
@@ -87,13 +92,18 @@
       <input id="cyaInput" type="number" class="form-control" placeholder="Enter PAW amount" />
     </div>
 
-    <!-- Output: To BNB -->
-    <div class="input-group mb-3">
-      <input id="cyaOutput" type="text" class="form-control" placeholder="Estimated BNB amount" readonly />
-      <button class="btn btn-primary" onclick="sellCya()">Swap to BNB</button>
-    </div>
+  <!-- Output: To BNB -->
+<div class="input-group mb-3">
+  <div id="cyaOutput"
+       class="form-control bg-light text-center fw-bold"
+       style="height: 48px; display:flex; align-items:center; justify-content:center;">
+    Estimated BNB amount
+  </div>
+  <button class="btn btn-primary" onclick="sellCya()">Swap to BNB</button>
+</div>
 
- 
+
+   
 
   </div>
 </div>
