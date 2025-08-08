@@ -5,18 +5,115 @@
   <title>GeoHunt</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-html, body { margin:0; padding:0; height:100%; width:100%; font-family:Arial,sans-serif; }
-#map { height:100vh; width:100%; }
-#eventToast { position:fixed; top:20px; left:50%; transform:translateX(-50%); padding:18px 30px; border-radius:14px; font-weight:bold; font-size:clamp(22px,4vw,32px); color:#fff; text-shadow:2px 2px 4px rgba(0,0,0,0.5); display:none; z-index:2000; animation:fadeInOut 2s forwards; }
-#eventToast.lost { background:rgba(255,0,0,0.85); }
-#eventToast.reward { background:rgba(0,200,0,0.85); }
-#eventToast.bonus { background:rgba(0,100,255,0.85); }
-@keyframes fadeInOut { 0%{opacity:0;transform:translateX(-50%) translateY(-20px);}10%,80%{opacity:1;transform:translateX(-50%) translateY(0);}100%{opacity:0;transform:translateX(-50%) translateY(-20px);} }
-.bottom-controls { position:fixed; bottom:20px; width:100%; display:flex; justify-content:space-between; padding:0 25px; z-index:1000; }
-.bottom-controls button { width:80px; height:80px; border:none; border-radius:50%; font-size:30px; background:#fff; box-shadow:0 3px 8px rgba(0,0,0,0.3); }
-#homeBtn { width:120px; border-radius:14px; font-size:20px; font-weight:bold; }
-#soundToggle { position:fixed; top:20px; right:20px; width:60px; height:60px; border:none; border-radius:50%; background:#fff; font-size:24px; box-shadow:0 3px 8px rgba(0,0,0,0.3); }
-  </style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-family: 'Segoe UI', Roboto, sans-serif;
+  background: #f2f3f5;
+}
+#map {
+  height: 100vh;
+  width: 100%;
+  position: relative;
+}
+/* Toast 디자인 개선 */
+#eventToast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 16px 24px;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 18px;
+  display: none;
+  z-index: 3000;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+#eventToast.reward { background: rgba(40, 167, 69, 0.85); }
+#eventToast.lost   { background: rgba(220, 53, 69, 0.85); }
+#eventToast.bonus  { background: rgba(23, 162, 184, 0.85); }
+
+/* 이벤트 로그 */
+#eventLog {
+  position: fixed;
+  bottom: 160px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 40px);
+  max-width: 480px;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  font-size: 16px;
+  border-radius: 8px;
+  padding: 12px;
+  z-index: 2500;
+  max-height: 200px;
+  overflow-y: auto;
+}
+#eventLog ul { margin: 0; padding: 0; list-style: none; }
+#eventLog li {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+#eventLog li:last-child { border-bottom: none; }
+
+/* 하단 버튼 레이아웃 개선 */
+.bottom-controls {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  gap: 20px;
+  z-index: 2000;
+}
+.bottom-controls button {
+  width: 64px;
+  height: 64px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.bottom-controls button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+#homeBtn {
+  width: auto;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-size: 18px;
+}
+#soundToggle {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+#soundToggle:hover { transform: scale(1.1); }
+</style>
 </head>
 <body>
   <div id="map"></div>
@@ -64,6 +161,7 @@ async function connectWallet() {
   contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 }
 
+// Sound effects - 로컬 파일 경로로 변경하세요
 // Sound effects
 const clickSound   = new Audio('../sounds/hit.mp3');
 const successSound = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
@@ -100,20 +198,35 @@ async function initialize() {
   const monsters=[];
   (await getDocs(collection(db,'monsters'))).forEach(doc=>{const d=doc.data();d.marker=null;monsters.push(d);});
 
-  // Update user marker
-  let userCircle, first=true;
-  function updateUserMarker(lat,lon){
-    const icon=L.icon({iconUrl:'../images/face.png',iconSize:[80,80],iconAnchor:[16,16]});
-    if(!map.userMarker){
-      map.userMarker=L.marker([lat,lon],{icon}).addTo(map).bindPopup('my puppy');
-      map.userMarker.on('click',()=>{ if(soundOn) barkSound.play(); });
-    } else map.userMarker.setLatLng([lat,lon]);
-    if(first){map.setView([lat,lon],19);first=false;}
-    if(userCircle) map.removeLayer(userCircle);
-    userCircle=L.circle([lat,lon],{radius:50,color:'blue',fillOpacity:0.2}).addTo(map);
+    // Update user marker
+  let userCircle, first = true;
+  function updateUserMarker(lat, lon) {
+    const icon = L.icon({ iconUrl: '../images/face.png', iconSize: [80, 80], iconAnchor: [16, 16] });
+    if (!map.userMarker) {
+      map.userMarker = L.marker([lat, lon], { icon })
+        .addTo(map)
+        .bindPopup('my puppy');
+      // 클릭 시 짖는 소리 재생
+      map.userMarker.on('click', () => {
+        if (soundOn) {
+          barkSound.play().catch(e => console.warn('Bark audio error:', e));
+        }
+      });
+    } else {
+      map.userMarker.setLatLng([lat, lon]);
+    }
+    if (first) {
+      map.setView([lat, lon], 19);
+      first = false;
+    }
+    if (userCircle) {
+      map.removeLayer(userCircle);
+    }
+    userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
   }
 
   // Initial location
+
   if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p=>updateUserMarker(p.coords.latitude,p.coords.longitude));
 
   // Watch position & game logic
@@ -123,14 +236,20 @@ async function initialize() {
     monsters.forEach(m=>{
       const dist=getDistance(lat,lon,m.lat,m.lon);
       if(dist<=20 && !m.marker){
-        m.marker=L.marker([m.lat,m.lon]).addTo(map);
+        m.marker = L.marker([m.lat, m.lon], {
+          icon: L.icon({
+            iconUrl: m.imagesURL,
+            iconSize: [80, 80],
+            iconAnchor: [30, 30]
+          })
+        }).addTo(map);
         m.marker.on('click',async ()=>{
-          if(soundOn) clickSound.play();
+          if (soundOn) clickSound.play().catch(e => {/* ignore unsupported */});
           try{
             const tx=await contract.hunt(m.mid,m.pass); const rc=await tx.wait(); let reward=0;
             rc.events.forEach(e=>{ if(e.event==='RewardGiven') reward=parseInt(e.args.rewardAmount.toString(),10); });
-            if(reward>0){ if(soundOn) successSound.play(); showEvent('reward',`+${reward} GP`,reward); }
-            else{ if(soundOn) failureSound.play(); showEvent('lost','획득 실패',0);}            
+            if(reward>0){ if (soundOn) successSound.play().catch(e => {/* ignore unsupported */}); showEvent('reward',`+${reward} GP`,reward); }
+            else{ if (soundOn) failureSound.play().catch(e => {/* ignore unsupported */}); showEvent('lost','획득 실패',0);}            
             map.removeLayer(m.marker); m.marker=null;
           }catch(err){ if(soundOn) failureSound.play(); showEvent('lost','에러 발생',0); }
         });

@@ -1,141 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>GeoHunt</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-  font-family: Arial, sans-serif;
-}
-#map {
-  height: 100vh;
-  width: 100%;
-}
-
-/* 토스트 메시지 */
-#eventToast {
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 18px 30px;
-  border-radius: 14px;
-  font-weight: bold;
-  font-size: clamp(22px, 4vw, 32px);
-  color: #fff;
-  text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-  display: none;
-  z-index: 2000;
-  animation: fadeInOut 2s forwards; /* 2초 유지 */
-}
-#eventToast.lost { background: rgba(255,0,0,0.85); }
-#eventToast.reward { background: rgba(0,200,0,0.85); }
-#eventToast.bonus { background: rgba(0,100,255,0.85); }
-
-@keyframes fadeInOut {
-  0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-  10%, 80% { opacity: 1; transform: translateX(-50%) translateY(0); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
-}
-
-/* 이벤트 로그 */
-#eventLog {
-  position: fixed;
-  bottom: 140px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 95%;
-  max-width: 500px;
-  background: rgba(0,0,0,0.6);
-  color: white;
-  font-size: clamp(18px, 3vw, 24px);
-  font-weight: bold;
-  border-radius: 14px;
-  padding: 12px 15px;
-  z-index: 1500;
-}
-#eventLog ul { list-style: none; margin: 0; padding: 0; }
-#eventLog li {
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.3);
-}
-#eventLog li:last-child { border-bottom: none; }
-
-/* 하단 버튼 */
-.bottom-controls {
-  position: fixed;
-  bottom: 20px;
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  padding: 0 25px;
-  z-index: 1000;
-}
-.bottom-controls button {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: none;
-  font-size: 30px;
-  background: white;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
-}
-#homeBtn {
-  width: 120px;
-  border-radius: 14px;
-  font-size: 20px;
-  font-weight: bold;
-}
-
-/* 사운드 토글 버튼 */
-#soundToggle {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: white;
-  border: none;
-  border-radius: 50%;
-  width: 60px;
-  height: 60px;
-  font-size: 24px;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
-}
+html, body { margin:0; padding:0; height:100%; width:100%; font-family:Arial,sans-serif; }
+#map { height:100vh; width:100%; }
+#eventToast { position:fixed; top:20px; left:50%; transform:translateX(-50%); padding:18px 30px; border-radius:14px; font-weight:bold; font-size:clamp(22px,4vw,32px); color:#fff; text-shadow:2px 2px 4px rgba(0,0,0,0.5); display:none; z-index:2000; animation:fadeInOut 2s forwards; }
+#eventToast.lost { background:rgba(255,0,0,0.85); }
+#eventToast.reward { background:rgba(0,200,0,0.85); }
+#eventToast.bonus { background:rgba(0,100,255,0.85); }
+@keyframes fadeInOut { 0%{opacity:0;transform:translateX(-50%) translateY(-20px);}10%,80%{opacity:1;transform:translateX(-50%) translateY(0);}100%{opacity:0;transform:translateX(-50%) translateY(-20px);} }
+.bottom-controls { position:fixed; bottom:20px; width:100%; display:flex; justify-content:space-between; padding:0 25px; z-index:1000; }
+.bottom-controls button { width:80px; height:80px; border:none; border-radius:50%; font-size:30px; background:#fff; box-shadow:0 3px 8px rgba(0,0,0,0.3); }
+#homeBtn { width:120px; border-radius:14px; font-size:20px; font-weight:bold; }
+#soundToggle { position:fixed; top:20px; right:20px; width:60px; height:60px; border:none; border-radius:50%; background:#fff; font-size:24px; box-shadow:0 3px 8px rgba(0,0,0,0.3); }
   </style>
 </head>
 <body>
   <div id="map"></div>
-
-  <!-- 토스트 -->
   <div id="eventToast"></div>
-
-  <!-- 최근 이벤트 로그 -->
   <div id="eventLog"><ul id="eventList"></ul></div>
-
-  <!-- 하단 버튼 -->
   <div class="bottom-controls">
     <button id="compassBtn">🧭</button>
     <button id="homeBtn">Home</button>
     <button id="locateBtn">📍</button>
   </div>
-
-  <!-- 사운드 토글 -->
   <button id="soundToggle">🔊</button>
 
-  <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- ethers.js -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-
   <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
 import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-/* Firebase 설정 */
+// Firebase 설정
 const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
@@ -148,260 +48,102 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* 컨트랙트 정보 */
+// Contract 정보
 const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220";
 const CONTRACT_ABI = [
-  "function hunt(uint256 mid, uint256 pass) external",
-  "function mons(uint) view returns (string memory name,uint mid,uint power)",
-  "function mid() view returns (uint)",
-  "event GameStarted(address indexed user, uint256 pay, uint256 nonce)",
-  "event GameRewarded(address indexed user, uint256 reward)",
-  "event Lost(address indexed user, uint256 enemyPower, uint256 myPower)",
-  "event RewardGiven(address indexed user, uint256 rewardAmount)" 
+  "function hunt(uint256 mid,uint256 pass) external",
+  "event RewardGiven(address indexed user,uint256 rewardAmount)",
+  "event Lost(address indexed user,uint256 enemyPower,uint256 myPower)"
 ];
-
 let provider, signer, contract;
 async function connectWallet() {
-  if (!window.ethereum) {
-    alert("Metamask 또는 Rabby 지갑이 필요합니다!");
-    return;
-  }
+  if (!window.ethereum) { alert("Metamask 필요"); return; }
   provider = new ethers.providers.Web3Provider(window.ethereum);
   await provider.send("eth_requestAccounts", []);
   signer = provider.getSigner();
   contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 }
 
-/* 지도 초기화 */
-const map = L.map('map', { maxZoom: 22 }).setView([41.6955932, 44.8357820], 19);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19
-}).addTo(map);
+// Sound effects
+const clickSound   = new Audio('../sounds/hit.mp3');
+const successSound = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+const failureSound = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
+const barkSound    = new Audio('../sounds/puppybark.mp3');
+let soundOn = true;
 
-let userLat = null;
-let userLon = null;
-let userCircle = null;
-let firstLocationUpdate = true;
+async function initialize() {
+  await connectWallet();
+  // 지도 초기화
+  const map = L.map('map',{ maxZoom:22 }).setView([41.6955932,44.8357820],19);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19 }).addTo(map);
 
-/* 거리 계산 */
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = deg => deg * Math.PI / 180;
-  const φ1 = toRad(lat1), φ2 = toRad(lat2);
-  const Δφ = toRad(lat2 - lat1);
-  const Δλ = toRad(lon2 - lon1);
-  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-/* 이벤트 토스트 + 로그 */
-const eventToast = document.getElementById("eventToast");
-const eventList = document.getElementById("eventList");
-let totalScore = 0;  // 점수 누적
-
-function showEvent(type, message, reward = 0) {
-  // 점수 누적 (승리 시)
-  if (reward > 0) {
-    totalScore += reward;
+  // 이벤트 토스트
+  const eventToast = document.getElementById('eventToast');
+  const eventList  = document.getElementById('eventList');
+  let totalScore = 0;
+  function showEvent(type,message,reward=0) {
+    if(reward>0) totalScore+=reward;
+    const msg = `${message} (Total: ${totalScore} GP)`;
+    eventToast.className = type;
+    eventToast.textContent = msg;
+    eventToast.style.display = 'block';
+    setTimeout(()=>eventToast.style.display='none',2000);
+    const li = document.createElement('li'); li.textContent=msg;
+    eventList.insertBefore(li,eventList.firstChild);
+    while(eventList.children.length>12) eventList.removeChild(eventList.lastChild);
   }
 
-  // 메시지에 누적 점수 추가
-  const displayMsg = `${message} (Total: ${totalScore} GP)`;
+  // 거리 계산
+  function getDistance(a,b,c,d){const R=6371000,t=x=>x*Math.PI/180;const φ1=t(a),φ2=t(c),dφ=t(c-a),dλ=t(d-b);const A=Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;return R*2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));}
 
-  eventToast.className = type;
-  eventToast.textContent = displayMsg;
-  eventToast.style.display = "block";
-  setTimeout(() => eventToast.style.display = "none", 2000); // 2초 표시
+  // Load monsters
+  const monsters=[];
+  (await getDocs(collection(db,'monsters'))).forEach(doc=>{const d=doc.data();d.marker=null;monsters.push(d);});
 
-  const li = document.createElement("li");
-  li.textContent = displayMsg;
-  eventList.insertBefore(li, eventList.firstChild);
-  while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild);
-
-  if (soundOn) {
-    const audio = new Audio(type === "lost"
-      ? "https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"
-      : "https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
-    audio.play();
-  }
-}
-
-/* 몬스터 데이터 로드 */
-const monsters = [];
-async function loadMonsters() {
-  const querySnapshot = await getDocs(collection(db, "monsters"));
-  querySnapshot.forEach(docSnap => {
-    const data = docSnap.data();
-    data.id = docSnap.id;
-    data.marker = null;
-    monsters.push(data);
-  });
-}
-
-
-
-/* 내 위치 아이콘 갱신 */
-function updateUserMarker(lat, lon) {
-const puppyIcon = L.icon({
-  iconUrl: '../images/face.png',  // 로컬 이미지 경로로 변경
-  iconSize: [80, 80],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16]
-});
-
-
-  if (!map.userMarker) {
-    map.userMarker = L.marker([lat, lon], { icon: puppyIcon }).addTo(map).bindPopup("내 강아지 위치");
-  } else {
-    map.userMarker.setLatLng([lat, lon]);
+  // Update user marker
+  let userCircle, first=true;
+  function updateUserMarker(lat,lon){
+    const icon=L.icon({iconUrl:'../images/face.png',iconSize:[80,80],iconAnchor:[16,16]});
+    if(!map.userMarker){
+      map.userMarker=L.marker([lat,lon],{icon}).addTo(map).bindPopup('my puppy');
+      map.userMarker.on('click',()=>{ if(soundOn) barkSound.play(); });
+    } else map.userMarker.setLatLng([lat,lon]);
+    if(first){map.setView([lat,lon],19);first=false;}
+    if(userCircle) map.removeLayer(userCircle);
+    userCircle=L.circle([lat,lon],{radius:50,color:'blue',fillOpacity:0.2}).addTo(map);
   }
 
-  if (firstLocationUpdate) {
-    map.setView([lat, lon], 19);
-    firstLocationUpdate = false;
-  }
+  // Initial location
+  if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p=>updateUserMarker(p.coords.latitude,p.coords.longitude));
 
-  if (userCircle) map.removeLayer(userCircle);
-  userCircle = L.circle([lat, lon], { radius: 50, color: 'blue', fillOpacity: 0.2 }).addTo(map);
-}
-
-
-function vibrateOnEvent(type) {
-  try {
-    if (!navigator.vibrate) return; // 지원 안 하면 무시
-    if (type === "reward") {
-      navigator.vibrate([200, 100, 200]); // 승리 시 짧게 두 번 진동
-    } else if (type === "lost") {
-      navigator.vibrate(400); // 패배 시 길게 한 번 진동
-    }
-  } catch (e) {
-    console.warn("Vibrate not supported:", e);
-  }
-}
-
-/* 위치 추적 & 몬스터 처리 */
-function requestLocation() {
-  if (!navigator.geolocation) {
-    alert("위치 서비스 미지원 브라우저");
-    return;
-  }
-
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    updateUserMarker(userLat, userLon);
-  }, () => {
-    userLat = 41.6955932;
-    userLon = 44.8357820;
-    updateUserMarker(userLat, userLon);
-  });
-
-  navigator.geolocation.watchPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    updateUserMarker(userLat, userLon);
-
-    monsters.forEach(monster => {
-      const distance = getDistance(userLat, userLon, monster.lat, monster.lon);
-
-      if (distance <= 20) {
-        if (!monster.marker) {
-          const icon = L.icon({
-            iconUrl: monster.imagesURL,
-            iconSize: [80, 80],
-            iconAnchor: [30, 30]
-          });
-          monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
-
-          monster.marker.on('click', async () => {
-            try {
-              const tx = await contract.hunt(monster.mid, monster.pass);
-              const receipt = await tx.wait();
-
-              // ─── 여기부터 수정된 부분 ────────────────────────────
-                let rewardAmount = 0;
-                receipt.events.forEach(ev => {
-                  if (ev.event === "RewardGiven") {
-                    rewardAmount = parseInt(ev.args.rewardAmount.toString(),10);
-                  }
-                });
-                if (rewardAmount > 0) {
-                  showEvent(
-                    "reward",
-                    `+${rewardAmount} GP 획득!`,
-                    rewardAmount
-                  );
-                } else {
-                  showEvent("lost","획득 실패...",0);
-                }
-                // ─── 여기까지 ───────────────────────────────────────
-
-              // 몬스터 부활 로직
-              map.removeLayer(monster.marker);
-              monster.marker = null;
-
-              setTimeout(() => {
-                if (!monster.marker) {
-                  const respawnIcon = L.icon({
-                    iconUrl: monster.imagesURL,
-                    iconSize: [40, 40],
-                    iconAnchor: [20, 20]
-                  });
-                  monster.marker = L.marker([monster.lat, monster.lon], { icon: respawnIcon }).addTo(map);
-                }
-              }, 60000);
-
-            } catch (err) {
-              let msg = (err.message.includes('reverted:')
-                ? err.message.split('reverted:')[1].trim()
-                : err.message) || "Fail";
-
-              if (msg.includes("method=\"estimateGas\"")) {
-                msg = "Hunting failed";
-              }
-
-              if (msg === "Not enough GP") msg = "Need 10 GP";
-              else if (msg === "Not an official monster") msg = "Invalid monster";
-              else if (msg === "No Puppy") msg = "No puppy";
-              else if (msg === "Already caught") msg = "Already caught";
-
-              showEvent('lost', msg, 0);
-            }
-          });
-        }
-      } else {
-        if (monster.marker) {
-          map.removeLayer(monster.marker);
-          monster.marker = null;
-        }
+  // Watch position & game logic
+  navigator.geolocation.watchPosition(async p=>{
+    const lat=p.coords.latitude, lon=p.coords.longitude;
+    updateUserMarker(lat,lon);
+    monsters.forEach(m=>{
+      const dist=getDistance(lat,lon,m.lat,m.lon);
+      if(dist<=20 && !m.marker){
+        m.marker=L.marker([m.lat,m.lon]).addTo(map);
+        m.marker.on('click',async ()=>{
+          if(soundOn) clickSound.play();
+          try{
+            const tx=await contract.hunt(m.mid,m.pass); const rc=await tx.wait(); let reward=0;
+            rc.events.forEach(e=>{ if(e.event==='RewardGiven') reward=parseInt(e.args.rewardAmount.toString(),10); });
+            if(reward>0){ if(soundOn) successSound.play(); showEvent('reward',`+${reward} GP`,reward); }
+            else{ if(soundOn) failureSound.play(); showEvent('lost','획득 실패',0);}            
+            map.removeLayer(m.marker); m.marker=null;
+          }catch(err){ if(soundOn) failureSound.play(); showEvent('lost','에러 발생',0); }
+        });
       }
     });
-  });
+  }, err => console.error(err), { enableHighAccuracy: true });
+
+  // Controls
+  document.getElementById('locateBtn').onclick=()=>navigator.geolocation.getCurrentPosition(p=>map.setView([p.coords.latitude,p.coords.longitude],19));
+  document.getElementById('homeBtn').onclick=()=>location.href='/';
+  document.getElementById('soundToggle').onclick=()=>{soundOn=!soundOn;document.getElementById('soundToggle').textContent=soundOn?'🔊':'🔇';};
 }
-
-/* 버튼 */
-document.getElementById("locateBtn").addEventListener("click", () => {
-  if (userLat && userLon) map.setView([userLat, userLon], 19);
-});
-document.getElementById("homeBtn").addEventListener("click", () => {
-  window.location.href = "/";
-});
-
-/* 사운드 토글 */
-let soundOn = true;
-document.getElementById("soundToggle").addEventListener("click", () => {
-  soundOn = !soundOn;
-  document.getElementById("soundToggle").textContent = soundOn ? "🔊" : "🔇";
-});
-
-/* 실행 */
-(async () => {
-  await connectWallet();
-  await loadMonsters();
-  requestLocation();
-})();
-
-
+initialize();
   </script>
 </body>
 </html>
