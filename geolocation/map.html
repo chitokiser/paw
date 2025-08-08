@@ -246,12 +246,17 @@ async function initialize() {
         m.marker.on('click',async ()=>{
           if (soundOn) clickSound.play().catch(e => {/* ignore unsupported */});
           try{
-            const tx=await contract.hunt(m.mid,m.pass); const rc=await tx.wait(); let reward=0;
+            const tx=await contract.hunt(m.mid,m.pass); 
+            const rc=await tx.wait(); 
+            let reward=0;
             rc.events.forEach(e=>{ if(e.event==='RewardGiven') reward=parseInt(e.args.rewardAmount.toString(),10); });
-            if(reward>0){ if (soundOn) successSound.play().catch(e => {/* ignore unsupported */}); showEvent('reward',`+${reward} GP`,reward); }
+            if(reward>0){ if (soundOn) successSound.play().catch(e => {/* ignore unsupported */});
+             showEvent('reward',`+${reward} GP`,reward); }
             else{ if (soundOn) failureSound.play().catch(e => {/* ignore unsupported */}); showEvent('lost','획득 실패',0);}            
             map.removeLayer(m.marker); m.marker=null;
-          }catch(err){ if(soundOn) failureSound.play(); showEvent('lost','에러 발생',0); }
+          }catch(err){ if(soundOn) 
+            failureSound.play(); 
+            showEvent('lost','에러 발생',0); }
         });
       }
     });

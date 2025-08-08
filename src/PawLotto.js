@@ -1,6 +1,6 @@
 
 const RelayLottoAddress = {
-  RelayLottoAddr: "0x6Cc95e853ae8572A1e2bB8038169ED60afA839e6" // PawLotto
+  RelayLottoAddr: "0xbab89d17BC73a9cD168Cf93E4B0B57C25B88f67B" // PawLotto
 };
 
 const RelayLottoAbi = [
@@ -181,18 +181,14 @@ async function CreateGame() {
  * 이모지 버튼 렌더링
  *************************************/
 const puppyEmojis = [
-  "🐶","🐕","🦮","🐕‍🦺","🐩","🐾","🐺","🦊","🐱","🐈",
-  "🦁","🐯","🐻","🐼","🐨","🐸","🐵","🦍","🐔","🐧",
-  "🐦","🦉","🦅","🦆","🦢","🦜","🦩","🦚","🐤","🐣",
-  "🐥","🦄","🐴","🐗","🐽","🐷","🐸","🐭","🐹","🐰",
-  "🦝","🦔","🦨","🦡","🐻"
+  "🐶","🐺","🦊","🐱","🦁","🐯","🐻","🐼","🐨","🐸"
 ];
 
 let selectedNumbers = {};
 
 function renderEmojiInputs(gameId) {
   let container = `<div class="emoji-grid">`;
-  for (let i = 0; i < 45; i++) {
+  for (let i = 0; i < 10; i++) {
     container += `<button type="button" class="emoji-btn" data-game="${gameId}" data-value="${i + 1}" onclick="selectEmoji(${gameId}, ${i + 1})">${puppyEmojis[i]}</button>`;
   }
   container += `</div>`;

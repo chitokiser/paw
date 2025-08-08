@@ -1,27 +1,22 @@
-/* 이미지 버튼 그리드 */
 .emoji-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  max-width: 260px;
-  margin: auto;
-}
-.emoji-btn {
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
-  padding: 2px;
-  width: 40px;
-  height: 40px;
-}
-.emoji-btn.selected {
-  border: 2px solid #007bff;
-  background: #e6f0ff;
-}
-/* 선택한 이미지 표시 영역 */
-.selected-display {
-  text-align: center;
-  font-size: 20px;
-  margin-top: 8px;
-}
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    justify-items: center;
+  }
+  .emoji-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+  }
+  .emoji-btn.selected {
+    outline: 2px solid #007bff;
+    border-radius: 8px;
+  }
+  .puppy-img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+  }
