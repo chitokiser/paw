@@ -16,24 +16,32 @@
     <title>PAW DAO</title>
 </head>
 <body>
-    <!-- Placeholder for dynamic header -->
+   <!-- Placeholder for dynamic header -->
     <div id="menu-placeholder"></div>
 
-    <script>
-      // Load header dynamically from dashboard.html
-      fetch('dashboard.html')
-          .then(response => response.text())
-          .then(data => {
-              document.getElementById('menu-placeholder').innerHTML = data;
-              
-              // After injecting content, dynamically load the topinfo.js script
-              const script = document.createElement('script');
-              script.src = '../src/topinfo.js';
-              script.type = 'text/javascript';
-              document.body.appendChild(script);  // Append the script to the body
-          })
-          .catch(error => console.error('Error loading the dashboard content:', error));
-  </script>
+
+<script>
+  fetch('dashboard.html')
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById('menu-placeholder').innerHTML = data;
+
+      // DOM 삽입 후 스크립트 로드
+      const script = document.createElement('script');
+      script.src = '../src/topinfo.js';
+      script.type = 'text/javascript';
+
+      // 스크립트가 로드된 이후 실행 보장
+      script.onload = () => {
+        if (typeof topData === 'function') {
+          topData();  // topinfo.js 내부 함수 실행
+        }
+      };
+
+      document.body.appendChild(script);
+    })
+    .catch(error => console.error('Error loading the dashboard content:', error));
+</script>
 
        
 

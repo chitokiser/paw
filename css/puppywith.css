@@ -1,0 +1,47 @@
+
+    body{font-family:Arial,Helvetica,sans-serif;background:#f5f7fa;margin:0;padding:2rem}
+    input{padding:.5rem;border:1px solid #ccc;border-radius:4px;width:200px;margin-right:.5rem}
+    button{padding:.5rem 1rem;border:none;border-radius:4px;background:#1976d2;color:#fff;cursor:pointer}
+    #status{margin-top:1rem;font-size:.9rem;color:#555}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:2rem}
+    .pcard{background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.1);padding:1rem;display:flex;flex-direction:column;align-items:center}
+    .img-container{width:100%;display:flex;justify-content:center;margin-bottom:.5rem}
+    .puppy-img{width:50%;border-radius:6px;object-fit:cover}
+    .stats{font-size:.8rem;line-height:1.3;margin-top:.4rem;text-align:left;width:100%}
+    @media(max-width:600px){.grid{grid-template-columns:1fr}.puppy-img{width:80%;}}
+
+    /* 능력치 게이지 표시*/
+.stat-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: flex-start; /* 제목을 카드의 왼쪽에 붙이기 */
+}
+
+.stat-line {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.stat-label {
+  width: 36px;
+  text-align: left;
+  font-weight: bold;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.stat-bar-horizontal {
+  flex: 1;
+  height: 14px;
+  background-color: #eee;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.stat-fill-horizontal {
+  height: 100%;
+  transition: width 0.3s ease;
+}

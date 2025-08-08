@@ -1,33 +1,38 @@
-butbody {
-  font-size: .875rem;
-  background-color: #ffffff; /* 흰색 배경 */
+/* ───────────────────────────────────────────────────────────────────
+   Reset & Global
+─────────────────────────────────────────────────────────────────── */
+/* 브라우저 기본 여백 제거 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
+body {
+  font-size: .875rem;
+  /* 페이지 전체 배경을 연한 회색으로 */
+  background-color: #f8f9fa;
+}
+
+/* 아이콘용 클래스 */
 .feather {
   width: 16px;
   height: 16px;
   vertical-align: text-bottom;
 }
 
-/*
- * Sidebar
- */
-
+/* ───────────────────────────────────────────────────────────────────
+   Sidebar
+─────────────────────────────────────────────────────────────────── */
 .sidebar {
   position: fixed;
   top: 0;
-  /* rtl:raw:
-  right: 0;
-  */
-  bottom: 0;
-  /* rtl:remove */
   left: 0;
-  z-index: 100;
-  /* Behind the navbar */
-  padding: 48px 0 0;
-  /* Height of navbar */
+  bottom: 0;
+  z-index: 100;            /* navbar 아래 */
+  padding: 48px 0 0;       /* navbar 높이만큼 패딩 */
   box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
-  background-color: #ffffff; /* 흰색 배경 */
+  background-color: #ffffff;
 }
 
 @media (max-width: 767.98px) {
@@ -43,8 +48,7 @@ butbody {
   padding-top: .5rem;
   overflow-x: hidden;
   overflow-y: auto;
-  /* Scrollable contents if viewport is shorter than content. */
-  background-color: #ffffff; /* 흰색 배경 */
+  background-color: transparent !important;
 }
 
 .sidebar .nav-link {
@@ -71,16 +75,29 @@ butbody {
   text-transform: uppercase;
 }
 
-/*
- * Navbar
- */
+/* ───────────────────────────────────────────────────────────────────
+   Navbar
+─────────────────────────────────────────────────────────────────── */
+.navbar {
+  /* 화면 폭 전체 사용 */
+  width: 100%;
+}
+
+.navbar .container {
+  /* 컨테이너 패딩 제거하여 좌우 꽉 채움 */
+  max-width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin: 0 !important;
+}
 
 .navbar-brand {
   padding-top: .75rem;
   padding-bottom: .75rem;
   font-size: 1rem;
-  background-color: #ffffff; /* 흰색 배경 */
-  box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1); /* 기존 box-shadow 유지 */
+  /* 로고 배경 투명 처리 */
+  background-color: transparent !important;
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
 }
 
 .navbar .navbar-toggler {
@@ -96,11 +113,11 @@ butbody {
 
 .form-control-dark {
   color: #000; /* 검은 글자 */
-  background-color: #ffffff; /* 흰색 배경 */
+  background-color: #ffffff; /* 입력폼만 흰색 유지 */
   border-color: rgba(0, 0, 0, .1);
 }
 
 .form-control-dark:focus {
   border-color: transparent;
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, .25); /* 흰 배경에 맞는 box-shadow */
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, .25);
 }

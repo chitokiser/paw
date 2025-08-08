@@ -244,7 +244,7 @@ async function loadMonsters() {
 function updateUserMarker(lat, lon) {
 const puppyIcon = L.icon({
   iconUrl: '../images/face.png',  // 로컬 이미지 경로로 변경
-  iconSize: [48, 48],
+  iconSize: [80, 80],
   iconAnchor: [16, 16],
   popupAnchor: [0, -16]
 });
@@ -308,7 +308,7 @@ function requestLocation() {
         if (!monster.marker) {
           const icon = L.icon({
             iconUrl: monster.imagesURL,
-            iconSize: [60, 60],
+            iconSize: [80, 80],
             iconAnchor: [30, 30]
           });
           monster.marker = L.marker([monster.lat, monster.lon], { icon }).addTo(map);
