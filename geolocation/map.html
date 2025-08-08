@@ -318,27 +318,23 @@ function requestLocation() {
               const tx = await contract.hunt(monster.mid, monster.pass);
               const receipt = await tx.wait();
 
-              let enemyPower = null;
-              let myPower = null;
-              let rewardAmount = 0;
-              let resultMsg = "";
-
-              // 이벤트 파싱
-              receipt.events.forEach(ev => {
-                if (ev.event === "Lost") {
-                  enemyPower = ev.args.enemyPower.toString();
-                  myPower = ev.args.myPower.toString();
-                  resultMsg = `Lost (${myPower} vs ${enemyPower})`;
+              // ─── 여기부터 수정된 부분 ────────────────────────────
+                let rewardAmount = 0;
+                receipt.events.forEach(ev => {
+                  if (ev.event === "RewardGiven") {
+                    rewardAmount = parseInt(ev.args.rewardAmount.toString(),10);
+                  }
+                });
+                if (rewardAmount > 0) {
+                  showEvent(
+                    "reward",
+                    `+${rewardAmount} GP 획득!`,
+                    rewardAmount
+                  );
+                } else {
+                  showEvent("lost","획득 실패...",0);
                 }
-                if (ev.event === "RewardGiven") {
-                  rewardAmount = parseInt(ev.args.rewardAmount.toString());
-                  resultMsg = `Win +${rewardAmount} GP (${myPower || "?"} vs ${enemyPower || "?"})`;
-                }
-              });
-
-              // 메시지 출력
-              const type = resultMsg.includes("Win") ? "reward" : "lost";
-              showEvent(type, resultMsg, rewardAmount);
+                // ─── 여기까지 ───────────────────────────────────────
 
               // 몬스터 부활 로직
               map.removeLayer(monster.marker);
