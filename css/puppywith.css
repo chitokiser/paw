@@ -45,3 +45,16 @@
   height: 100%;
   transition: width 0.3s ease;
 }
+
+
+.status-box {
+  font-size: 2rem; /* 기존 small 대비 약 2배 */
+  font-weight: bold;
+  color: #17a2b8; /* Bootstrap text-info 색상 */
+  text-align: center;
+  padding: 12px 20px;
+  margin: 15px auto;
+  border-radius: 10px;
+  background: rgba(23, 162, 184, 0.1); /* 은은한 배경 */
+  display: inline-block;
+}
