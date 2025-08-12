@@ -43,7 +43,7 @@ let topSync = async () => {
   const total  = await contractRead.pid();
   const izum  = await contractRead.g1();
   document.getElementById("totalPid").textContent = total.toString();
-  document.getElementById("Zumbal").textContent = izum;
+  document.getElementById("Pupbal").textContent = izum;
 };
 
 

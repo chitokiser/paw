@@ -1,5 +1,5 @@
 // PuppyRace 컨트랙트 주소 & ABI(필요한 함수만 포함)
-const PUPPYRACE_ADDR = "0xb6a69e142389E0fBE76ced0503C7fBfB2893c238"; //PuppyRace
+const PUPPYRACE_ADDR = "0xC8f946174a5DE63B31d19F36A5180aCbCD401B50"; //PuppyRace
 const ABI = [
   "function getbt() view returns(uint8)",
   "function myPuppy(address) view returns(uint8)",
