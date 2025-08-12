@@ -27,9 +27,32 @@
   <div class="text-center my-4">
     <p class="fs-4 fw-bold text-primary">Hunting with a dog</p>
     <p class="text-muted">Mobile Only</p>
-    <button onclick="location.href='../geolocation/map.html'" class="btn btn-primary">
-      🦴 Start Hunting
-    </button>
+   <!-- CTA Card -->
+<section class="cta-wrap">
+  <div class="cta-card">
+    <h2 class="cta-title">GeoHunt</h2>
+    <p class="cta-sub">모드를 선택하세요</p>
+
+    <div class="cta-buttons">
+      <!-- 운영 / 블록체인 -->
+      <a href="../geolocation/map.html" class="btn btn--chain" aria-label="Start Hunting (Blockchain)">
+        <span class="btn__icon">🦴</span>
+        <span class="btn__text">Start Hunting</span>
+        <span class="btn__badge">CHAIN</span>
+      </a>
+
+      <!-- 데모 / 누구나 체험 -->
+      <a href="../geolocation/map_demo.html" class="btn btn--demo" aria-label="Start Hunting Demo (No Wallet)">
+        <span class="btn__icon">🧪</span>
+        <span class="btn__text">Start Hunting Demo</span>
+        <span class="btn__badge">NO WALLET</span>
+      </a>
+    </div>
+
+    <p class="cta-hint">Demo는 블록체인 기록 없이 Firestore에만 적립됩니다.</p>
+  </div>
+</section>
+
   </div>
 
   <!-- Monster Section -->

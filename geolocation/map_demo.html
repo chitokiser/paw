@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GeoHunt – Demo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="map.css" />
+</head>
+<body>
+  <div id="map"></div>
+  <div id="eventToast"></div>
+  <div id="eventLog"><ul id="eventList"></ul></div>
+
+  <div class="bottom-controls">
+    <button id="compassBtn">🧭</button>
+    <button id="homeBtn">Home</button>
+    <button id="locateBtn">📍</button>
+  </div>
+  <button id="soundToggle">🔊</button>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- ethers 불필요 -->
+  <script type="module" src="map_demo.js"></script>
+</body>
+</html>
