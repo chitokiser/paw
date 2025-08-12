@@ -2,7 +2,10 @@ const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220"; // geohun
 const CONTRACT_ABI = [
   "function mons(uint) view returns (string memory name,uint mid,uint power)",
   "function mid() view returns (uint)",
-  "function getmymon(address user) external view returns (uint256[] memory)"
+  "function getmymon(address user) external view returns (uint256[] memory)",
+   // 추가: 포인트/클레임
+  "function mypoint(address user) view returns (uint256)",
+  "function claimScore() external",
 ];
 
 let provider, signer, contract;
@@ -111,8 +114,32 @@ async function showMyMon() {
   `;
 }
 
-// 전역 등록
-window.showMyMon = showMyMon;
+/* ───── 추가: 포인트 조회/클레임 헬퍼 (원하면 버튼에 연결하세요) ───── */
+async function getMyPoint() {
+  if (!window.contract || !signer) throw new Error("지갑 연결 필요");
+  const addr = await signer.getAddress();          // msg.sender
+  const p = await window.contract.mypoint(addr);   // 항상 자신의 주소로 호출
+  return Number(p.toString());                     // BigNumber → Number
+}
 
+
+async function claimScoreNow() {
+  if (!window.contract || !signer) return;
+  try {
+    const tx = await window.contract.claimScore(); // msg.sender 기준
+    await tx.wait();
+    const point = await getMyPoint();
+    const el = document.getElementById("myPoint");
+    if (el) el.textContent = `${point} P`;
+  } catch (e) {
+    console.error("claimScore 실패:", e);
+  }
+}
+
+
+// 전역 등록 (필요 시 HTML에서 호출)
+window.showMyMon = showMyMon;
+window.getMyPoint = getMyPoint;
+window.claimScoreNow = claimScoreNow;
 // 지갑 연결
 connectWallet();

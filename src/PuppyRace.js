@@ -113,24 +113,27 @@ let iface = new ethers.utils.Interface(ABI);
 let found = false; 
 await showDogFrameAnimationBig(); 
 for (const log of receipt.logs) { 
-try { 
-const parsed = iface.parseLog(log); 
-const { name, args } = parsed; 
-if (name === "RewardGiven") { 
-found = true; 
-document.getElementById("raceRank").textContent = args.myPower; 
-document.getElementById("rewardAmount").textContent = Number(ethers.utils.formatEther(args.amount)).toFixed(2); 
-logEvent(`🎉 Reward: ${ethers.utils.formatEther(args.amount)} GP (rank ${args.myPower})`); 
-} 
-if (name === "Bonus") { 
-document.getElementById("bonusAmount").textContent = Number(ethers.utils.formatEther(args.amount)).toFixed(2); 
-logEvent(`🎁 Bonus: ${ethers.utils.formatEther(args.amount)} GP (stat ${args.reward})`); 
-} 
-if (name === "lost") { 
-found = true; 
-document.getElementById("raceRank").textContent = args.myPower;
-logEvent(`😢 Defeat! GP disappears (rank ${args.myPower})`);
-}
+    try { 
+        const parsed = iface.parseLog(log); 
+        const { name, args } = parsed; 
+
+        if (name === "RewardGiven") { 
+            found = true; 
+            document.getElementById("raceRank").textContent = args.myPower; 
+            document.getElementById("rewardAmount").textContent = Number(args.amount).toFixed(2); 
+            logEvent(`🎉 Reward: ${Number(args.amount).toFixed(2)} GP (rank ${args.myPower})`); 
+        } 
+
+        if (name === "Bonus") { 
+            document.getElementById("bonusAmount").textContent = Number(args.amount).toFixed(2); 
+            logEvent(`🎁 Bonus: ${Number(args.amount).toFixed(2)} GP (stat ${args.reward})`); 
+        } 
+
+        if (name === "lost") { 
+            found = true; 
+            document.getElementById("raceRank").textContent = args.myPower;
+            logEvent(`😢 Defeat! GP disappears (rank ${args.myPower})`);
+        }
 } catch (e) { }
 }
 if (!found) logEvent("No result (Event not detected)");

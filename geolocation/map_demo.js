@@ -117,26 +117,22 @@ function getEnemyPower(m){
 }
 // 내 능력치(운영 느낌: 누적 GP와 이동거리 기반)
 function getMyPower(){
-  // 예시: GP의 기여 0.5배 + 이동거리(km) 1배 + 최소 1
   const gpPart   = userStats.totalGP * 0.5;
   const kmPart   = (userStats.totalDistanceM || 0) / 1000;
   const raw      = gpPart + kmPart;
   return Math.max(1, Math.floor(raw));
 }
-// 승률 곡선(운영 유사: 로지스틱)
-// delta=내파워-적파워, k가 클수록 곡선 완만
+// 승률 곡선(운영 유사)
 function winProbability(myPower, enemyPower, k=3){
   const delta = myPower - enemyPower;
   const p = 1 / (1 + Math.exp(-(delta)/k));
-  return Math.min(0.9, Math.max(0.1, p)); // 10%~90%로 클램프
+  return Math.min(0.9, Math.max(0.1, p)); // 10%~90%
 }
 // 보상 범위(난이도 비례)
-// 기본: 적파워*2 ~ 적파워*6, 내파워 우위/열세에 따라 가중
 function rewardRange(myPower, enemyPower){
   const baseMin = Math.max(1, enemyPower * 2);
   const baseMax = Math.max(baseMin, enemyPower * 6);
   const diff    = myPower - enemyPower;
-  // diff가 높을수록 상한은 약간 내려가고, 낮을수록 상한을 유지(난이도 높으면 상한 유지)
   const scale   = diff >= 0 ? Math.max(0.8, 1 - diff * 0.03) : Math.min(1.2, 1 - diff * 0.01);
   const minR    = Math.floor(baseMin * Math.min(1.1, Math.max(0.9, scale)));
   const maxR    = Math.floor(baseMax * Math.min(1.1, Math.max(0.8, 1.0 * (diff<0?1.05:scale))));
@@ -156,6 +152,108 @@ async function setCaught(mid){
   },{merge:true});
 }
 
+/* ───────────────────── Quick Tap Challenge ───────────────────── */
+function ensureTapOverlay() {
+  let ov = document.getElementById('tapOverlay');
+  if (ov) return ov;
+  ov = document.createElement('div');
+  ov.id = 'tapOverlay';
+  Object.assign(ov.style, {
+    position:'fixed', inset:'0', background:'rgba(0,0,0,0.55)', zIndex:'9999',
+    display:'none', alignItems:'center', justifyContent:'center'
+  });
+
+  const card = document.createElement('div');
+  Object.assign(card.style, {
+    width:'min(360px,92%)', background:'#111827', color:'#e5e7eb',
+    border:'1px solid rgba(255,255,255,.12)', borderRadius:'16px',
+    padding:'18px', textAlign:'center', boxShadow:'0 20px 40px rgba(0,0,0,.35)'
+  });
+
+  const title = document.createElement('h3');
+  title.textContent = 'Quick Hit!';
+  Object.assign(title.style, {margin:'0 0 6px', fontWeight:'800', fontSize:'20px'});
+
+  const desc = document.createElement('p'); desc.id = 'tapDesc';
+  Object.assign(desc.style, {margin:'0 0 10px', color:'#93a3b8', fontSize:'14px'});
+
+  const status = document.createElement('div'); status.id = 'tapStatus';
+  Object.assign(status.style, {margin:'0 0 12px', fontSize:'14px'});
+
+  const hitBtn = document.createElement('button'); hitBtn.id = 'tapHitBtn'; hitBtn.textContent = 'HIT!';
+  Object.assign(hitBtn.style, {
+    padding:'12px 18px', borderRadius:'14px', border:'0', cursor:'pointer',
+    background:'#2563eb', color:'#fff', fontWeight:'800', fontSize:'16px',
+    width:'100%', boxShadow:'0 10px 18px rgba(37,99,235,.35)'
+  });
+
+  const cancel = document.createElement('button'); cancel.id='tapCancel'; cancel.textContent='Cancel';
+  Object.assign(cancel.style, {
+    marginTop:'10px', background:'transparent', color:'#93a3b8', border:'0', cursor:'pointer', fontSize:'13px'
+  });
+
+  card.append(title, desc, status, hitBtn, cancel);
+  ov.append(card);
+  document.body.appendChild(ov);
+  return ov;
+}
+
+// mid에 따른 탭 도전 (성공: true / 실패: false)
+// 시간 = 0.5s × id, 필요 횟수 = ceil(id/2)
+function tapChallenge(mid) {
+  const idNum = Math.max(1, Number(mid) || 1);
+  const windowMs = 500 * idNum;
+  const required = Math.max(1, Math.ceil(idNum / 2));
+  const overlay = ensureTapOverlay();
+
+  const desc = document.getElementById('tapDesc');
+  const status = document.getElementById('tapStatus');
+  const hitBtn = document.getElementById('tapHitBtn');
+  const cancel = document.getElementById('tapCancel');
+
+  desc.textContent = `Hit ${required} time(s) within ${(windowMs/1000).toFixed(1)}s (Monster #${idNum})`;
+  status.textContent = `Hits: 0 / ${required} · Time left: ${(windowMs/1000).toFixed(1)}s`;
+
+  let hits = 0, done = false, resolveFn;
+  overlay.style.display = 'flex';
+
+  const start = Date.now();
+  const timer = setInterval(() => {
+    const remain = Math.max(0, windowMs - (Date.now() - start));
+    status.textContent = `Hits: ${hits} / ${required} · Time left: ${(remain/1000).toFixed(1)}s`;
+    if (remain <= 0) {
+      clearInterval(timer);
+      if (!done) finish(false);
+    }
+  }, 50);
+
+  function finish(ok) {
+    done = true;
+    overlay.style.display = 'none';
+    clearInterval(timer);
+    hitBtn.onclick = null;
+    cancel.onclick = null;
+    resolveFn?.(ok);
+  }
+
+  hitBtn.onclick = () => {
+    hits++;
+    try { clickSound?.play()?.catch(()=>{}); } catch {}
+    if (hits >= required && !done) finish(true);
+  };
+  cancel.onclick = () => !done && finish(false);
+
+  return new Promise((resolve) => { resolveFn = resolve; });
+}
+
+/* ───────────── Angry Follower(분노 추격) 설정 ───────────── */
+const angryIcon = L.divIcon({
+  className: 'angry-mon',
+  html: '😡',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
+});
+
 /* Init */
 async function initialize(){
   await ensureUserDoc();
@@ -168,7 +266,11 @@ async function initialize(){
 
   const monsters=[];
   (await getDocs(collection(db,'monsters'))).forEach(s=>{
-    const d=s.data(); d.marker=null; d.caught=false; d._busy=false; monsters.push(d);
+    const d=s.data();
+    d.marker=null; d.caught=false; d._busy=false;
+    d.angryUntil=0;           // 분노 종료 시각 (timestamp ms)
+    d.follower=null;          // 분노 추격 마커
+    monsters.push(d);
   });
 
   let userCircle, first=true;
@@ -254,12 +356,39 @@ async function initialize(){
       pathLatLngs.push([lat,lon]); pathLine.setLatLngs(pathLatLngs);
     }
 
-    // 몬스터(데모에서도 표시 + 사냥 가능, 난이도 기반 보상/승률)
+    // ───────── Angry followers: 플레이어 위치로 추격 마커를 갱신 ─────────
+    const now = Date.now();
+    monsters.forEach(m=>{
+      // 분노 시간 동안에는 플레이어를 따라다님
+      if (m.angryUntil && now < m.angryUntil) {
+        if (!m.follower) {
+          m.follower = L.marker([lat, lon], { icon: angryIcon })
+            .addTo(map)
+            .bindPopup('😡 Angry!');
+          showEvent('lost', `😡 Monster #${m.mid} is chasing you for 1 min`, 0);
+        } else {
+          m.follower.setLatLng([lat, lon]);
+        }
+      } else {
+        // 분노 종료: 추격 마커 제거(한 번만)
+        if (m.follower) {
+          map.removeLayer(m.follower);
+          m.follower = null;
+          m.angryUntil = 0;
+          showEvent('reward', `😌 Monster #${m.mid} calmed down`, 0);
+        }
+      }
+    });
+
+    // 몬스터(표시/사냥)
     monsters.forEach(m=>{
       if(m.caught) return;
-      const dist=getDistance(lat,lon,m.lat,m.lon);
 
-      if(dist<=20 && !m.marker){
+      const dist=getDistance(lat,lon,m.lat,m.lon);
+      const isAngry = m.angryUntil && now < m.angryUntil;
+
+      // 분노 중엔 고정 마커를 생성하지 않음(항상 플레이어를 따라다니므로)
+      if(!isAngry && dist<=20 && !m.marker){
         m.marker=L.marker([m.lat,m.lon],{
           icon:L.icon({iconUrl:m.imagesURL,iconSize:[80,80],iconAnchor:[30,30]})
         }).addTo(map);
@@ -268,8 +397,7 @@ async function initialize(){
         m.marker.on('click', async ()=>{
           if(m.caught){
             showEvent('lost','Monsters already caught',0);
-            if(soundOn) failureSound.play().catch(()=>{});
-            return;
+            if(soundOn) failureSound.play().catch(()=>{}); return;
           }
           if(m._busy) return;
           m._busy=true;
@@ -284,6 +412,22 @@ async function initialize(){
               m.caught=true;
               if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
             } else {
+              // ── Quick Tap 도전 ──
+              const passed = await tapChallenge(m.mid);
+              if (!passed) {
+                if (soundOn) failureSound.play().catch(()=>{});
+                showEvent('lost', 'Not enough hits', 0);
+
+                // 1분 분노 모드 ON: 플레이어를 추격
+                m.angryUntil = Date.now() + 60_000;
+
+                // 고정 마커 제거 (추격 모드만 유지)
+                if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
+                m._busy=false;
+                return;
+              }
+
+              // 도전 성공 → 난이도 기반 전투/보상
               const enemyP = getEnemyPower(m);
               const myP    = getMyPower();
               const pWin   = winProbability(myP, enemyP);
@@ -295,7 +439,6 @@ async function initialize(){
                 : 0;
 
               if (success) {
-                // 보상은 Firestore에만 반영
                 await awardGP(reward, lat, lon, Math.round(totalDistanceM));
                 await setCaught(m.mid);
 
@@ -319,6 +462,7 @@ async function initialize(){
         });
       }
 
+      // 반경 이탈 시 고정 마커 제거 (분노/포획 제외)
       if(dist>25 && m.marker && !m.caught){
         map.removeLayer(m.marker); m.marker=null;
       }
@@ -332,7 +476,10 @@ async function initialize(){
   if(locateBtn){
     locateBtn.onclick=()=>navigator.geolocation.getCurrentPosition(p=>map.setView([p.coords.latitude,p.coords.longitude],19));
   }
-  const homeBtn=document.getElementById('homeBtn'); if(homeBtn){ homeBtn.onclick=()=>location.href='/'; }
+  const homeBtn = document.getElementById('homeBtn');
+  if (homeBtn) {
+    homeBtn.onclick = () => location.href = '/geolocation/geohome.html';
+  }
   const soundToggle=document.getElementById('soundToggle'); if(soundToggle){
     soundToggle.onclick=()=>{ soundOn=!soundOn; soundToggle.textContent=soundOn?'🔊':'🔇'; };
   }

@@ -349,7 +349,7 @@ async function initialize() {
 
   const homeBtn = document.getElementById('homeBtn');
   if (homeBtn) {
-    homeBtn.onclick = () => location.href = '/';
+    homeBtn.onclick = () => location.href = '/geolocation/geohome.html';
   }
 
   const soundToggle = document.getElementById('soundToggle');
