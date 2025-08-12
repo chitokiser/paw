@@ -4,7 +4,7 @@ import {
   doc, setDoc, updateDoc, increment, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-// Firebase 설정
+/* ───────────────── Firebase ───────────────── */
 const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
@@ -17,7 +17,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Contract 정보
+/* ───────────────── Contract ───────────────── */
 const CONTRACT_ADDRESS = "0xE81E0976D6aa80c9C2C210cEA6106592feBEB220";
 const CONTRACT_ABI = [
   "function hunt(uint256 mid,uint256 pass) external",
@@ -27,7 +27,6 @@ const CONTRACT_ABI = [
 
 let provider, signer, contract, userAddress;
 
-// 지갑 연결
 async function connectWallet() {
   if (!window.ethereum) {
     alert("Metamask 필요");
@@ -40,14 +39,14 @@ async function connectWallet() {
   contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 }
 
-// 사운드 (경로 통일)
+/* ───────────────── Sounds ───────────────── */
 const clickSound   = new Audio('../sounds/hit.mp3');
 const successSound = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
 const failureSound = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
 const barkSound    = new Audio('../sounds/puppybark.mp3');
 let soundOn = true;
 
-// 거리 계산 (Haversine)
+/* ───────────────── Utils ───────────────── */
 function getDistance(a, b, c, d) {
   const R = 6371000, t = x => x * Math.PI / 180;
   const φ1 = t(a), φ2 = t(c), dφ = t(c - a), dλ = t(d - b);
@@ -55,7 +54,7 @@ function getDistance(a, b, c, d) {
   return R * 2 * Math.atan2(Math.sqrt(A), Math.sqrt(1 - A));
 }
 
-// Firestore: 사용자 누적 문서 보장
+/* ─────────────── Firestore helpers ─────────────── */
 async function ensureUserDoc() {
   const uref = doc(db, "users", userAddress);
   await setDoc(uref, {
@@ -66,7 +65,6 @@ async function ensureUserDoc() {
   }, { merge: true });
 }
 
-// Firestore: 10m당 GP 적립 로그 + 누적 업데이트
 async function awardGP(gpUnits, lat, lon, totalDistanceM) {
   if (gpUnits <= 0) return;
   const logs = collection(db, "walk_logs");
@@ -86,13 +84,13 @@ async function awardGP(gpUnits, lat, lon, totalDistanceM) {
   });
 }
 
-// 블록체인: 1km 달성 시 저장 호출(중복 방지)
-let lastKmSaved = 0; // 누적 km의 바닥값 기록
+/* ────────────── Chain persist per 1km ───────────── */
+let lastKmSaved = 0;
 async function persistToChainOnEachKm(totalDistanceM) {
   const kmFloor = Math.floor(totalDistanceM / 1000);
   if (kmFloor > lastKmSaved) {
     try {
-      const tx = await contract.hunt(5000, 1111);
+      const tx = await contract.hunt(5000, 1111); // 지정된 몬스터/패스워드
       await tx.wait();
       lastKmSaved = kmFloor;
       showEvent('reward', `✅ 블록체인 저장 완료 (${kmFloor} km)`, 0);
@@ -105,7 +103,7 @@ async function persistToChainOnEachKm(totalDistanceM) {
   }
 }
 
-// UI 토스트
+/* ───────────────── UI Toast ───────────────── */
 let eventToast, eventList;
 let totalScore = 0;
 function showEvent(type, message, reward = 0) {
@@ -123,19 +121,31 @@ function showEvent(type, message, reward = 0) {
   while (eventList.children.length > 12) eventList.removeChild(eventList.lastChild);
 }
 
-// 초기화
+/* ─────────────── Speed Filter (anti-vehicle) ─────────────── */
+const SPEED_MIN_WALK = 0.2;   // m/s: 정지/드리프트 제외
+const SPEED_MAX_WALK = 2.5;   // m/s: 빠른 보행 ~ 조깅 경계
+const SPEED_VEHICLE  = 4.0;   // m/s: 이 이상이면 차량/오토바이 추정
+const RESUME_REQUIRE_SLOW_SAMPLES = 3; // 연속 n회 보행 감지 시 재개
+const PAUSE_REQUIRE_FAST_SAMPLES = 2;  // 연속 n회 차량 감지 시 일시정지
+
+let pausedBySpeed = false;
+let slowStreak = 0;
+let fastStreak = 0;
+let lastTs = null;
+
+/* ───────────────── Initialize ───────────────── */
 async function initialize() {
   await connectWallet();
   await ensureUserDoc();
 
-  // 지도 생성
+  // 지도
   const map = L.map('map', { maxZoom: 22 }).setView([41.6955932, 44.8357820], 19);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
   eventToast = document.getElementById('eventToast');
   eventList  = document.getElementById('eventList');
 
-  // 몬스터 불러오기
+  // 몬스터
   const monsters = [];
   (await getDocs(collection(db, 'monsters'))).forEach(docSnap => {
     const d = docSnap.data();
@@ -148,8 +158,8 @@ async function initialize() {
   // 유저 위치/경로
   let userCircle, first = true;
   let lastLat = null, lastLon = null;
-  let totalDistanceM = 0;          // 전체 누적 이동거리(m)
-  let pendingForGP = 0;            // GP 환산을 위해 누적 중인 미처리 거리(m)
+  let totalDistanceM = 0;
+  let pendingForGP = 0;
   const pathLatLngs = [];
   const pathLine = L.polyline(pathLatLngs, { weight: 5, opacity: 0.8 }).addTo(map);
 
@@ -174,73 +184,95 @@ async function initialize() {
     navigator.geolocation.getCurrentPosition(p => {
       lastLat = p.coords.latitude;
       lastLon = p.coords.longitude;
+      lastTs  = (typeof p.timestamp === 'number') ? p.timestamp : Date.now();
       updateUserMarker(lastLat, lastLon);
       pathLatLngs.push([lastLat, lastLon]);
       pathLine.setLatLngs(pathLatLngs);
     });
   }
 
-  // 위치 추적 + 게임 로직 + 경로/거리/GP 적립 (단 한 번만 등록)
+  // 위치 추적(단 한 번 등록)
   navigator.geolocation.watchPosition(async p => {
-    const { latitude: lat, longitude: lon, accuracy } = p.coords;
+    const { latitude: lat, longitude: lon, accuracy, speed: gpsSpeed } = p.coords;
+    const ts = (typeof p.timestamp === 'number') ? p.timestamp : Date.now();
 
-    // 노이즈 필터: 정확도 50m 초과는 무시
+    // 정확도 필터
     if (typeof accuracy === 'number' && accuracy > 50) return;
 
     updateUserMarker(lat, lon);
 
-    if (lastLat !== null && lastLon !== null) {
-      const step = getDistance(lastLat, lastLon, lat, lon);
+    // 속도 계산
+    let step = 0, dt = 0, calcSpeed = null;
+    if (lastLat !== null && lastLon !== null && lastTs !== null) {
+      step = getDistance(lastLat, lastLon, lat, lon);
+      dt = Math.max(0.001, (ts - lastTs) / 1000);
+      calcSpeed = step / dt;
+    }
+    const v = (typeof gpsSpeed === 'number' && gpsSpeed >= 0) ? gpsSpeed : calcSpeed;
 
-      // 점프 필터: 200m 이상 급격한 이동은 무시(스푸핑/점프 방지)
-      if (step > 0 && step < 200) {
-        totalDistanceM += step;
-        pendingForGP += step;
-
-        // 경로 그리기
-        pathLatLngs.push([lat, lon]);
-        pathLine.setLatLngs(pathLatLngs);
-
-        // 10m마다 1GP 적립
-        const units = Math.floor(pendingForGP / 10); // 10m 단위
-        if (units >= 1) {
-          try {
-            await awardGP(units, lat, lon, Math.round(totalDistanceM));
-            showEvent('reward', `+${units} GP (이동 ${units * 10}m)`, units);
-            pendingForGP = pendingForGP % 10; // 남은 잔여 거리 보존
-          } catch (e) {
-            console.warn("GP 적립 실패:", e);
-            showEvent('lost', 'GP 적립 실패', 0);
-          }
+    if (v !== null) {
+      if (v >= SPEED_VEHICLE) {               // 차량/오토바이로 판단
+        fastStreak++; slowStreak = 0;
+        if (!pausedBySpeed && fastStreak >= PAUSE_REQUIRE_FAST_SAMPLES) {
+          pausedBySpeed = true;
+          showEvent('lost', '🚫 Vehicle detected — GP paused', 0);
         }
-
-        // 1km 달성 시 블록체인 기록
-        await persistToChainOnEachKm(totalDistanceM);
+      } else if (v >= SPEED_MIN_WALK && v <= SPEED_MAX_WALK) { // 보행
+        slowStreak++; fastStreak = 0;
+        if (pausedBySpeed && slowStreak >= RESUME_REQUIRE_SLOW_SAMPLES) {
+          pausedBySpeed = false;
+          showEvent('reward', '✅ Walking detected — GP resumed', 0);
+        }
+      } else {
+        slowStreak = 0; fastStreak = 0;
       }
     }
 
-    lastLat = lat; lastLon = lon;
+    // 경로/적립
+    if (lastLat !== null && lastLon !== null) {
+      // 점프 필터
+      if (step > 0 && step < 200) {
+        // 경로는 계속 그림(필요시 pausedBySpeed일 때 생략 가능)
+        pathLatLngs.push([lat, lon]);
+        pathLine.setLatLngs(pathLatLngs);
 
-    // 몬스터 처리
+        if (!pausedBySpeed) {
+          totalDistanceM += step;
+          pendingForGP += step;
+
+          const units = Math.floor(pendingForGP / 10);
+          if (units >= 1) {
+            try {
+              await awardGP(units, lat, lon, Math.round(totalDistanceM));
+              showEvent('reward', `+${units} GP (이동 ${units * 10}m)`, units);
+              pendingForGP = pendingForGP % 10;
+            } catch (e) {
+              console.warn("GP 적립 실패:", e);
+              showEvent('lost', 'GP 적립 실패', 0);
+            }
+          }
+
+          await persistToChainOnEachKm(totalDistanceM);
+        }
+      }
+    } else {
+      // 최초 시작점
+      pathLatLngs.push([lat, lon]);
+      pathLine.setLatLngs(pathLatLngs);
+    }
+
+    // 몬스터
     monsters.forEach(m => {
-      if (m.caught) return; // 이미 잡은 몬스터는 스킵
-
+      if (m.caught) return;
       const dist = getDistance(lat, lon, m.lat, m.lon);
 
-      // 20m 이내 진입 && 아직 마커 없음 -> 마커 생성
       if (dist <= 20 && !m.marker) {
         m.marker = L.marker([m.lat, m.lon], {
-          icon: L.icon({
-            iconUrl: m.imagesURL,
-            iconSize: [80, 80],
-            iconAnchor: [30, 30]
-          })
+          icon: L.icon({ iconUrl: m.imagesURL, iconSize: [80, 80], iconAnchor: [30, 30] })
         }).addTo(map);
 
         m._busy = false;
-
         m.marker.on('click', async () => {
-          // 이미 잡힘 or 진행 중이면 무시
           if (m.caught) {
             showEvent('lost', 'Monsters already caught', 0);
             if (soundOn) failureSound.play().catch(()=>{});
@@ -250,7 +282,6 @@ async function initialize() {
           m._busy = true;
 
           if (soundOn) clickSound.play().catch(() => {});
-
           try {
             const tx = await contract.hunt(m.mid, m.pass);
             const rc = await tx.wait();
@@ -270,13 +301,10 @@ async function initialize() {
               m.caught = true;
             } else {
               if (soundOn) failureSound.play().catch(() => {});
-              showEvent('lost', '획득 실패', 0);
+              showEvent('lost', 'Failed to acquire', 0);
             }
 
-            if (m.marker) {
-              map.removeLayer(m.marker);
-              m.marker = null;
-            }
+            if (m.marker) { map.removeLayer(m.marker); m.marker = null; }
           } catch (err) {
             const emsg =
               err?.error?.message ||
@@ -288,12 +316,9 @@ async function initialize() {
             if (/already\s*caught/i.test(emsg) || /monster.*already/i.test(emsg)) {
               showEvent('lost', 'Monsters already caught', 0);
               m.caught = true;
-              if (m.marker) {
-                map.removeLayer(m.marker);
-                m.marker = null;
-              }
+              if (m.marker) { map.removeLayer(m.marker); m.marker = null; }
             } else {
-              showEvent('lost', '에러 발생', 0);
+              showEvent('lost', 'error occurred', 0);
             }
 
             if (soundOn) failureSound.play().catch(() => {});
@@ -303,24 +328,37 @@ async function initialize() {
         });
       }
 
-      // 20m 밖으로 나가면(멀어지면) 마커 제거 (이미 잡힌 건 냅둠)
+      // 반경 이탈 시 마커 제거
       if (dist > 25 && m.marker && !m.caught) {
         map.removeLayer(m.marker);
         m.marker = null;
       }
     });
+
+    lastLat = lat;
+    lastLon = lon;
+    lastTs  = ts;
   }, err => console.error(err), { enableHighAccuracy: true });
 
-  // 버튼 이벤트
-  document.getElementById('locateBtn').onclick = () =>
-    navigator.geolocation.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 19));
+  /* ───────────── Controls ───────────── */
+  const locateBtn = document.getElementById('locateBtn');
+  if (locateBtn) {
+    locateBtn.onclick = () =>
+      navigator.geolocation.getCurrentPosition(p => map.setView([p.coords.latitude, p.coords.longitude], 19));
+  }
 
-  document.getElementById('homeBtn').onclick = () => location.href = '/';
+  const homeBtn = document.getElementById('homeBtn');
+  if (homeBtn) {
+    homeBtn.onclick = () => location.href = '/';
+  }
 
-  document.getElementById('soundToggle').onclick = () => {
-    soundOn = !soundOn;
-    document.getElementById('soundToggle').textContent = soundOn ? '🔊' : '🔇';
-  };
+  const soundToggle = document.getElementById('soundToggle');
+  if (soundToggle) {
+    soundToggle.onclick = () => {
+      soundOn = !soundOn;
+      soundToggle.textContent = soundOn ? '🔊' : '🔇';
+    };
+  }
 }
 
 initialize();
