@@ -40,7 +40,7 @@ async function connectWallet() {
   contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 }
 
-// 사운드
+// 사운드 (경로 통일)
 const clickSound   = new Audio('../sounds/hit.mp3');
 const successSound = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
 const failureSound = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
@@ -95,7 +95,6 @@ async function persistToChainOnEachKm(totalDistanceM) {
       const tx = await contract.hunt(5000, 1111);
       await tx.wait();
       lastKmSaved = kmFloor;
-      // 알림
       showEvent('reward', `✅ 블록체인 저장 완료 (${kmFloor} km)`, 0);
       if (soundOn) successSound.play().catch(() => {});
     } catch (e) {
@@ -141,6 +140,8 @@ async function initialize() {
   (await getDocs(collection(db, 'monsters'))).forEach(docSnap => {
     const d = docSnap.data();
     d.marker = null;
+    d.caught = false;
+    d._busy  = false;
     monsters.push(d);
   });
 
@@ -179,7 +180,7 @@ async function initialize() {
     });
   }
 
-  // 위치 추적 + 게임 로직 + 경로/거리/GP 적립
+  // 위치 추적 + 게임 로직 + 경로/거리/GP 적립 (단 한 번만 등록)
   navigator.geolocation.watchPosition(async p => {
     const { latitude: lat, longitude: lon, accuracy } = p.coords;
 
@@ -222,33 +223,90 @@ async function initialize() {
 
     // 몬스터 처리
     monsters.forEach(m => {
+      if (m.caught) return; // 이미 잡은 몬스터는 스킵
+
       const dist = getDistance(lat, lon, m.lat, m.lon);
+
+      // 20m 이내 진입 && 아직 마커 없음 -> 마커 생성
       if (dist <= 20 && !m.marker) {
         m.marker = L.marker([m.lat, m.lon], {
-          icon: L.icon({ iconUrl: m.imagesURL, iconSize: [80, 80], iconAnchor: [30, 30] })
+          icon: L.icon({
+            iconUrl: m.imagesURL,
+            iconSize: [80, 80],
+            iconAnchor: [30, 30]
+          })
         }).addTo(map);
 
+        m._busy = false;
+
         m.marker.on('click', async () => {
+          // 이미 잡힘 or 진행 중이면 무시
+          if (m.caught) {
+            showEvent('lost', 'Monsters already caught', 0);
+            if (soundOn) failureSound.play().catch(()=>{});
+            return;
+          }
+          if (m._busy) return;
+          m._busy = true;
+
           if (soundOn) clickSound.play().catch(() => {});
+
           try {
             const tx = await contract.hunt(m.mid, m.pass);
             const rc = await tx.wait();
+
             let reward = 0;
-            rc.events.forEach(e => { if (e.event === 'RewardGiven') reward = parseInt(e.args.rewardAmount.toString(), 10); });
+            if (rc && Array.isArray(rc.events)) {
+              rc.events.forEach(e => {
+                if (e.event === 'RewardGiven') {
+                  reward = parseInt(e.args.rewardAmount.toString(), 10);
+                }
+              });
+            }
+
             if (reward > 0) {
               if (soundOn) successSound.play().catch(() => {});
               showEvent('reward', `+${reward} GP`, reward);
+              m.caught = true;
             } else {
               if (soundOn) failureSound.play().catch(() => {});
               showEvent('lost', '획득 실패', 0);
             }
-            map.removeLayer(m.marker);
-            m.marker = null;
-          } catch {
-            if (soundOn) failureSound.play();
-            showEvent('lost', '에러 발생', 0);
+
+            if (m.marker) {
+              map.removeLayer(m.marker);
+              m.marker = null;
+            }
+          } catch (err) {
+            const emsg =
+              err?.error?.message ||
+              err?.data?.message ||
+              err?.reason ||
+              err?.message ||
+              '';
+
+            if (/already\s*caught/i.test(emsg) || /monster.*already/i.test(emsg)) {
+              showEvent('lost', 'Monsters already caught', 0);
+              m.caught = true;
+              if (m.marker) {
+                map.removeLayer(m.marker);
+                m.marker = null;
+              }
+            } else {
+              showEvent('lost', '에러 발생', 0);
+            }
+
+            if (soundOn) failureSound.play().catch(() => {});
+          } finally {
+            m._busy = false;
           }
         });
+      }
+
+      // 20m 밖으로 나가면(멀어지면) 마커 제거 (이미 잡힌 건 냅둠)
+      if (dist > 25 && m.marker && !m.caught) {
+        map.removeLayer(m.marker);
+        m.marker = null;
       }
     });
   }, err => console.error(err), { enableHighAccuracy: true });
