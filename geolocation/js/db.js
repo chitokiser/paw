@@ -1,17 +1,18 @@
-// js/db.js
 import {
-  collection, addDoc, getDoc, doc, setDoc, updateDoc, increment, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-import { db, userAddress } from "./config.js";
+  db
+} from './config.js';
 
-export let userStats = { totalDistanceM: 0, totalGP: 0 };
+import {
+  collection, addDoc, doc, setDoc, getDoc, updateDoc, increment, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+
+import { userAddress } from './config.js';
+
+export const userStats = { totalDistanceM: 0, totalGP: 0 };
 
 export async function ensureUserDoc(){
   await setDoc(doc(db,'users',userAddress),{
-    address: userAddress,
-    totalDistanceM: 0,
-    totalGP: 0,
-    updatedAt: serverTimestamp()
+    address:userAddress, totalDistanceM:0, totalGP:0, updatedAt:serverTimestamp()
   },{merge:true});
   const snap = await getDoc(doc(db,'users',userAddress));
   if (snap.exists()) {
@@ -28,9 +29,7 @@ export async function awardGP(gpUnits, lat, lon, totalDistanceM){
     lat, lon, totalDistanceM, createdAt:serverTimestamp()
   });
   await updateDoc(doc(db,'users',userAddress),{
-    totalGP:increment(gpUnits),
-    totalDistanceM:increment(gpUnits*10),
-    updatedAt:serverTimestamp()
+    totalGP:increment(gpUnits), totalDistanceM:increment(gpUnits*10), updatedAt:serverTimestamp()
   });
   userStats.totalGP        += gpUnits;
   userStats.totalDistanceM += gpUnits * 10;
