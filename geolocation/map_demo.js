@@ -1,4 +1,3 @@
-// js/map_demo.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
 import {
   getFirestore, collection, getDocs, addDoc, getDoc,
@@ -83,7 +82,7 @@ async function persistToChainOnEachKm(totalDistanceM){
   const kmFloor=Math.floor(totalDistanceM/1000);
   if(kmFloor>lastKmSaved){
     lastKmSaved=kmFloor;
-    // 데모는 체인 호출 없음 (원하면 토스트만)
+    // 데모: 체인 저장 대신 토스트만 쓰고 싶으면 아래 주석 해제
     // showEvent('reward',`🧪 DEMO: 1km 달성 (${kmFloor} km)`,0);
   }
 }
@@ -107,28 +106,35 @@ const SPEED_MIN_WALK=0.2, SPEED_MAX_WALK=2.5, SPEED_VEHICLE=4.0;
 const RESUME_REQUIRE_SLOW_SAMPLES=3, PAUSE_REQUIRE_FAST_SAMPLES=2;
 let pausedBySpeed=false, slowStreak=0, fastStreak=0, lastTs=null;
 
+/* === 신규: 벙커/트랩에 의한 일시정지 관리 === */
+let pausedUntil = 0; // Date.now() 기준으로 이 시간 이전엔 GP 적립 중단
+function isGPActive(){
+  return !pausedBySpeed && Date.now() >= pausedUntil;
+}
+function pauseFor(ms, reason=''){
+  const until = Date.now() + ms;
+  if (until > pausedUntil) pausedUntil = until;
+  showEvent('lost', reason || `⏱️ GP paused for ${(ms/1000).toFixed(0)}s`, 0);
+}
+
 /* 난이도 기반 계산 로직 */
-// 몬스터 난이도(우선순위: power → level → difficulty → mid 기반 추정)
 function getEnemyPower(m){
   const p = Number(
     m.power ?? m.level ?? m.difficulty ?? ((m.mid % 10) + 1)
   );
   return Math.max(1, Math.floor(p));
 }
-// 내 능력치(운영 느낌: 누적 GP와 이동거리 기반)
 function getMyPower(){
   const gpPart   = userStats.totalGP * 0.5;
   const kmPart   = (userStats.totalDistanceM || 0) / 1000;
   const raw      = gpPart + kmPart;
   return Math.max(1, Math.floor(raw));
 }
-// 승률 곡선(운영 유사)
 function winProbability(myPower, enemyPower, k=3){
   const delta = myPower - enemyPower;
   const p = 1 / (1 + Math.exp(-(delta)/k));
   return Math.min(0.9, Math.max(0.1, p)); // 10%~90%
 }
-// 보상 범위(난이도 비례)
 function rewardRange(myPower, enemyPower){
   const baseMin = Math.max(1, enemyPower * 2);
   const baseMax = Math.max(baseMin, enemyPower * 6);
@@ -198,8 +204,7 @@ function ensureTapOverlay() {
   return ov;
 }
 
-// mid에 따른 탭 도전 (성공: true / 실패: false)
-// 시간 = 0.5s × id, 필요 횟수 = ceil(id/2)
+// mid에 따른 탭 도전
 function tapChallenge(mid) {
   const idNum = Math.max(1, Number(mid) || 1);
   const windowMs = 500 * idNum;
@@ -254,6 +259,53 @@ const angryIcon = L.divIcon({
   iconAnchor: [16, 16]
 });
 
+/* ───────────── 신규: BUNKER 아이콘/화살 아이콘 ───────────── */
+const bunkerIcon = L.divIcon({
+  className: 'bunker',
+  html: '🏰',
+  iconSize: [28,28],
+  iconAnchor: [14,14]
+});
+const arrowIcon = L.divIcon({
+  className: 'arrow',
+  html: '➳',
+  iconSize: [24,24],
+  iconAnchor: [12,12]
+});
+
+/* ───────────── 화살 애니메이션 ─────────────
+   bunker → (targetLat,targetLon)로 durationMs 동안 이동.
+   끝에서 플레이어와 2m 이내면 피격 판정. */
+function fireArrow(map, bunker, targetLat, targetLon, durationMs=800){
+  const start = { lat: bunker.lat, lon: bunker.lon };
+  const end   = { lat: targetLat,  lon: targetLon };
+  const marker = L.marker([start.lat, start.lon], { icon: arrowIcon, interactive:false }).addTo(map);
+
+  const begin = Date.now();
+  const timer = setInterval(()=>{
+    const t = Math.min(1, (Date.now() - begin) / durationMs);
+    const lat = start.lat + (end.lat - start.lat) * t;
+    const lon = start.lon + (end.lon - start.lon) * t;
+    marker.setLatLng([lat, lon]);
+
+    if (t >= 1) {
+      clearInterval(timer);
+      // 최종 충돌 판정 (현재 플레이어 위치와 2m 이내)
+      const u = map.userMarker?.getLatLng();
+      if (u){
+        const dist = getDistance(lat, lon, u.lat, u.lng);
+        if (dist <= 2){
+          if (soundOn) failureSound.play().catch(()=>{});
+          pauseFor(10_000, '🏹 Bunker arrow hit — GP paused 10s');
+        } else {
+          showEvent('reward', '🏹 Arrow missed', 0);
+        }
+      }
+      map.removeLayer(marker);
+    }
+  }, 30);
+}
+
 /* Init */
 async function initialize(){
   await ensureUserDoc();
@@ -264,6 +316,7 @@ async function initialize(){
   eventToast=document.getElementById('eventToast');
   eventList =document.getElementById('eventList');
 
+  /* ───────── Monsters ───────── */
   const monsters=[];
   (await getDocs(collection(db,'monsters'))).forEach(s=>{
     const d=s.data();
@@ -271,6 +324,44 @@ async function initialize(){
     d.angryUntil=0;           // 분노 종료 시각 (timestamp ms)
     d.follower=null;          // 분노 추격 마커
     monsters.push(d);
+  });
+
+  /* ───────── Bunkers (Firestore 우선, 없으면 데모값) ───────── */
+  const bunkers=[];
+  try{
+    const bq = await getDocs(collection(db,'bunkers'));
+    if (!bq.empty){
+      bq.forEach(s=>{
+        const b = s.data();
+        bunkers.push({
+          lat: Number(b.lat), lon: Number(b.lon),
+          range: Number(b.range ?? 5),                // 접근 거리 (m)
+          cooldownMs: Number(b.cooldownMs ?? 4000),   // 재장전 (ms)
+          arrowSpeed: Number(b.arrowSpeed ?? 40),     // m/s (거리 기반 비행시간 산출)
+          lastShot: 0,
+          marker: null
+        });
+      });
+    }
+  }catch(e){
+    console.warn('bunkers collection read failed, using demo bunkers', e);
+  }
+  if (bunkers.length===0){
+    // 데모용 2개 벙커
+    bunkers.push(
+      { lat:41.69560, lon:44.83578, range:5, cooldownMs:4000, arrowSpeed:40, lastShot:0, marker:null },
+      { lat:41.69565, lon:44.83583, range:5, cooldownMs:4000, arrowSpeed:40, lastShot:0, marker:null }
+    );
+  }
+
+  // 벙커 마커 렌더
+  bunkers.forEach(b=>{
+    b.marker = L.marker([b.lat, b.lon], { icon: bunkerIcon })
+      .addTo(map)
+      .bindPopup('🏰 Bunker');
+    // 사거리 표시 원(옵션)
+    const rCircle = L.circle([b.lat, b.lon], { radius: b.range, color:'#ff3b30', fillOpacity:0.08 });
+    rCircle.addTo(map);
   });
 
   let userCircle, first=true;
@@ -328,12 +419,34 @@ async function initialize(){
       }else{ slowStreak=0; fastStreak=0; }
     }
 
+    /* ───────── 벙커 사격 체크 ─────────
+       - 5m(혹은 설정 range) 이내 접근 시
+       - 쿨다운 경과하면 화살 발사
+       - 화살 비행시간 = 거리 / arrowSpeed */
+    const now = Date.now();
+    bunkers.forEach(b=>{
+      const dist = getDistance(lat,lon,b.lat,b.lon);
+      // 벙커 근접 알림 (최초 감지시)
+      if (dist <= b.range){
+        // 쿨다운 체크
+        if (now - (b.lastShot||0) >= (b.cooldownMs||4000)){
+          b.lastShot = now;
+          if (soundOn) clickSound.play().catch(()=>{});
+          showEvent('lost', '🏹 Bunker fired!', 0);
+
+          // 화살 비행시간 계산
+          const durationMs = Math.max(300, Math.min(1800, (dist / (b.arrowSpeed||40)) * 1000));
+          fireArrow(map, b, lat, lon, durationMs);
+        }
+      }
+    });
+
     // 경로/적립
     if(lastLat!==null && lastLon!==null){
       if(step>0 && step<200){
         pathLatLngs.push([lat,lon]); pathLine.setLatLngs(pathLatLngs);
 
-        if(!pausedBySpeed){
+        if(isGPActive()){
           totalDistanceM+=step; pendingForGP+=step;
 
           const units=Math.floor(pendingForGP/10);
@@ -357,9 +470,7 @@ async function initialize(){
     }
 
     // ───────── Angry followers: 플레이어 위치로 추격 마커를 갱신 ─────────
-    const now = Date.now();
     monsters.forEach(m=>{
-      // 분노 시간 동안에는 플레이어를 따라다님
       if (m.angryUntil && now < m.angryUntil) {
         if (!m.follower) {
           m.follower = L.marker([lat, lon], { icon: angryIcon })
@@ -370,7 +481,6 @@ async function initialize(){
           m.follower.setLatLng([lat, lon]);
         }
       } else {
-        // 분노 종료: 추격 마커 제거(한 번만)
         if (m.follower) {
           map.removeLayer(m.follower);
           m.follower = null;
@@ -387,7 +497,7 @@ async function initialize(){
       const dist=getDistance(lat,lon,m.lat,m.lon);
       const isAngry = m.angryUntil && now < m.angryUntil;
 
-      // 분노 중엔 고정 마커를 생성하지 않음(항상 플레이어를 따라다니므로)
+      // 분노 중엔 고정 마커 생성 안 함
       if(!isAngry && dist<=20 && !m.marker){
         m.marker=L.marker([m.lat,m.lon],{
           icon:L.icon({iconUrl:m.imagesURL,iconSize:[80,80],iconAnchor:[30,30]})
@@ -405,29 +515,25 @@ async function initialize(){
           if(soundOn) clickSound.play().catch(()=>{});
 
           try{
-            // 이미 잡았는지 Firestore로 확인
             if (await isCaught(m.mid)) {
               showEvent('lost','Monsters already caught',0);
               if(soundOn) failureSound.play().catch(()=>{});
               m.caught=true;
               if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
             } else {
-              // ── Quick Tap 도전 ──
               const passed = await tapChallenge(m.mid);
               if (!passed) {
                 if (soundOn) failureSound.play().catch(()=>{});
                 showEvent('lost', 'Not enough hits', 0);
 
-                // 1분 분노 모드 ON: 플레이어를 추격
+                // 1분 분노 모드
                 m.angryUntil = Date.now() + 60_000;
 
-                // 고정 마커 제거 (추격 모드만 유지)
                 if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
                 m._busy=false;
                 return;
               }
 
-              // 도전 성공 → 난이도 기반 전투/보상
               const enemyP = getEnemyPower(m);
               const myP    = getMyPower();
               const pWin   = winProbability(myP, enemyP);
