@@ -778,4 +778,10 @@ async function initialize(){
   }
 }
 
+// monsters 배열 채운 직후 1회:
+if (monsters.length) {
+  const m0 = monsters[0];
+  map.setView([m0.lat, m0.lon], 18);
+}
+
 initialize();

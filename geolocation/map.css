@@ -208,3 +208,13 @@ html, body {
   font-weight: 700;
   cursor: pointer;
 }
+/* 단일 스프라이트 시트용: 행(줄) 오프셋을 변수로 */
+.sprite {
+  background-position: 0 var(--by, 0px); /* Y를 변수로, X는 애니메이션에서 제어 */
+}
+
+/* 걷기(1행): y=0 */
+.sprite.row-walk { --by: 0px; }
+
+/* 공격(2행): y = -frameH */
+.sprite.row-attack { --by: calc(var(--fh, 80px) * -1); }
