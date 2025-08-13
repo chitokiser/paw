@@ -1,3 +1,4 @@
+// map_demo.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
 import {
   getFirestore, collection, getDocs, addDoc, getDoc,
@@ -42,9 +43,22 @@ function getDistance(a,b,c,d){
   const A=Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
   return R*2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
+// 위경도에서 목표까지 d미터만큼 한 스텝 이동(근사)
+function stepTowards(lat, lon, tgtLat, tgtLon, meters){
+  if (meters<=0) return {lat, lon};
+  const dist = getDistance(lat, lon, tgtLat, tgtLon);
+  if (dist === 0 || meters >= dist) return {lat: tgtLat, lon: tgtLon};
+  const ratio = meters / dist;
+  return { lat: lat + (tgtLat - lat) * ratio, lon: lon + (tgtLon - lon) * ratio };
+}
+function randInCircleMeters(baseLat, baseLon, radiusM){
+  const dLat = (Math.random()*2-1) * radiusM / 111320;
+  const dLon = (Math.random()*2-1) * radiusM / (111320 * Math.cos(baseLat*Math.PI/180));
+  return {lat: baseLat + dLat, lon: baseLon + dLon};
+}
 
 /* Firestore helpers (guest) */
-let userStats = { totalDistanceM: 0, totalGP: 0 }; // 로컬 캐시(보상 계산에 사용)
+let userStats = { totalDistanceM: 0, totalGP: 0 };
 
 async function ensureUserDoc(){
   await setDoc(doc(db,'users',userAddress),{
@@ -71,7 +85,6 @@ async function awardGP(gpUnits, lat, lon, totalDistanceM){
     totalDistanceM:increment(gpUnits*10),
     updatedAt:serverTimestamp()
   });
-  // 로컬 캐시 즉시 반영
   userStats.totalGP        += gpUnits;
   userStats.totalDistanceM += gpUnits * 10;
 }
@@ -82,7 +95,6 @@ async function persistToChainOnEachKm(totalDistanceM){
   const kmFloor=Math.floor(totalDistanceM/1000);
   if(kmFloor>lastKmSaved){
     lastKmSaved=kmFloor;
-    // 데모: 체인 저장 대신 토스트만 쓰고 싶으면 아래 주석 해제
     // showEvent('reward',`🧪 DEMO: 1km 달성 (${kmFloor} km)`,0);
   }
 }
@@ -106,8 +118,8 @@ const SPEED_MIN_WALK=0.2, SPEED_MAX_WALK=2.5, SPEED_VEHICLE=4.0;
 const RESUME_REQUIRE_SLOW_SAMPLES=3, PAUSE_REQUIRE_FAST_SAMPLES=2;
 let pausedBySpeed=false, slowStreak=0, fastStreak=0, lastTs=null;
 
-/* === 신규: 벙커/트랩에 의한 일시정지 관리 === */
-let pausedUntil = 0; // Date.now() 기준으로 이 시간 이전엔 GP 적립 중단
+/* === 벙커/트랩에 의한 일시정지 관리 === */
+let pausedUntil = 0;
 function isGPActive(){
   return !pausedBySpeed && Date.now() >= pausedUntil;
 }
@@ -119,9 +131,7 @@ function pauseFor(ms, reason=''){
 
 /* 난이도 기반 계산 로직 */
 function getEnemyPower(m){
-  const p = Number(
-    m.power ?? m.level ?? m.difficulty ?? ((m.mid % 10) + 1)
-  );
+  const p = Number(m.power ?? m.level ?? m.difficulty ?? ((m.mid % 10) + 1));
   return Math.max(1, Math.floor(p));
 }
 function getMyPower(){
@@ -133,7 +143,7 @@ function getMyPower(){
 function winProbability(myPower, enemyPower, k=3){
   const delta = myPower - enemyPower;
   const p = 1 / (1 + Math.exp(-(delta)/k));
-  return Math.min(0.9, Math.max(0.1, p)); // 10%~90%
+  return Math.min(0.9, Math.max(0.1, p));
 }
 function rewardRange(myPower, enemyPower){
   const baseMin = Math.max(1, enemyPower * 2);
@@ -259,7 +269,7 @@ const angryIcon = L.divIcon({
   iconAnchor: [16, 16]
 });
 
-/* ───────────── 신규: BUNKER 아이콘/화살 아이콘 ───────────── */
+/* ───────────── BUNKER/ARROW 아이콘 ───────────── */
 const bunkerIcon = L.divIcon({
   className: 'bunker',
   html: '🏰',
@@ -273,11 +283,104 @@ const arrowIcon = L.divIcon({
   iconAnchor: [12,12]
 });
 
-/* ───────────── 화살 애니메이션 ─────────────
-   bunker → (targetLat,targetLon)로 durationMs 동안 이동.
-   끝에서 플레이어와 2m 이내면 피격 판정. */
-function fireArrow(map, bunker, targetLat, targetLon, durationMs=800){
-  const start = { lat: bunker.lat, lon: bunker.lon };
+/* ================= Sprite helpers ================= */
+// CSS 주입(스프라이트용)
+(function injectSpriteCSS(){
+  const css = `
+  .sprite{position:relative;width:var(--fw,80px);height:var(--fh,80px);background-image:var(--img);background-repeat:no-repeat;background-position:0 0;image-rendering:pixelated;will-change:transform,background-position;transform-origin:50% 50%}
+  .sprite.mon-bob{animation:bob 2.2s ease-in-out infinite}
+  .sprite.mon-chase{filter:drop-shadow(0 0 6px rgba(255,80,80,.65))}
+  .sprite.play{animation-timing-function:steps(var(--frames));animation-iteration-count:infinite;animation-name:var(--anim-name);animation-duration:var(--dur,800ms)}
+  .sprite.play-once{animation-timing-function:steps(var(--frames));animation-iteration-count:1;animation-fill-mode:forwards;animation-name:var(--anim-name);animation-duration:var(--dur,600ms)}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+})();
+
+// 동적 @keyframes 등록(X축만 이동)
+function registerSpriteAnim(frameWidth, frames) {
+  const animName = `spr_${frameWidth}x${frames}_${Math.random().toString(36).slice(2)}`;
+  const totalX = -(frameWidth * frames);
+  const css = `@keyframes ${animName}{from{background-position:0 0}to{background-position:${totalX}px 0}}`;
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+  return animName;
+}
+
+function createMonsterSpriteDOM(cfg) {
+  const el = document.createElement('div');
+  el.className = 'sprite mon-bob';
+  el.style.setProperty('--fw', `${cfg.frameW}px`);
+  el.style.setProperty('--fh', `${cfg.frameH}px`);
+
+  // 행 오프셋(동일 시트에서 row 분리 시 사용, px)
+  const walkOffsetY = Number(cfg.walkOffsetY ?? 0);
+  const atkOffsetY  = Number(cfg.atkOffsetY  ?? 0);
+
+  const walkAnim = registerSpriteAnim(cfg.frameW, cfg.walkFrames);
+  const atkAnim  = registerSpriteAnim(cfg.frameW, cfg.atkFrames);
+
+  el._sprite = {
+    cfg, walkAnim, atkAnim,
+    state:'walk', facing:0,
+    rotOffset:(cfg.rotOffset||0),
+    walkOffsetY, atkOffsetY
+  };
+  setMonsterSpriteState(el, 'walk');
+  return el;
+}
+
+function setMonsterSpriteState(el, next) {
+  if (!el || !el._sprite) return;
+  const s = el._sprite;
+  if (s.state === next) return;
+
+  if (next === 'walk') {
+    el.classList.remove('play-once');
+    el.classList.add('play');
+    el.style.setProperty('--img', `url(${s.cfg.walkImg})`);
+    el.style.setProperty('--frames', s.cfg.walkFrames);
+    el.style.setProperty('--anim-name', s.walkAnim);
+    el.style.setProperty('--dur', `${Math.round(1000 * (s.cfg.walkFrames / s.cfg.walkFps))}ms`);
+    // Y 오프셋 적용
+    el.style.backgroundPositionY = `-${s.walkOffsetY}px`;
+    el.style.backgroundPositionX = `0px`;
+  } else if (next === 'attack') {
+    el.classList.remove('play');
+    el.classList.add('play-once');
+    el.style.setProperty('--img', `url(${s.cfg.atkImg})`);
+    el.style.setProperty('--frames', s.cfg.atkFrames);
+    el.style.setProperty('--anim-name', s.atkAnim);
+    el.style.setProperty('--dur', `${Math.round(1000 * (s.cfg.atkFrames / s.cfg.atkFps))}ms`);
+    // Y 오프셋 적용
+    el.style.backgroundPositionY = `-${s.atkOffsetY}px`;
+    el.style.backgroundPositionX = `0px`;
+    const onEnd = () => { el.removeEventListener('animationend', onEnd); setMonsterSpriteState(el, 'walk'); };
+    el.addEventListener('animationend', onEnd, { once:true });
+  }
+  s.state = next;
+}
+
+function rotateSprite(el, bearingDeg) {
+  if (!el || !el._sprite) return;
+  const deg = bearingDeg + (el._sprite.rotOffset || 0);
+  el.style.transform = `rotate(${deg}deg)`;
+}
+function updateSpriteFacingFromMove(el, prevLat, prevLon, nextLat, nextLon) {
+  if (!el) return;
+  const dy = nextLat - prevLat, dx = nextLon - prevLon;
+  if (dx === 0 && dy === 0) return;
+  const rad = Math.atan2(dy, dx);
+  const deg = rad * 180 / Math.PI; // 0=동쪽
+  rotateSprite(el, deg);
+}
+
+/* 투사체(몬스터/벙커 공통) */
+function fireArrow(map, from, targetLat, targetLon, durationMs=800){
+  const start = { lat: from.lat, lon: from.lon };
   const end   = { lat: targetLat,  lon: targetLon };
   const marker = L.marker([start.lat, start.lon], { icon: arrowIcon, interactive:false }).addTo(map);
 
@@ -290,15 +393,14 @@ function fireArrow(map, bunker, targetLat, targetLon, durationMs=800){
 
     if (t >= 1) {
       clearInterval(timer);
-      // 최종 충돌 판정 (현재 플레이어 위치와 2m 이내)
       const u = map.userMarker?.getLatLng();
       if (u){
         const dist = getDistance(lat, lon, u.lat, u.lng);
         if (dist <= 2){
           if (soundOn) failureSound.play().catch(()=>{});
-          pauseFor(10_000, '🏹 Bunker arrow hit — GP paused 10s');
+          pauseFor(5000, '💥 Monster hit — GP paused 5s');
         } else {
-          showEvent('reward', '🏹 Arrow missed', 0);
+          showEvent('reward', '💨 Attack missed', 0);
         }
       }
       map.removeLayer(marker);
@@ -316,17 +418,47 @@ async function initialize(){
   eventToast=document.getElementById('eventToast');
   eventList =document.getElementById('eventList');
 
-  /* ───────── Monsters ───────── */
+  /* ───────── Monsters: 배회/공격 속성 포함 ───────── */
   const monsters=[];
   (await getDocs(collection(db,'monsters'))).forEach(s=>{
     const d=s.data();
+
+    // 기본 속성/상태
     d.marker=null; d.caught=false; d._busy=false;
-    d.angryUntil=0;           // 분노 종료 시각 (timestamp ms)
-    d.follower=null;          // 분노 추격 마커
+    d.angryUntil=0; d.follower=null;
+
+    d.baseLat = Number(d.lat);
+    d.baseLon = Number(d.lon);
+    d.lat = d.baseLat; d.lon = d.baseLon;
+
+    d.patrolRadius     = Number(d.patrolRadius ?? 8);   // m
+    d.speed            = Number(d.speed ?? 1.2);        // m/s
+    d.aggroRange       = Number(d.aggroRange ?? 12);    // m
+    d.attackRange      = Number(d.attackRange ?? 6);    // m
+    d.attackCooldownMs = Number(d.attackCooldownMs ?? 3000);
+    d.attackType       = (d.attackType || 'melee');     // 'melee' | 'projectile'
+    d.lastAttack       = 0;
+
+    // 스프라이트(선택 필드, 없으면 기본)
+    d.walkImg    = d.walkImg    || '../sprites/monster_spritesheet_80x80_walk6_attack4.png';
+    d.walkFrames = Number(d.walkFrames ?? 6);
+    d.walkFps    = Number(d.walkFps ?? 8);
+    d.atkImg     = d.atkImg     || '../sprites/monster_spritesheet_80x80_walk6_attack4.png';
+    d.atkFrames  = Number(d.atkFrames ?? 4);
+    d.atkFps     = Number(d.atkFps ?? 10);
+    d.frameW     = Number(d.frameW ?? 80);
+    d.frameH     = Number(d.frameH ?? 80);
+    d.rotOffset  = Number(d.rotOffset ?? 0); // 시트 기본 바라보는 방향 보정(예:+90)
+    d.walkOffsetY= Number(d.walkOffsetY ?? 0);
+    d.atkOffsetY = Number(d.atkOffsetY  ?? d.frameH); // 같은 시트 2행을 기본 가정
+
+    d.state = 'patrol'; // 'patrol' | 'chase' | 'idle'
+    d.patrolTarget = randInCircleMeters(d.baseLat, d.baseLon, d.patrolRadius);
+
     monsters.push(d);
   });
 
-  /* ───────── Bunkers (Firestore 우선, 없으면 데모값) ───────── */
+  /* ───────── Bunkers ───────── */
   const bunkers=[];
   try{
     const bq = await getDocs(collection(db,'bunkers'));
@@ -335,9 +467,9 @@ async function initialize(){
         const b = s.data();
         bunkers.push({
           lat: Number(b.lat), lon: Number(b.lon),
-          range: Number(b.range ?? 5),                // 접근 거리 (m)
-          cooldownMs: Number(b.cooldownMs ?? 4000),   // 재장전 (ms)
-          arrowSpeed: Number(b.arrowSpeed ?? 40),     // m/s (거리 기반 비행시간 산출)
+          range: Number(b.range ?? 5),
+          cooldownMs: Number(b.cooldownMs ?? 4000),
+          arrowSpeed: Number(b.arrowSpeed ?? 40),
           lastShot: 0,
           marker: null
         });
@@ -347,19 +479,17 @@ async function initialize(){
     console.warn('bunkers collection read failed, using demo bunkers', e);
   }
   if (bunkers.length===0){
-    // 데모용 2개 벙커
     bunkers.push(
       { lat:41.69560, lon:44.83578, range:5, cooldownMs:4000, arrowSpeed:40, lastShot:0, marker:null },
       { lat:41.69565, lon:44.83583, range:5, cooldownMs:4000, arrowSpeed:40, lastShot:0, marker:null }
     );
   }
 
-  // 벙커 마커 렌더
+  // 벙커 표시
   bunkers.forEach(b=>{
     b.marker = L.marker([b.lat, b.lon], { icon: bunkerIcon })
       .addTo(map)
       .bindPopup('🏰 Bunker');
-    // 사거리 표시 원(옵션)
     const rCircle = L.circle([b.lat, b.lon], { radius: b.range, color:'#ff3b30', fillOpacity:0.08 });
     rCircle.addTo(map);
   });
@@ -378,6 +508,93 @@ async function initialize(){
     if(first){ map.setView([lat,lon],19); first=false; }
     if(userCircle) map.removeLayer(userCircle);
     userCircle=L.circle([lat,lon],{radius:50,color:'blue',fillOpacity:0.2}).addTo(map);
+  }
+
+  // 몬스터 마커 생성(스프라이트 DivIcon)
+  function ensureMonsterMarker(m){
+    if (m.marker) return;
+
+    const cfg = {
+      walkImg: m.walkImg, walkFrames: m.walkFrames, walkFps: m.walkFps,
+      atkImg: m.atkImg,   atkFrames: m.atkFrames,   atkFps: m.atkFps,
+      frameW: m.frameW,   frameH: m.frameH,         rotOffset: m.rotOffset,
+      walkOffsetY: m.walkOffsetY, atkOffsetY: m.atkOffsetY
+    };
+    const sprEl = createMonsterSpriteDOM(cfg);
+    if (m.state === 'chase') sprEl.classList.add('mon-chase');
+
+    // Leaflet divIcon 은 문자열 HTML 필요
+    const icon = L.divIcon({
+      className: '',
+      html: sprEl.outerHTML,
+      iconSize: [cfg.frameW, cfg.frameH],
+      iconAnchor: [cfg.frameW/2, cfg.frameH/2]
+    });
+
+    m.marker = L.marker([m.lat, m.lon], { icon }).addTo(map);
+
+    // 렌더된 실제 DOM에서 스프라이트 다시 찾기
+    const root = m.marker.getElement();
+    m._spr = root ? root.querySelector('.sprite') : null;
+
+    // 클릭 전투
+    m._busy=false;
+    m.marker.on('click', async ()=>{
+      if(m.caught){
+        showEvent('lost','Monsters already caught',0);
+        if(soundOn) failureSound.play().catch(()=>{}); return;
+      }
+      if(m._busy) return;
+      m._busy=true;
+
+      if(soundOn) clickSound.play().catch(()=>{});
+
+      try{
+        if (await isCaught(m.mid)) {
+          showEvent('lost','Monsters already caught',0);
+          if(soundOn) failureSound.play().catch(()=>{});
+          m.caught=true;
+          if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
+        } else {
+          const passed = await tapChallenge(m.mid);
+          if (!passed) {
+            if (soundOn) failureSound.play().catch(()=>{});
+            showEvent('lost', 'Not enough hits', 0);
+            m.angryUntil = Date.now() + 60_000;
+            m._busy=false;
+            return;
+          }
+
+          const enemyP = getEnemyPower(m);
+          const myP    = getMyPower();
+          const pWin   = winProbability(myP, enemyP);
+          const { minR, maxR } = rewardRange(myP, enemyP);
+
+          const success = Math.random() < pWin;
+          const reward  = success ? (minR + Math.floor(Math.random() * (maxR - minR + 1))) : 0;
+
+          if (success) {
+            const u = map.userMarker?.getLatLng();
+            await awardGP(reward, u?.lat ?? m.lat, u?.lng ?? m.lon, Math.round(totalDistanceM));
+            await setCaught(m.mid);
+
+            if(soundOn) successSound.play().catch(()=>{});
+            showEvent('reward', `+${reward} GP (DEMO Hunt: my ${myP} vs ${enemyP})`, reward);
+            m.caught = true;
+            if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
+          } else {
+            if(soundOn) failureSound.play().catch(()=>{});
+            showEvent('lost', `Failed (DEMO Hunt: my ${myP} vs ${enemyP})`, 0);
+          }
+        }
+      }catch(e){
+        console.warn(e);
+        showEvent('lost','error occurred (DEMO)',0);
+        if(soundOn) failureSound.play().catch(()=>{});
+      }finally{
+        m._busy=false;
+      }
+    });
   }
 
   if(navigator.geolocation){
@@ -419,24 +636,17 @@ async function initialize(){
       }else{ slowStreak=0; fastStreak=0; }
     }
 
-    /* ───────── 벙커 사격 체크 ─────────
-       - 5m(혹은 설정 range) 이내 접근 시
-       - 쿨다운 경과하면 화살 발사
-       - 화살 비행시간 = 거리 / arrowSpeed */
+    /* 벙커 사격 */
     const now = Date.now();
     bunkers.forEach(b=>{
       const dist = getDistance(lat,lon,b.lat,b.lon);
-      // 벙커 근접 알림 (최초 감지시)
       if (dist <= b.range){
-        // 쿨다운 체크
         if (now - (b.lastShot||0) >= (b.cooldownMs||4000)){
           b.lastShot = now;
           if (soundOn) clickSound.play().catch(()=>{});
           showEvent('lost', '🏹 Bunker fired!', 0);
-
-          // 화살 비행시간 계산
           const durationMs = Math.max(300, Math.min(1800, (dist / (b.arrowSpeed||40)) * 1000));
-          fireArrow(map, b, lat, lon, durationMs);
+          fireArrow(map, {lat:b.lat, lon:b.lon}, lat, lon, durationMs);
         }
       }
     });
@@ -445,10 +655,8 @@ async function initialize(){
     if(lastLat!==null && lastLon!==null){
       if(step>0 && step<200){
         pathLatLngs.push([lat,lon]); pathLine.setLatLngs(pathLatLngs);
-
         if(isGPActive()){
           totalDistanceM+=step; pendingForGP+=step;
-
           const units=Math.floor(pendingForGP/10);
           if(units>=1){
             try{
@@ -460,8 +668,6 @@ async function initialize(){
               showEvent('lost','GP 적립 실패',0);
             }
           }
-
-          // 데모: 블록체인 저장 없음
           await persistToChainOnEachKm(totalDistanceM);
         }
       }
@@ -469,113 +675,94 @@ async function initialize(){
       pathLatLngs.push([lat,lon]); pathLine.setLatLngs(pathLatLngs);
     }
 
-    // ───────── Angry followers: 플레이어 위치로 추격 마커를 갱신 ─────────
+    // Angry followers: 상태 갱신
     monsters.forEach(m=>{
-      if (m.angryUntil && now < m.angryUntil) {
-        if (!m.follower) {
-          m.follower = L.marker([lat, lon], { icon: angryIcon })
-            .addTo(map)
-            .bindPopup('😡 Angry!');
-          showEvent('lost', `😡 Monster #${m.mid} is chasing you for 1 min`, 0);
-        } else {
-          m.follower.setLatLng([lat, lon]);
-        }
-      } else {
-        if (m.follower) {
-          map.removeLayer(m.follower);
-          m.follower = null;
-          m.angryUntil = 0;
-          showEvent('reward', `😌 Monster #${m.mid} calmed down`, 0);
-        }
-      }
-    });
-
-    // 몬스터(표시/사냥)
-    monsters.forEach(m=>{
-      if(m.caught) return;
-
-      const dist=getDistance(lat,lon,m.lat,m.lon);
-      const isAngry = m.angryUntil && now < m.angryUntil;
-
-      // 분노 중엔 고정 마커 생성 안 함
-      if(!isAngry && dist<=20 && !m.marker){
-        m.marker=L.marker([m.lat,m.lon],{
-          icon:L.icon({iconUrl:m.imagesURL,iconSize:[80,80],iconAnchor:[30,30]})
-        }).addTo(map);
-
-        m._busy=false;
-        m.marker.on('click', async ()=>{
-          if(m.caught){
-            showEvent('lost','Monsters already caught',0);
-            if(soundOn) failureSound.play().catch(()=>{}); return;
-          }
-          if(m._busy) return;
-          m._busy=true;
-
-          if(soundOn) clickSound.play().catch(()=>{});
-
-          try{
-            if (await isCaught(m.mid)) {
-              showEvent('lost','Monsters already caught',0);
-              if(soundOn) failureSound.play().catch(()=>{});
-              m.caught=true;
-              if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
-            } else {
-              const passed = await tapChallenge(m.mid);
-              if (!passed) {
-                if (soundOn) failureSound.play().catch(()=>{});
-                showEvent('lost', 'Not enough hits', 0);
-
-                // 1분 분노 모드
-                m.angryUntil = Date.now() + 60_000;
-
-                if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
-                m._busy=false;
-                return;
-              }
-
-              const enemyP = getEnemyPower(m);
-              const myP    = getMyPower();
-              const pWin   = winProbability(myP, enemyP);
-              const { minR, maxR } = rewardRange(myP, enemyP);
-
-              const success = Math.random() < pWin;
-              const reward  = success
-                ? (minR + Math.floor(Math.random() * (maxR - minR + 1)))
-                : 0;
-
-              if (success) {
-                await awardGP(reward, lat, lon, Math.round(totalDistanceM));
-                await setCaught(m.mid);
-
-                if(soundOn) successSound.play().catch(()=>{});
-                showEvent('reward', `+${reward} GP (DEMO Hunt: my ${myP} vs ${enemyP})`, reward);
-                m.caught = true;
-              } else {
-                if(soundOn) failureSound.play().catch(()=>{});
-                showEvent('lost', `Failed (DEMO Hunt: my ${myP} vs ${enemyP})`, 0);
-              }
-
-              if(m.marker){ map.removeLayer(m.marker); m.marker=null; }
-            }
-          }catch(e){
-            console.warn(e);
-            showEvent('lost','error occurred (DEMO)',0);
-            if(soundOn) failureSound.play().catch(()=>{});
-          }finally{
-            m._busy=false;
-          }
-        });
-      }
-
-      // 반경 이탈 시 고정 마커 제거 (분노/포획 제외)
-      if(dist>25 && m.marker && !m.caught){
-        map.removeLayer(m.marker); m.marker=null;
+      if (m.angryUntil && now < m.angryUntil) m.state = 'chase';
+      else if (m.angryUntil && now >= m.angryUntil) {
+        m.angryUntil = 0;
+        showEvent('reward', `😌 Monster #${m.mid} calmed down`, 0);
       }
     });
 
     lastLat=lat; lastLon=lon; lastTs=ts;
   }, err=>console.error(err), {enableHighAccuracy:true});
+
+  // ─────────── 배회/추격/공격 애니메이션 틱 ───────────
+  let lastTick = Date.now();
+  setInterval(()=>{
+    const now = Date.now();
+    const dt = Math.min(0.25, (now - lastTick) / 1000);
+    lastTick = now;
+
+    const u = map.userMarker?.getLatLng();
+    const userLat = u?.lat, userLon = u?.lng;
+
+    monsters.forEach(m=>{
+      if (m.caught) {
+        if (m.marker){ map.removeLayer(m.marker); m.marker=null; }
+        return;
+      }
+
+      // 플레이어와의 거리
+      let distToUser = Infinity;
+      if (userLat!=null) distToUser = getDistance(m.lat, m.lon, userLat, userLon);
+
+      // 스폰/제거(표시 범위)
+      if (distToUser <= 40) ensureMonsterMarker(m);
+      if (distToUser > 50 && m.marker && !m._busy) { map.removeLayer(m.marker); m.marker=null; }
+
+      // 상태 결정(Angry 우선)
+      const angry = m.angryUntil && now < m.angryUntil;
+      if (angry) m.state = 'chase';
+      else {
+        if (distToUser <= m.aggroRange) m.state = 'chase';
+        else if (m.state !== 'patrol')  m.state = 'patrol';
+      }
+
+      // 이동/공격
+      const speed = m.speed;
+      let prevPos = null;
+      if (m.marker) prevPos = m.marker.getLatLng();
+
+      if (m.state === 'patrol') {
+        const toTarget = getDistance(m.lat, m.lon, m.patrolTarget.lat, m.patrolTarget.lon);
+        if (toTarget < 1) {
+          m.patrolTarget = randInCircleMeters(m.baseLat, m.baseLon, m.patrolRadius);
+        } else {
+          const step = stepTowards(m.lat, m.lon, m.patrolTarget.lat, m.patrolTarget.lon, speed*dt);
+          m.lat = step.lat; m.lon = step.lon;
+        }
+      } else if (m.state === 'chase' && userLat!=null) {
+        const step = stepTowards(m.lat, m.lon, userLat, userLon, speed*dt*1.5);
+        m.lat = step.lat; m.lon = step.lon;
+
+        // 공격 조건
+        if (distToUser <= m.attackRange && (now - (m.lastAttack||0) >= m.attackCooldownMs)) {
+          m.lastAttack = now;
+          m._didAttackThisTick = true; // 스프라이트 공격 애니 트리거
+          if (m.attackType === 'projectile') {
+            const dur = Math.max(300, Math.min(1500, (distToUser/20)*1000));
+            fireArrow(map, {lat:m.lat, lon:m.lon}, userLat, userLon, dur);
+            showEvent('lost', `💢 Monster #${m.mid} shoots!`, 0);
+          } else {
+            if (soundOn) failureSound.play().catch(()=>{});
+            pauseFor(5000, `💥 Monster #${m.mid} hit — GP paused 5s`);
+          }
+        }
+      }
+
+      // 마커 위치 & 스프라이트 업데이트
+      if (m.marker) {
+        m.marker.setLatLng([m.lat, m.lon]);
+        if (m._spr && prevPos) {
+          updateSpriteFacingFromMove(m._spr, prevPos.lat, prevPos.lng, m.lat, m.lon);
+          if (m.state === 'chase') m._spr.classList.add('mon-chase'); else m._spr.classList.remove('mon-chase');
+          if (m._didAttackThisTick) { setMonsterSpriteState(m._spr, 'attack'); m._didAttackThisTick = false; }
+        }
+      }
+    });
+
+  }, 100);
 
   // Controls
   const locateBtn=document.getElementById('locateBtn');

@@ -18,12 +18,14 @@
     .panel.active { display: block; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-    input, button { display:block; margin:5px 0; width:100%; padding:10px; border:1px solid #ddd; border-radius: 8px; }
+    input, select, button { display:block; margin:5px 0; width:100%; padding:10px; border:1px solid #ddd; border-radius: 8px; }
     label { font-size: 12px; color:#555; margin-top: 6px; display:block; }
     button { cursor:pointer; background:#111827; color:#fff; font-weight: 700; }
     small.hint { color:#777; display:block; margin-top: -4px; margin-bottom: 6px; }
     .info { font-size: 13px; color:#333; margin: 6px 0 10px; }
     .pill { display:inline-block; padding:2px 8px; background:#eef2ff; color:#3730a3; border-radius:999px; font-size:12px; margin-left:6px; }
+    .subhead { font-weight:700; margin: 8px 0 4px; }
+    .sep { height:1px; background:#eee; margin:12px 0; }
   </style>
 </head>
 <body>
@@ -42,8 +44,9 @@
     <form id="monsterForm">
       <div class="row">
         <div>
-          <label for="imageURL">이미지 URL</label>
-          <input type="text" id="imageURL" placeholder="https://.../monster.png" required>
+          <label for="imageURL">미니맵/고정 이미지 URL (선택)</label>
+          <input type="text" id="imageURL" placeholder="https://.../marker.png">
+          <small class="hint">스프라이트를 쓰면 생략 가능</small>
         </div>
         <div>
           <label for="mid">몬스터 ID (mid)</label>
@@ -59,7 +62,92 @@
         <div>
           <label for="difficulty">난이도(선택)</label>
           <input type="number" id="difficulty" placeholder="예: 3">
-          <small class="hint">필수 아님. 없으면 클라이언트에서 추정</small>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="subhead">스프라이트 시트</div>
+      <div class="row">
+        <div>
+          <label for="walkImg">Walk 시트 URL</label>
+          <input type="text" id="walkImg" placeholder="../sprites/monster_spritesheet_80x80_walk6_attack4.png">
+        </div>
+        <div>
+          <label for="atkImg">Attack 시트 URL</label>
+          <input type="text" id="atkImg" placeholder="../sprites/monster_spritesheet_80x80_walk6_attack4.png">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="walkFrames">Walk 프레임 수</label>
+          <input type="number" id="walkFrames" value="6">
+        </div>
+        <div>
+          <label for="walkFps">Walk FPS</label>
+          <input type="number" id="walkFps" value="8">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="atkFrames">Attack 프레임 수</label>
+          <input type="number" id="atkFrames" value="4">
+        </div>
+        <div>
+          <label for="atkFps">Attack FPS</label>
+          <input type="number" id="atkFps" value="10">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="frameW">프레임 폭(px)</label>
+          <input type="number" id="frameW" value="80">
+        </div>
+        <div>
+          <label for="frameH">프레임 높이(px)</label>
+          <input type="number" id="frameH" value="80">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="rotOffset">기본 회전 보정(도)</label>
+          <input type="number" id="rotOffset" value="0">
+          <small class="hint">스프라이트가 동쪽을 보지 않으면 보정 (+90 등)</small>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+      <div class="subhead">행동 파라미터</div>
+      <div class="row">
+        <div>
+          <label for="speed">이동 속도 (m/s)</label>
+          <input type="number" id="speed" value="1.2" step="0.1">
+        </div>
+        <div>
+          <label for="patrolRadius">배회 반경 (m)</label>
+          <input type="number" id="patrolRadius" value="8">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="aggroRange">추격 개시 범위 (m)</label>
+          <input type="number" id="aggroRange" value="12">
+        </div>
+        <div>
+          <label for="attackRange">공격 범위 (m)</label>
+          <input type="number" id="attackRange" value="6">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="attackCooldownMs">공격 쿨다운 (ms)</label>
+          <input type="number" id="attackCooldownMs" value="3000">
+        </div>
+        <div>
+          <label for="attackType">공격 타입</label>
+          <select id="attackType">
+            <option value="melee">melee(근접)</option>
+            <option value="projectile">projectile(투사체)</option>
+          </select>
         </div>
       </div>
 
@@ -102,7 +190,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
     import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-    // ✅ Firebase 설정
+    // ✅ Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
       authDomain: "puppi-d67a1.firebaseapp.com",
@@ -115,22 +203,16 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // Admin 간단 패스 체크(선택): 필요 시 값 맞을 때만 허용
-    // const ADMIN_PASS = 1234; // ← 필요하면 사용
-    function checkPass(input) {
-      // ADMIN_PASS를 안 쓰면 무조건 true (현재는 Firestore 보안규칙으로 보호 권장)
-      // return Number(input) === ADMIN_PASS;
-      return true;
-    }
+    // (선택) 간단 패스 체크 – 실제 운영은 Firestore 보안규칙 권장
+    function checkPass(_) { return true; }
 
-    // ✅ 지도 초기화
+    // ✅ 지도
     const map = L.map('map').setView([37.5665, 126.9780], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    // 검색 컨트롤
     L.Control.geocoder({ defaultMarkGeocode: false })
       .on('markgeocode', function(e) {
         const bbox = e.geocode.bbox;
@@ -148,19 +230,18 @@
     // 상태
     let clickedLatLng = null;
     let currentMarker = null;
-    let bunkerRangeCircle = null; // 벙커 반경 프리뷰
+    let bunkerRangeCircle = null;
 
-    // 좌표 선택
     map.on('click', (e) => setClicked(e.latlng));
 
     function setClicked(latlng) {
       clickedLatLng = latlng;
-      document.getElementById('coordText').textContent = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+      document.getElementById('coordText').textContent =
+        `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
 
       if (currentMarker) map.removeLayer(currentMarker);
       currentMarker = L.marker(latlng).addTo(map).bindPopup("위치 선택됨").openPopup();
 
-      // 벙커 패널이 열려있다면 반경 프리뷰 동기화
       drawBunkerRangePreview();
     }
 
@@ -169,20 +250,13 @@
       const rangeEl = document.getElementById('range');
       const range = Number(rangeEl?.value || 5);
 
-      // 기존 원 제거
       if (bunkerRangeCircle) {
         map.removeLayer(bunkerRangeCircle);
         bunkerRangeCircle = null;
       }
-
-      // 좌표/패널이 유효하면 새 원 그림
       if (panelOpen && clickedLatLng && !isNaN(range) && range > 0) {
         bunkerRangeCircle = L.circle([clickedLatLng.lat, clickedLatLng.lng], {
-          radius: range,
-          color: '#ff3b30',
-          fillColor: '#ff3b30',
-          fillOpacity: 0.1,
-          weight: 1
+          radius: range, color: '#ff3b30', fillColor: '#ff3b30', fillOpacity: 0.1, weight: 1
         }).addTo(map);
       }
     }
@@ -193,15 +267,11 @@
       btn.addEventListener('click', () => {
         tabBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         document.getElementById(btn.dataset.target).classList.add('active');
-
-        drawBunkerRangePreview(); // 탭 바뀔 때 프리뷰 업데이트
+        drawBunkerRangePreview();
       });
     });
-
-    // 벙커 range 입력 변화 시 반경 프리뷰 업데이트
     document.getElementById('range').addEventListener('input', drawBunkerRangePreview);
 
     // ✅ 몬스터 저장
@@ -209,25 +279,55 @@
       e.preventDefault();
       if (!clickedLatLng) return alert("지도를 클릭해 위치를 선택하세요.");
 
-      const imageURL = document.getElementById("imageURL").value.trim();
-      const mid = parseInt(document.getElementById("mid").value);
-      const pass = parseInt(document.getElementById("pass").value);
-      const difficulty = document.getElementById("difficulty").value ? Number(document.getElementById("difficulty").value) : null;
-
+      // 필수
+      const mid = Number(document.getElementById("mid").value);
+      const pass = Number(document.getElementById("pass").value);
       if (!checkPass(pass)) return alert("패스워드가 올바르지 않습니다.");
 
-      await addDoc(collection(db, "monsters"), {
-        imagesURL: imageURL,
+      // 선택/기본
+      const imageURL   = document.getElementById("imageURL").value.trim();
+      const difficulty = document.getElementById("difficulty").value ? Number(document.getElementById("difficulty").value) : null;
+
+      // 스프라이트
+      const walkImg    = document.getElementById("walkImg").value.trim();
+      const atkImg     = document.getElementById("atkImg").value.trim();
+      const walkFrames = Number(document.getElementById("walkFrames").value || 6);
+      const walkFps    = Number(document.getElementById("walkFps").value || 8);
+      const atkFrames  = Number(document.getElementById("atkFrames").value || 4);
+      const atkFps     = Number(document.getElementById("atkFps").value || 10);
+      const frameW     = Number(document.getElementById("frameW").value || 80);
+      const frameH     = Number(document.getElementById("frameH").value || 80);
+      const rotOffset  = Number(document.getElementById("rotOffset").value || 0);
+
+      // 행동 파라미터
+      const speed            = Number(document.getElementById("speed").value || 1.2);
+      const patrolRadius     = Number(document.getElementById("patrolRadius").value || 8);
+      const aggroRange       = Number(document.getElementById("aggroRange").value || 12);
+      const attackRange      = Number(document.getElementById("attackRange").value || 6);
+      const attackCooldownMs = Number(document.getElementById("attackCooldownMs").value || 3000);
+      const attackType       = document.getElementById("attackType").value || 'melee';
+
+      // Firestore 문서
+      const payload = {
         lat: clickedLatLng.lat,
         lon: clickedLatLng.lng,
-        mid: mid,
-        pass: pass,
-        ...(difficulty ? { difficulty } : {})
-      });
+        mid, pass,
+        ...(imageURL ? { imagesURL: imageURL } : {}),
+        ...(difficulty ? { difficulty } : {}),
+
+        // 스프라이트(비었으면 클라 기본값 사용)
+        ...(walkImg ? { walkImg } : {}),
+        ...(atkImg ? { atkImg } : {}),
+        walkFrames, walkFps, atkFrames, atkFps, frameW, frameH, rotOffset,
+
+        // AI/전투 파라미터
+        speed, patrolRadius, aggroRange, attackRange, attackCooldownMs, attackType
+      };
+
+      await addDoc(collection(db, "monsters"), payload);
 
       alert("몬스터 등록 완료!");
       (e.target).reset();
-      // 마커/프리뷰 정리
       if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
       if (bunkerRangeCircle) { map.removeLayer(bunkerRangeCircle); bunkerRangeCircle = null; }
       clickedLatLng = null;
@@ -239,7 +339,7 @@
       e.preventDefault();
       if (!clickedLatLng) return alert("지도를 클릭해 위치를 선택하세요.");
 
-      const pass = parseInt(document.getElementById("bunkerPass").value);
+      const pass = Number(document.getElementById("bunkerPass").value);
       const range = Number(document.getElementById("range").value);
       const cooldownMs = Number(document.getElementById("cooldownMs").value);
       const arrowSpeed = Number(document.getElementById("arrowSpeed").value);
@@ -252,15 +352,11 @@
       await addDoc(collection(db, "bunkers"), {
         lat: clickedLatLng.lat,
         lon: clickedLatLng.lng,
-        range,
-        cooldownMs,
-        arrowSpeed,
-        pass
+        range, cooldownMs, arrowSpeed, pass
       });
 
       alert("벙커 등록 완료!");
       (e.target).reset();
-      // 마커/프리뷰 정리
       if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
       if (bunkerRangeCircle) { map.removeLayer(bunkerRangeCircle); bunkerRangeCircle = null; }
       clickedLatLng = null;

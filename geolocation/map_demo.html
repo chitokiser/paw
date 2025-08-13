@@ -3,23 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <title>GeoHunt – Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- Your UI styles (토스트/버튼/스프라이트 CSS 포함) -->
   <link rel="stylesheet" href="map.css" />
+  <style>
+    /* 화면 전체 채우기 안전장치 (map.css가 못 불렸을 때 대비) */
+    html,body,#map{height:100%;width:100%;margin:0}
+  </style>
 </head>
 <body>
+  <!-- 지도 -->
   <div id="map"></div>
+
+  <!-- 토스트 & 로그 -->
   <div id="eventToast"></div>
   <div id="eventLog"><ul id="eventList"></ul></div>
 
+  <!-- 하단 컨트롤 -->
   <div class="bottom-controls">
-    <button id="compassBtn">🧭</button>
     <button id="homeBtn">Home</button>
     <button id="locateBtn">📍</button>
   </div>
+
+  <!-- 사운드 토글 -->
   <button id="soundToggle">🔊</button>
 
+  <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- ethers 불필요 -->
+  <!-- 게임 로직 -->
   <script type="module" src="map_demo.js"></script>
 </body>
 </html>
