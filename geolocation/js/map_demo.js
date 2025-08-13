@@ -1,11 +1,11 @@
-// js/map_demo.js  — 테스트 전용: mid=23을 항상 현재 위치에 스폰
+// js/map_demo.js — 테스트 전용: mid=23을 항상 현재 위치에 스폰
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, getDoc, setDoc, updateDoc, increment,
   serverTimestamp, doc
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-// ---------- Firebase ----------
+/* ---------- Firebase ---------- */
 const app = initializeApp({
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
@@ -17,7 +17,7 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-// ---------- Demo identity ----------
+/* ---------- Demo identity ---------- */
 function getGuestId(){
   let id = localStorage.getItem('guestId');
   if(!id){ id = 'guest-' + Math.random().toString(36).slice(2,8); localStorage.setItem('guestId', id); }
@@ -25,7 +25,7 @@ function getGuestId(){
 }
 const userAddress = getGuestId();
 
-// ---------- Utils ----------
+/* ---------- Utils ---------- */
 const tRad = d => d*Math.PI/180;
 function getDistance(a,b,c,d){
   const R=6371000, φ1=tRad(a), φ2=tRad(c), dφ=tRad(c-a), dλ=tRad(d-b);
@@ -40,7 +40,7 @@ function stepTowards(lat, lon, tgtLat, tgtLon, meters){
   return { lat: lat + (tgtLat-lat)*r, lon: lon + (tgtLon-lon)*r };
 }
 
-// ---------- Toast ----------
+/* ---------- Toast ---------- */
 let eventToast = null;
 function showEvent(type,msg){
   if(!eventToast) eventToast = document.getElementById('eventToast');
@@ -48,7 +48,7 @@ function showEvent(type,msg){
   eventToast.style.display='block'; setTimeout(()=>eventToast.style.display='none',1600);
 }
 
-// ---------- User stats ----------
+/* ---------- User stats ---------- */
 const userStats = { totalDistanceM:0, totalGP:0 };
 async function ensureUserDoc(){
   await setDoc(doc(db,'users',userAddress),{
@@ -73,7 +73,7 @@ async function awardGP(gpUnits, lat, lon, totalDistanceM){
   userStats.totalGP += gpUnits; userStats.totalDistanceM += gpUnits*10;
 }
 
-// ---------- Sprite helpers (단일 시트, X축만 진행) ----------
+/* ---------- Sprite helpers (3×3, 한 장 시트) ---------- */
 (function injectCSS(){
   const css = `
   .sprite{position:relative;width:var(--fw,256px);height:var(--fh,288px);
@@ -89,27 +89,30 @@ async function awardGP(gpUnits, lat, lon, totalDistanceM){
   `;
   const s=document.createElement('style'); s.textContent=css; document.head.appendChild(s);
 })();
-function makeAnim(frW, frames){
-  const name = `spr_${frW}_${frames}_${Math.random().toString(36).slice(2)}`;
-  const totalX = -(frW*frames);
+
+function makeAnim(frameW, frames){
+  // X축으로 0 → -frameW*frames 만큼 이동(프레임 수만큼 칸 이동)
+  const name = `spr_${frameW}_${frames}_${Math.random().toString(36).slice(2)}`;
+  const totalX = -(frameW * frames);
   const css = `@keyframes ${name}{from{background-position:0 0}to{background-position:${totalX}px 0}}`;
   const st = document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   return name;
 }
+
 function createSprite({img, frames, fps, frameW, frameH, offsetY}){
   const el = document.createElement('div');
   el.className = 'sprite mon-bob play';
   el.style.setProperty('--fw', `${frameW}px`);
   el.style.setProperty('--fh', `${frameH}px`);
   el.style.setProperty('--img', `url(${img})`);
-  el.style.backgroundPositionY = `-${offsetY}px`;
-  el.style.setProperty('--frames', frames);
+  el.style.backgroundPositionY = `-${offsetY}px`;     // 2행이면 frameH만큼 내려감
+  el.style.setProperty('--frames', frames);           // 3
   el.style.setProperty('--dur', `${Math.round(1000*(frames/fps))}ms`);
   el.style.setProperty('--anim', makeAnim(frameW, frames));
   return el;
 }
 
-// ---------- Main ----------
+/* ---------- Main ---------- */
 async function main(){
   await ensureUserDoc();
 
@@ -117,49 +120,80 @@ async function main(){
   const map = L.map('map',{maxZoom:22}).setView([37.5665,126.9780], 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
-  // 현재 위치 → 사용자/몬스터 위치 동시 배치
+  // 현재 위치
   let userLat=null, userLon=null;
   await new Promise((res)=>{
     if (!navigator.geolocation){ res(); return; }
-    navigator.geolocation.getCurrentPosition(p=>{
-      userLat=p.coords.latitude; userLon=p.coords.longitude;
-      res();
-    }, ()=>res(), {enableHighAccuracy:true, timeout:7000});
+    navigator.geolocation.getCurrentPosition(p=>{ userLat=p.coords.latitude; userLon=p.coords.longitude; res(); },
+                                             ()=>res(), {enableHighAccuracy:true, timeout:7000});
   });
-  if (userLat==null){ userLat=37.5665; userLon=126.9780; } // fallback(서울시청)
+  if (userLat==null){ userLat=37.5665; userLon=126.9780; } // fallback
 
-  // 사용자 마커
+  // 유저 마커
   const userIcon=L.divIcon({className:'', html:'🧍', iconSize:[28,28], iconAnchor:[14,14]});
   const userMarker=L.marker([userLat,userLon],{icon:userIcon}).addTo(map).bindPopup(userAddress);
   map.setView([userLat,userLon], 19);
 
-  // ---- 테스트 몬스터(mid=23) : 항상 현재 위치에 스폰 ----
-  const SHEET = "https://puppi.netlify.app/geolocation/sprites/1.png"; // 768×1152
+  /* ---- 테스트 몬스터(mid=23) : 항상 현재 위치에 스폰 ----
+     시트: 768×1152, 프레임: 256×288, 3열×3행 (Walk=1행, Attack=2행) */
+  const SHEET   = "https://puppi.netlify.app/geolocation/sprites/1.png";
   const FRAME_W = 256, FRAME_H = 288;
-  const WALK = { frames:3, fps:8,  offsetY:0   };
-  const ATK  = { frames:3, fps:10, offsetY:288 };
+  const WALK = { frames:3, fps:8,  offsetY:0 };          // 1행
+  const ATK  = { frames:3, fps:10, offsetY:FRAME_H };    // 2행(=288px 아래)
 
   const mon = {
     mid:23,
-    lat:userLat, lon:userLon, // <- 강제 현재 위치
+    lat:userLat, lon:userLon, // 현재 위치
     speed:1.2, aggroRange:12, attackRange:6, attackCooldownMs:3000,
     lastAttack:0, state:'patrol',
     walk:{img:SHEET, ...WALK}, atk:{img:SHEET, ...ATK},
     frameW:FRAME_W, frameH:FRAME_H
   };
 
-  // 스프라이트 DivIcon 생성
-  const walkEl = createSprite({img:mon.walk.img, frames:mon.walk.frames, fps:mon.walk.fps,
-                               frameW:FRAME_W, frameH:FRAME_H, offsetY:mon.walk.offsetY});
-  const icon = L.divIcon({className:'', html:walkEl.outerHTML, iconSize:[FRAME_W,FRAME_H], iconAnchor:[FRAME_W/2,FRAME_H/2]});
-  mon.marker = L.marker([mon.lat, mon.lon], {icon}).addTo(map).bindPopup('Monster #23');
+  // 스프라이트 요소(걷기 상태)
+  const walkEl = createSprite({
+    img:mon.walk.img, frames:mon.walk.frames, fps:mon.walk.fps,
+    frameW:FRAME_W, frameH:FRAME_H, offsetY:mon.walk.offsetY
+  });
 
-  // DOM 참조
+  // ✅ Leaflet 아이콘 생성 — 여기서 **walkEl.outerHTML**을 써야 합니다.
+  const icon = L.divIcon({
+    className: '',
+    html: walkEl.outerHTML,
+    iconSize: [FRAME_W, FRAME_H],
+    iconAnchor: [FRAME_W/2, FRAME_H/2]
+  });
+
+  mon.marker = L.marker([mon.lat, mon.lon], { icon }).addTo(map).bindPopup('Monster #23');
+
+  // 렌더된 DOM에서 스프라이트 참조
   const root = mon.marker.getElement();
   mon._spr = root ? root.querySelector('.sprite') : null;
 
-  // 간단한 클릭 전투(가중치 낮게)
+  // 간단 클릭 전투
   mon.marker.on('click', async ()=>{
+    // 공격 연출: 잠깐 2행(attack)으로 전환 1회 재생
+    if (mon._spr){
+      // attack 애니 임시 적용
+      const atkEl = createSprite({
+        img: mon.atk.img, frames: mon.atk.frames, fps: mon.atk.fps,
+        frameW: FRAME_W, frameH: FRAME_H, offsetY: mon.atk.offsetY
+      });
+      atkEl.classList.remove('play'); atkEl.classList.add('play-once');
+      mon._spr.replaceWith(atkEl);
+      mon._spr = atkEl;
+      atkEl.addEventListener('animationend', () => {
+        // 끝나면 다시 walk으로
+        const back = createSprite({
+          img: mon.walk.img, frames: mon.walk.frames, fps: mon.walk.fps,
+          frameW: FRAME_W, frameH: FRAME_H, offsetY: mon.walk.offsetY
+        });
+        mon._spr.replaceWith(back);
+        mon._spr = back;
+      }, { once:true });
+    }
+
+    // 매우 단순한 승/패
     const myP = Math.max(1, Math.floor(userStats.totalGP*0.5 + (userStats.totalDistanceM||0)/1000));
     const enemyP = 3;
     const p = 1/(1+Math.exp(-(myP-enemyP)/3));
@@ -173,17 +207,16 @@ async function main(){
     }
   });
 
-  // 위치 업데이트(사용자 따라오기 테스트 느낌)
+  // 위치 업데이트(유저 쪽으로 살짝 이동)
   let lastT=Date.now();
   setInterval(()=>{
     const now=Date.now(); const dt=Math.min(0.25,(now-lastT)/1000); lastT=now;
-    // 간단 추격: 사용자 기준으로 약간 따라붙기
     const step = stepTowards(mon.lat, mon.lon, userLat, userLon, mon.speed*dt*1.5);
     mon.lat=step.lat; mon.lon=step.lon;
     mon.marker.setLatLng([mon.lat, mon.lon]);
   }, 100);
 
-  // 사용자의 실제 이동 반영(워치)
+  // 유저 실시간 이동
   if (navigator.geolocation){
     navigator.geolocation.watchPosition(p=>{
       userLat=p.coords.latitude; userLon=p.coords.longitude;

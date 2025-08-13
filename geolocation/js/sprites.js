@@ -12,13 +12,19 @@
 })();
 
 // keyframes 등록(X축 프레임 재생)
+// sprites.js (또는 동일 함수가 있는 파일)
 function registerSpriteAnim(frameWidth, frames) {
   const animName = `spr_${frameWidth}x${frames}_${Math.random().toString(36).slice(2)}`;
-  const totalX = -(frameWidth * frames);
+  // ❌ 기존: const totalX = -(frameWidth * frames);
+  // ✅ 수정:
+  const totalX = -(frameWidth * (frames - 1));
   const css = `@keyframes ${animName}{from{background-position:0 0}to{background-position:${totalX}px 0}}`;
-  const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
   return animName;
 }
+
 
 export function createMonsterSpriteDOM(cfg){
   const el = document.createElement('div');
@@ -44,25 +50,35 @@ export function setMonsterSpriteState(el, next){
   const s = el._sprite;
   if (s.state === next) return;
 
-  if(next==='walk'){
-    el.classList.remove('play-once'); el.classList.add('play');
-    el.style.setProperty('--img', `url(${s.cfg.walkImg})`);
-    el.style.setProperty('--frames', s.cfg.walkFrames);
-    el.style.setProperty('--anim-name', s.walkAnim);
-    el.style.setProperty('--dur', `${Math.round(1000 * (s.cfg.walkFrames / s.cfg.walkFps))}ms`);
-    el.style.backgroundPositionY = `-${s.walkOffsetY}px`;
-    el.style.backgroundPositionX = `0px`;
-  }else if(next==='attack'){
-    el.classList.remove('play'); el.classList.add('play-once');
-    el.style.setProperty('--img', `url(${s.cfg.atkImg})`);
-    el.style.setProperty('--frames', s.cfg.atkFrames);
-    el.style.setProperty('--anim-name', s.atkAnim);
-    el.style.setProperty('--dur', `${Math.round(1000 * (s.cfg.atkFrames / s.cfg.atkFps))}ms`);
-    el.style.backgroundPositionY = `-${s.atkOffsetY}px`;
-    el.style.backgroundPositionX = `0px`;
-    const onEnd=()=>{ el.removeEventListener('animationend',onEnd); setMonsterSpriteState(el,'walk'); };
-    el.addEventListener('animationend', onEnd, { once:true });
-  }
+// setMonsterSpriteState(el, next) 내부 (map_demo.js 또는 sprites.js)
+if (next === 'walk') {
+  el.classList.remove('play-once');
+  el.classList.add('play');
+  el.style.setProperty('--img', `url(${s.cfg.walkImg})`);
+  el.style.setProperty('--frames', s.cfg.walkFrames);
+  el.style.setProperty('--anim-name', s.walkAnim);
+  el.style.setProperty('--dur', `${Math.round(1000 * (s.cfg.walkFrames / s.cfg.walkFps))}ms`);
+
+  // ✅ 워킹은 1행
+  el.style.backgroundPositionY = `-${s.walkOffsetY}px`; // 보통 0
+  el.style.backgroundPositionX = `0px`;
+
+} else if (next === 'attack') {
+  el.classList.remove('play');
+  el.classList.add('play-once');
+  el.style.setProperty('--img', `url(${s.cfg.atkImg})`);
+  el.style.setProperty('--frames', s.cfg.atkFrames);
+  el.style.setProperty('--anim-name', s.atkAnim);
+  el.style.setProperty('--dur', `${Math.round(1000 * (s.cfg.atkFrames / s.cfg.atkFps))}ms`);
+
+  // ✅ 공격은 2행
+  el.style.backgroundPositionY = `-${s.atkOffsetY}px`; // 꼭! 288으로 오도록
+  el.style.backgroundPositionX = `0px`;
+
+  const onEnd = () => { el.removeEventListener('animationend', onEnd); setMonsterSpriteState(el, 'walk'); };
+  el.addEventListener('animationend', onEnd, { once:true });
+}
+
   s.state = next;
 }
 
