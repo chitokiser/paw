@@ -39,6 +39,10 @@ export class WalkPoints {
 
   start(){
     if (this._watchId != null) return;
+    if (!('geolocation' in navigator)) {
+      console.warn('[walk] geolocation not supported');
+      return;
+    }
     // 첫 포인터 입력에 오디오/권한 등 깨우기(필요시)
     if (document.visibilityState === 'visible'){
       navigator.geolocation.getCurrentPosition(()=>{}, ()=>{}, this.cfg.geolocationOptions);

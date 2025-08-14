@@ -77,7 +77,6 @@ function ensureAudio(){
   audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
-/* 공용 ADSR */
 function applyADSR(g, t, {a=0.01, d=0.12, s=0.4, r=0.25, peak=0.9, sus=0.25}={}){
   g.gain.cancelScheduledValues(t);
   g.gain.setValueAtTime(0.0001, t);
@@ -85,7 +84,6 @@ function applyADSR(g, t, {a=0.01, d=0.12, s=0.4, r=0.25, peak=0.9, sus=0.25}={})
   g.gain.exponentialRampToValueAtTime(Math.max(0.0002, sus), t+a+d);
   g.gain.setTargetAtTime(0.0001, t+a+d, r);
 }
-/* 공용 노이즈 */
 function createNoise(){
   ensureAudio();
   const sr = audioCtx.sampleRate, len = sr * 0.5;
@@ -94,7 +92,6 @@ function createNoise(){
   for (let i=0;i<len;i++) data[i] = Math.random()*2-1;
   const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = false; return src;
 }
-/* 타격 삐 */
 function blip(freq=300, dur=0.07, type='square', startGain=0.35){
   ensureAudio();
   const t = audioCtx.currentTime;
@@ -108,7 +105,6 @@ function blip(freq=300, dur=0.07, type='square', startGain=0.35){
   o.start(t); o.stop(t + dur + 0.03);
 }
 const playHit = ()=>blip();
-/* 실패 */
 function playFail(){
   ensureAudio();
   const t = audioCtx.currentTime;
@@ -126,11 +122,10 @@ function playFail(){
   o1.start(t); o2.start(t); nz.start(t);
   o1.stop(t+0.75); o2.stop(t+0.75); nz.stop(t+0.5);
 }
-/* 성공(처치) */
 function playDeath(){
   ensureAudio();
   const t = audioCtx.currentTime;
-  const freqs = [523.25, 659.25, 783.99]; // C5 E5 G5
+  const freqs = [523.25, 659.25, 783.99];
   const groupGain = audioCtx.createGain();
   groupGain.connect(audioCtx.destination);
   groupGain.gain.setValueAtTime(0.0001, t);
@@ -175,17 +170,19 @@ function ensureHUD(){
     <div class="row"><div>남은 시간</div><div id="hudTime" class="mono warn">-</div></div>
     <div class="row"><div>남은 타격</div><div id="hudHits" class="mono ok">-</div></div>
     <div class="row"><div>이번 보상</div><div id="hudEarn" class="mono">-</div></div>
+    <div class="row"><div>이동거리</div><div id="hudDist" class="mono">0 m</div></div>
     <div class="row"><div>블록체인점수</div><div id="hudChain" class="mono">0</div></div>
   `;
   document.body.appendChild(hud);
   return hud;
 }
-function setHUD({timeLeft=null, hitsLeft=null, earn=null, chain=null}={}){
+function setHUD({timeLeft=null, hitsLeft=null, earn=null, chain=null, distanceM=null}={}){
   const hud = ensureHUD();
   if (timeLeft!=null)  hud.querySelector('#hudTime').textContent  = timeLeft;
   if (hitsLeft!=null)  hud.querySelector('#hudHits').textContent  = hitsLeft;
   if (earn!=null)      hud.querySelector('#hudEarn').textContent  = `+${earn} GP`;
   if (chain!=null)     hud.querySelector('#hudChain').textContent = chain;
+  if (distanceM!=null) hud.querySelector('#hudDist').textContent  = `${Math.round(distanceM)} m`;
 }
 
 /* ===== 아이콘(HTML) ===== */
@@ -199,12 +196,11 @@ function makeImageDivIcon(url, sizePx){
     className: '',
     html,
     iconSize: [s, s],
-    iconAnchor: [s/2, s] // 바닥 중앙
+    iconAnchor: [s/2, s]
   });
 }
 
-/* ===== 제한시간 규칙 =====
-   파워 40 → 10초, 20 → 5초, 10 → 2초, 그 외엔 power/4초(최소 0.5초) */
+/* ===== 제한시간 규칙 ===== */
 function getChallengeDurationMs(power){
   if (power === 40) return 10_000;
   if (power === 20) return 5_000;
@@ -220,15 +216,20 @@ function getGuestId(){
   return id;
 }
 
+/* ===== 유틸: 두 점 거리(m) ===== */
+function haversineM(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 /* ===== 메인 ===== */
 async function main(){
   /* 점수/에너지 모듈 초기화 */
-  await Score.init({
-    db,
-    getGuestId,
-    toast,
-    playFail
-  });
+  await Score.init({ db, getGuestId, toast, playFail });
+
   // HUD 준비 + Score의 에너지 UI 삽입
   Score.attachToHUD(ensureHUD());
   setHUD({ chain: Score.getChainTotal() });
@@ -250,12 +251,9 @@ async function main(){
   });
   if (userLat==null){ userLat=37.5665; userLon=126.9780; }
 
-  // 플레이어 마커 (팝업 제거)
+  // 플레이어 마커
   const playerIcon = L.divIcon({
-    className:'',
-    html:'<div class="player-emoji">🧍</div>',
-    iconSize:[22,22],
-    iconAnchor:[11,11]
+    className:'', html:'<div class="player-emoji">🧍</div>', iconSize:[22,22], iconAnchor:[11,11]
   });
   const playerMarker = L.marker([userLat,userLon],{icon:playerIcon}).addTo(map);
   map.setView([userLat,userLon], 19);
@@ -265,26 +263,48 @@ async function main(){
     if (!el) return;
     const e = el.querySelector('.player-emoji');
     if (!e) return;
-    e.classList.remove('player-hit'); void e.offsetWidth; // reflow
+    e.classList.remove('player-hit'); void e.offsetWidth;
     e.classList.add('player-hit');
   }
 
-  // 내 위치 추적
+  /* 이동 경로(Polyline) & 이동거리 HUD */
+  const walkPath = L.polyline([[userLat,userLon]], { weight: 3, opacity: 0.9 }).addTo(map);
+  let lastLat = userLat, lastLon = userLon;
+  let totalWalkedM = Number(localStorage.getItem('ui_total_walk_m') || 0);
+  setHUD({ distanceM: totalWalkedM });
+
   if (navigator.geolocation){
     navigator.geolocation.watchPosition(p=>{
       userLat=p.coords.latitude; userLon=p.coords.longitude;
       playerMarker.setLatLng([userLat,userLon]);
+
+      // 경로 & 거리
+      walkPath.addLatLng([userLat, userLon]);
+      if (Number.isFinite(lastLat) && Number.isFinite(lastLon)){
+        const seg = haversineM(lastLat, lastLon, userLat, userLon);
+        if (seg >= 0.5){
+          totalWalkedM += seg;
+          localStorage.setItem('ui_total_walk_m', String(totalWalkedM));
+          setHUD({ distanceM: totalWalkedM });
+        }
+      }
+      lastLat = userLat; lastLon = userLon;
     },()=>{}, {enableHighAccuracy:true});
   }
 
-  /* ===== 스타트 게이트: 탭하면 오디오/타워 시작 ===== */
-  let towers; // 나중에 초기화되지만, 게이트 콜백에서 접근 가능
+  /* 걷기 적립 시작 (10m당 1점, 차량 필터) */
+  const walker = new WalkPoints({ toast });
+  walker.start();
+  window.addEventListener('pagehide', ()=> walker?.stop());
+
+  /* 스타트 게이트: 탭하면 오디오/타워 시작 */
+  let towers;
   addStartGate(() => {
     try { ensureAudio(); } catch {}
     try { towers?.setUserReady(true); } catch {}
   });
 
-  /* ===== 망루(타워) 초기화 ===== */
+  /* 망루(타워) 초기화 */
   const IS_ADMIN = location.search.includes('admin=1') || localStorage.getItem('isAdmin') === '1';
   towers = new TowerGuard({
     map,
@@ -295,18 +315,18 @@ async function main(){
     getUserLatLng: ()=>[userLat, userLon],
     onUserHit: (damage, towerInfo)=>{
       flashPlayer();
-      Score.deductGP(damage, towerInfo.lat, towerInfo.lon); // 점수 차감 + 사망 판정까지 Score가 수행
+      Score.deductGP(damage, towerInfo.lat, towerInfo.lon);
     },
     isAdmin: IS_ADMIN
   });
 
-  // 혹시 모를 정책 대비: 첫 포인터로 오디오/타워 오디오 재개
+  // 첫 포인터 시 오디오 재개
   window.addEventListener('pointerdown', ()=>{
     try { ensureAudio(); } catch {}
     try { towers.resumeAudio(); } catch {}
   }, { once:true, passive:true });
 
-  /* ===== 몬스터 로드 ===== */
+  /* 몬스터 로드 */
   const monsters=[];
   try{
     const qs = await getDocs(collection(db,'monsters'));
@@ -329,7 +349,7 @@ async function main(){
     monsters.push({ id:'test', mid:23, lat:userLat, lon:userLon, url:DEFAULT_IMG, size:96, power:20 });
   }
 
-  /* ===== 배치 + 시간내 N타 전투 ===== */
+  /* 배치 + 시간내 N타 전투 */
   monsters.forEach(m=>{
     const icon = makeImageDivIcon(m.url, m.size);
     const marker = L.marker([m.lat, m.lon], { icon, interactive: true }).addTo(map);
@@ -378,16 +398,12 @@ async function main(){
       toast('실패… 다시 시도하세요');
     }
 
-    // 클릭 = 시작/타격
     marker.on('click', async ()=>{
-      ensureAudio(); // 사용자 상호작용 시 오디오 보장
-
-      // 히트 플래시 + 타격음
+      ensureAudio();
       const el = getImg();
       if (el){ el.classList.remove('mon-hit'); void el.offsetWidth; el.classList.add('mon-hit'); }
       playHit();
 
-      // 챌린지 시작
       if (!chal){
         const durationMs = getChallengeDurationMs(m.power);
         chal = { remain: Math.max(1, m.power) - 1, deadline: Date.now() + durationMs, timer: null };
@@ -401,7 +417,6 @@ async function main(){
         return;
       }
 
-      // 진행 중 타격
       if (Date.now() >= chal.deadline){ fail(); return; }
       chal.remain -= 1;
       if (chal.remain <= 0) { await win(); }
@@ -422,7 +437,6 @@ function addStartGate(onStart){
     btn.remove();
   };
   btn.addEventListener('pointerdown', kick, { once:true });
-  // 브라우저 포커스 복귀 시 오디오 재개 보강
   document.addEventListener('visibilitychange', ()=>{
     if (document.visibilityState === 'visible') { try { ensureAudio(); } catch {} }
   });
