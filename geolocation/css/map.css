@@ -1,0 +1,69 @@
+/* 화면 전체 및 지도 */
+html, body { margin:0; padding:0; height:100%; }
+#map { height:100vh; width:100%; }
+
+/* 토스트 */
+#eventToast{
+  position:fixed; top:60px; left:50%; transform:translateX(-50%);
+  padding:14px 18px; border-radius:10px; color:#fff;
+  background:rgba(0,0,0,.75); backdrop-filter: blur(8px);
+  display:none; z-index:3000; font-size:16px; box-shadow:0 6px 18px rgba(0,0,0,.3);
+}
+#eventToast.reward { background: rgba(34,197,94,.9); }
+#eventToast.lost   { background: rgba(239,68,68,.9); }
+
+/* 로그 (선택) */
+#eventLog{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+  width:min(520px, calc(100% - 32px));
+  background:rgba(0,0,0,.4); color:#fff; font-size:14px;
+  border-radius:10px; padding:10px; z-index:2500; max-height:150px; overflow:auto;
+}
+#eventLog ul{ margin:0; padding:0; list-style:none; }
+#eventLog li{ padding:6px 0; border-bottom:1px solid rgba(255,255,255,.15); }
+#eventLog li:last-child{ border-bottom:none; }
+
+/* 하단 버튼 */
+.bottom-controls{
+  position:fixed; bottom:26px; right:26px; display:flex; gap:10px; z-index:2000;
+}
+.bottom-controls button{
+  padding:10px 14px; border:0; border-radius:999px; background:#111827; color:#fff; cursor:pointer;
+  box-shadow:0 6px 16px rgba(0,0,0,.2); font-weight:700;
+}
+
+/* 관리자 페이지용 기본 스타일 */
+:root { --blue:#2563eb; }
+* { box-sizing:border-box; }
+body.admin {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  margin:20px; color:#111827;
+}
+.admin h2{ margin:0 0 12px; }
+.admin .pill{ display:inline-block; padding:2px 8px; background:#eef2ff; color:#3730a3; border-radius:999px; font-size:12px; margin-left:6px; }
+.admin #map{ height:420px; margin-bottom:10px; border-radius:10px; overflow:hidden; }
+.admin .info{ font-size:13px; color:#374151; margin:6px 0 12px; }
+.admin .tabs{ display:flex; gap:8px; margin:10px 0 14px; }
+.admin .tab-btn{ padding:10px 14px; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; cursor:pointer; }
+.admin .tab-btn.active{ background:var(--blue); color:#fff; border-color:var(--blue); }
+.admin .panel{ display:none; border:1px solid #eef2f7; padding:14px; border-radius:12px; }
+.admin .panel.active{ display:block; }
+.admin .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width: 720px){ .admin .row{ grid-template-columns:1fr; } }
+.admin label{ font-size:12px; color:#4b5563; margin:6px 0 4px; display:block; }
+.admin input, .admin select, .admin button{
+  width:100%; padding:10px 12px; margin:5px 0; border:1px solid #e5e7eb; border-radius:10px; background:#fff; font:inherit;
+}
+.admin button[type=submit]{ background:#111827; color:#fff; font-weight:700; cursor:pointer; }
+.admin small.hint{ color:#6b7280; display:block; margin-top:-3px; }
+.admin .subhead{ font-weight:700; margin:10px 0 6px; }
+.admin .sep{ height:1px; background:#edf2f7; margin:12px 0; }
+
+/* map.css (또는 전역 css) */
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+}

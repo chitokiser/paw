@@ -3,416 +3,67 @@
 <head>
   <meta charset="UTF-8" />
   <title>GeoHunt 관리자 페이지</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
   <style>
-    :root { --blue:#2563eb; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 20px; color:#111827; }
-    h2 { margin: 0 0 12px; }
-    .pill { display:inline-block; padding:2px 8px; background:#eef2ff; color:#3730a3; border-radius:999px; font-size:12px; margin-left:6px; }
-    #map { height: 420px; margin-bottom: 10px; border-radius: 10px; overflow: hidden; }
-    .info { font-size: 13px; color:#374151; margin: 6px 0 12px; }
-    .tabs { display:flex; gap:8px; margin: 10px 0 14px; }
-    .tab-btn { padding:10px 14px; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; cursor:pointer; }
-    .tab-btn.active { background:var(--blue); color:#fff; border-color:var(--blue); }
-    .panel { display:none; border:1px solid #eef2f7; padding:14px; border-radius:12px; }
-    .panel.active { display:block; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    @media (max-width: 720px){ .row { grid-template-columns: 1fr; } }
-    label { font-size:12px; color:#4b5563; margin: 6px 0 4px; display:block; }
-    input, select, button { width:100%; padding:10px 12px; margin:5px 0; border:1px solid #e5e7eb; border-radius:10px; background:#fff; font: inherit; }
-    small.hint { color:#6b7280; display:block; margin-top:-3px; }
-    button[type=submit] { background:#111827; color:#fff; font-weight:700; cursor:pointer; }
-    .subhead { font-weight:700; margin: 10px 0 6px; }
-    .sep { height:1px; background:#edf2f7; margin:12px 0; }
-    .btn { cursor:pointer; border:1px solid #e5e7eb; background:#fff; }
-    .btn.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
-    .btn-row{ display:flex; gap:8px; margin:6px 0 0; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:18px}
+    h2{margin:0 0 10px}
+    #map{height:420px;margin-bottom:12px;border-radius:10px;overflow:hidden}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media (max-width:720px){.row{grid-template-columns:1fr}}
+    label{font-size:12px;color:#555}
+    input,button{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0}
+    button{cursor:pointer;background:#111827;color:#fff;font-weight:700}
+    .hint{font-size:12px;color:#6b7280;margin-top:-4px}
   </style>
 </head>
 <body>
-  <h2>GeoHunt 관리자 페이지 <span class="pill">몬스터 &amp; 벙커 등록</span></h2>
+  <h2>GeoHunt 관리자 페이지</h2>
 
   <div id="map"></div>
-  <div class="info">선택 좌표: <span id="coordText">-</span></div>
+  <div>선택 좌표: <span id="coordText">-</span></div>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-target="monsterPanel">몬스터 등록</button>
-    <button class="tab-btn" data-target="bunkerPanel">벙커 등록</button>
-  </div>
-
-  <!-- 몬스터 등록 -->
-  <section id="monsterPanel" class="panel active">
-    <form id="monsterForm" autocomplete="off">
-      <div class="row">
-        <div>
-          <label for="mid">몬스터 ID (mid)</label>
-          <input type="number" id="mid" placeholder="예: 23" required />
-        </div>
-        <div>
-          <label for="pass">관리 비밀번호 (pass)</label>
-          <input type="number" id="pass" placeholder="숫자 비밀번호" required />
-        </div>
+  <form id="monsterForm" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="imageURL">몬스터 이미지 URL</label>
+        <input type="url" id="imageURL" placeholder="https://puppi.netlify.app/images/mon/1.png" required />
+        <div class="hint">https://puppi.netlify.app/images/mon/1.png</div>
       </div>
-
-      <div class="row">
-        <div>
-          <label for="imageURL">미니맵/고정 이미지 URL <small class="hint">(선택, 스프라이트 쓰면 생략)</small></label>
-          <input type="url" id="imageURL" placeholder="https://.../marker.png" />
-        </div>
-        <div>
-          <label for="difficulty">난이도(선택)</label>
-          <input type="number" id="difficulty" placeholder="예: 3" />
-        </div>
+      <div>
+        <label for="power">몬스터 파워 (필수)</label>
+        <input type="number" id="power" placeholder="예: 20" min="1" required />
+        <div class="hint">보상 = 파워, 제한시간 = (파워/4)초, 필요타격 = 파워회</div>
       </div>
+    </div>
 
-      <div class="sep"></div>
-      <div class="subhead">스프라이트 시트 (고정 규격: 768×1152, 3×3)</div>
+    <div class="row">
+      <div>
+        <label for="mid">몬스터 ID (mid)</label>
+        <input type="number" id="mid" placeholder="예: 101" required />
+      </div>
+      <div>
+        <label for="pass">관리 비밀번호 (pass)</label>
+        <input type="number" id="pass" placeholder="숫자 비밀번호" required />
+      </div>
+    </div>
 
-      <div class="row">
-        <div>
-          <label for="walkImg">Walk 시트 URL</label>
-          <input type="text" id="walkImg" value="https://puppi.netlify.app/geolocation/sprites/1.png" />
-          <small class="hint">반드시 768×1152 PNG</small>
-        </div>
-        <div>
-          <label for="atkImg">Attack 시트 URL</label>
-          <input type="text" id="atkImg" value="https://puppi.netlify.app/geolocation/sprites/1.png" />
-          <small class="hint">한 장 시트면 Walk와 동일</small>
-        </div>
+    <div class="row">
+      <div>
+        <label for="size">아이콘 크기(px) (선택)</label>
+        <input type="number" id="size" placeholder="기본 96" min="24" />
+        <div class="hint">지도 위 아이콘 픽셀 크기. 비우면 96px</div>
       </div>
+      <div></div>
+    </div>
 
-      <div class="row">
-        <div>
-          <label for="walkFrames">Walk 프레임 수</label>
-          <input type="number" id="walkFrames" value="3" />
-        </div>
-        <div>
-          <label for="walkFps">Walk FPS</label>
-          <input type="number" id="walkFps" value="8" />
-        </div>
-      </div>
+    <button type="submit">몬스터 등록</button>
+  </form>
 
-      <div class="row">
-        <div>
-          <label for="atkFrames">Attack 프레임 수</label>
-          <input type="number" id="atkFrames" value="3" />
-        </div>
-        <div>
-          <label for="atkFps">Attack FPS</label>
-          <input type="number" id="atkFps" value="10" />
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="frameW">프레임 폭(px)</label>
-          <input type="number" id="frameW" value="256" />
-        </div>
-        <div>
-          <label for="frameH">프레임 높이(px)</label>
-          <input type="number" id="frameH" value="288" />
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="walkOffsetY">Walk Y 오프셋(px)</label>
-          <input type="number" id="walkOffsetY" value="0" />
-        </div>
-        <div>
-          <label for="atkOffsetY">Attack Y 오프셋(px)</label>
-          <input type="number" id="atkOffsetY" value="288" />
-        </div>
-      </div>
-
-      <div class="row">
-        <div>
-          <label for="rotOffset">기본 회전 보정(도)</label>
-          <input type="number" id="rotOffset" value="0" />
-          <small class="hint">스프라이트가 동쪽을 보지 않으면 +90 등으로 보정</small>
-        </div>
-        <div class="btn-row">
-          <button type="button" id="applyGoblin" class="btn">고블린(768×1152/3×3) 적용</button>
-          <button type="button" id="checkImage" class="btn">이미지 크기 확인</button>
-        </div>
-      </div>
-
-      <div class="sep"></div>
-      <div class="subhead">행동 파라미터</div>
-      <div class="row">
-        <div>
-          <label for="speed">이동 속도 (m/s)</label>
-          <input type="number" id="speed" value="1.2" step="0.1" />
-        </div>
-        <div>
-          <label for="patrolRadius">배회 반경 (m)</label>
-          <input type="number" id="patrolRadius" value="8" />
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label for="aggroRange">추격 개시 범위 (m)</label>
-          <input type="number" id="aggroRange" value="12" />
-        </div>
-        <div>
-          <label for="attackRange">공격 범위 (m)</label>
-          <input type="number" id="attackRange" value="6" />
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label for="attackCooldownMs">공격 쿨다운 (ms)</label>
-          <input type="number" id="attackCooldownMs" value="3000" />
-        </div>
-        <div>
-          <label for="attackType">공격 타입</label>
-          <select id="attackType">
-            <option value="melee">melee(근접)</option>
-            <option value="projectile">projectile(투사체)</option>
-          </select>
-        </div>
-      </div>
-
-      <button type="submit" class="btn primary">몬스터 등록</button>
-    </form>
-  </section>
-
-  <!-- 벙커 등록 -->
-  <section id="bunkerPanel" class="panel">
-    <form id="bunkerForm" autocomplete="off">
-      <div class="row">
-        <div>
-          <label for="bunkerPass">관리 비밀번호 (pass)</label>
-          <input type="number" id="bunkerPass" placeholder="숫자 비밀번호" required />
-        </div>
-        <div>
-          <label for="range">사거리 range (m)</label>
-          <input type="number" id="range" min="1" value="5" required />
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label for="cooldownMs">재장전 시간 cooldownMs (ms)</label>
-          <input type="number" id="cooldownMs" min="300" value="4000" required />
-        </div>
-        <div>
-          <label for="arrowSpeed">화살 속도 arrowSpeed (m/s)</label>
-          <input type="number" id="arrowSpeed" min="1" value="40" required />
-        </div>
-      </div>
-      <button type="submit" class="btn primary">벙커 등록</button>
-    </form>
-  </section>
-
+  <!-- Libs -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-  <script type="module">
-    /* ---------------- Firebase ---------------- */
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-    import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-
-    const app = initializeApp({
-      apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
-      authDomain: "puppi-d67a1.firebaseapp.com",
-      projectId: "puppi-d67a1",
-      storageBucket: "puppi-d67a1.appspot.com",
-      messagingSenderId: "552900371836",
-      appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
-      measurementId: "G-9TZ81RW0PL"
-    });
-    const db  = getFirestore(app);
-
-    /* ---------------- Map (단일 인스턴스) ---------------- */
-    let map, clickedLatLng=null, currentMarker=null, bunkerRangeCircle=null;
-
-    function createMap(initialCenter=[37.5665,126.9780], zoom=13){
-      map = L.map('map').setView(initialCenter, zoom);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'}).addTo(map);
-      L.Control.geocoder({ defaultMarkGeocode: false })
-        .on('markgeocode', (e) => {
-          map.fitBounds(L.polygon([
-            e.geocode.bbox.getSouthEast(), e.geocode.bbox.getNorthEast(),
-            e.geocode.bbox.getNorthWest(), e.geocode.bbox.getSouthWest()
-          ]).getBounds());
-          setClicked(e.geocode.center);
-        }).addTo(map);
-      map.on('click', (e)=> setClicked(e.latlng));
-    }
-
-    function centerToCurrentPosition(){
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(
-        (pos)=>{ const {latitude:lat, longitude:lng}=pos.coords;
-          map.setView([lat,lng], 15);
-          L.marker([lat,lng]).addTo(map).bindPopup("📍 현재 위치").openPopup();
-        },
-        (err)=> console.warn('Geolocation 실패:', err),
-        { enableHighAccuracy:true, timeout:8000, maximumAge:30000 }
-      );
-    }
-
-    function setClicked(latlng){
-      clickedLatLng = latlng;
-      document.getElementById('coordText').textContent =
-        `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
-      if (currentMarker) map.removeLayer(currentMarker);
-      currentMarker = L.marker(latlng).addTo(map).bindPopup("위치 선택됨").openPopup();
-      drawBunkerRangePreview();
-    }
-
-    function drawBunkerRangePreview(){
-      const panelOpen = document.getElementById('bunkerPanel').classList.contains('active');
-      const range = Number(document.getElementById('range').value || 5);
-      if (bunkerRangeCircle) { map.removeLayer(bunkerRangeCircle); bunkerRangeCircle=null; }
-      if (panelOpen && clickedLatLng && !isNaN(range) && range>0){
-        bunkerRangeCircle = L.circle([clickedLatLng.lat, clickedLatLng.lng], {
-          radius: range, color:'#ff3b30', fillColor:'#ff3b30', fillOpacity:0.1, weight:1
-        }).addTo(map);
-      }
-    }
-
-    /* ---------------- Tabs ---------------- */
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    tabBtns.forEach(btn => btn.addEventListener('click', () => {
-      tabBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      document.getElementById(btn.dataset.target).classList.add('active');
-      drawBunkerRangePreview();
-    }));
-    document.getElementById('range').addEventListener('input', drawBunkerRangePreview);
-
-    /* ---------------- Helpers ---------------- */
-    const $  = (id) => document.getElementById(id);
-    const num = (id, def=null) => {
-      const v = $(id).value; if (v==="" || v==null) return def;
-      const n = Number(v); return isNaN(n) ? def : n;
-    };
-    const str = (id) => ($(id).value || '').trim();
-    const checkPass = (_) => true; // 운영은 Firestore 보안규칙 권장
-
-    // 768×1152/3×3 고블린 프리셋
-    function applyGoblinPreset(){
-      $('walkFrames').value = 3; $('atkFrames').value = 3;
-      $('frameW').value = 256;   $('frameH').value  = 288;
-      $('walkOffsetY').value = 0; $('atkOffsetY').value = 288;
-    }
-    $('applyGoblin').addEventListener('click', applyGoblinPreset);
-
-    // 이미지 크기 검증(768×1152 아니면 경고)
-    $('checkImage').addEventListener('click', async ()=>{
-      const urls = [str('walkImg'), str('atkImg')].filter(Boolean);
-      if (!urls.length) { alert('이미지 URL을 입력하세요.'); return; }
-      try{
-        for (const u of urls){
-          const img = new Image();
-          const ok = await new Promise((res,rej)=>{ img.onload=()=>res(img); img.onerror=rej; img.src=u; });
-          if (ok.naturalWidth!==768 || ok.naturalHeight!==1152) {
-            alert(`이미지 크기 불일치: ${u}\n필수 크기: 768×1152, 실제: ${ok.naturalWidth}×${ok.naturalHeight}`);
-            return;
-          }
-        }
-        alert('모든 이미지가 768×1152 입니다 ✅');
-      }catch{ alert('이미지를 불러올 수 없습니다. URL을 확인하세요.'); }
-    });
-
-    /* ---------------- Submit: Monster ---------------- */
-    $('monsterForm').addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      if (!clickedLatLng) return alert("지도를 클릭해 위치를 선택하세요.");
-
-      const mid  = num('mid'); const pass = num('pass');
-      if (!mid || !pass) return alert("mid/pass를 입력하세요.");
-      if (!checkPass(pass)) return alert("패스워드가 올바르지 않습니다.");
-
-      // 기본값 강제(768×1152/3×3)
-      const payload = {
-        lat: clickedLatLng.lat, lon: clickedLatLng.lng,
-        mid, pass,
-        ...(str('imageURL') ? { imagesURL: str('imageURL') } : {}),
-        ...(num('difficulty') ? { difficulty: num('difficulty') } : {}),
-        ...(str('walkImg') ? { walkImg: str('walkImg') } : {}),
-        ...(str('atkImg')  ? { atkImg:  str('atkImg')  } : {}),
-
-        walkFrames: num('walkFrames', 3),
-        walkFps:    num('walkFps', 8),
-        atkFrames:  num('atkFrames', 3),
-        atkFps:     num('atkFps', 10),
-        frameW:     num('frameW', 256),
-        frameH:     num('frameH', 288),
-        walkOffsetY: num('walkOffsetY', 0),
-        atkOffsetY:  num('atkOffsetY', 288),
-        rotOffset:  num('rotOffset', 0),
-
-        // 행동
-        speed:            num('speed', 1.2),
-        patrolRadius:     num('patrolRadius', 8),
-        aggroRange:       num('aggroRange', 12),
-        attackRange:      num('attackRange', 6),
-        attackCooldownMs: num('attackCooldownMs', 3000),
-        attackType:       $('attackType').value || 'melee',
-      };
-
-      // 이미지 크기 빠른 검증(선택)
-      const toCheck = [payload.walkImg, payload.atkImg].filter(Boolean);
-      if (toCheck.length){
-        const load = (u)=> new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=u; });
-        try{
-          for (const u of toCheck){
-            const im = await load(u);
-            if (im.naturalWidth!==768 || im.naturalHeight!==1152) {
-              alert(`이미지 크기가 768×1152가 아닙니다: ${u}`);
-              return;
-            }
-          }
-        }catch{ alert('이미지를 불러올 수 없습니다. URL을 확인하세요.'); return; }
-      }
-
-      await addDoc(collection(db, "monsters"), payload);
-      alert("몬스터 등록 완료!");
-
-      e.target.reset();
-      applyGoblinPreset(); // 리셋 후에도 기본 유지
-      if (currentMarker) { map.removeLayer(currentMarker); currentMarker=null; }
-      if (bunkerRangeCircle) { map.removeLayer(bunkerRangeCircle); bunkerRangeCircle=null; }
-      clickedLatLng=null; $('coordText').textContent='-';
-    });
-
-    /* ---------------- Submit: Bunker ---------------- */
-    $('bunkerForm').addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      if (!clickedLatLng) return alert("지도를 클릭해 위치를 선택하세요.");
-
-      const pass = num('bunkerPass');
-      const range = num('range');
-      const cooldownMs = num('cooldownMs');
-      const arrowSpeed = num('arrowSpeed');
-
-      if (!checkPass(pass)) return alert("패스워드가 올바르지 않습니다.");
-      if (!range || range <= 0) return alert("range는 1 이상의 숫자여야 합니다.");
-      if (!cooldownMs || cooldownMs < 300) return alert("cooldownMs는 300ms 이상이어야 합니다.");
-      if (!arrowSpeed || arrowSpeed <= 0) return alert("arrowSpeed는 1 이상의 숫자여야 합니다.");
-
-      await addDoc(collection(db, "bunkers"), {
-        lat: clickedLatLng.lat, lon: clickedLatLng.lng,
-        range, cooldownMs, arrowSpeed, pass
-      });
-
-      alert("벙커 등록 완료!");
-      e.target.reset();
-      if (currentMarker) { map.removeLayer(currentMarker); currentMarker=null; }
-      if (bunkerRangeCircle) { map.removeLayer(bunkerRangeCircle); bunkerRangeCircle=null; }
-      clickedLatLng=null; $('coordText').textContent='-';
-    });
-
-    /* ---------------- Start ---------------- */
-    createMap();              // 1) 지도 생성(기본 좌표)
-    centerToCurrentPosition(); // 2) 권한 허용 시 현재 위치로 이동
-    // 기본값은 항상 고블린 프리셋
-    applyGoblinPreset();
-  </script>
+  <script type="module" src="./js/admin.js"></script>
 </body>
 </html>
