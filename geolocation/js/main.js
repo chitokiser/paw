@@ -74,7 +74,7 @@ const db  = getFirestore(app);
   const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();
 
-/* ===== 사운드(명확한 성공/실패/타격) ===== */
+/* ===== 사운드 ===== */
 let audioCtx;
 function ensureAudio(){
   audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
@@ -156,6 +156,20 @@ function playDeath(){
   lfo.start(t); lfo.stop(t+0.6);
 }
 
+/* 짧은 칼바람 소리 */
+function swordWhoosh(){
+  ensureAudio();
+  const t = audioCtx.currentTime;
+  const nz = createNoise();
+  const bp = audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(900, t); bp.Q.value = 2;
+  const g  = audioCtx.createGain(); g.gain.setValueAtTime(0.0001, t);
+  nz.connect(bp); bp.connect(g); g.connect(audioCtx.destination);
+  g.gain.exponentialRampToValueAtTime(0.35, t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+0.16);
+  bp.frequency.linearRampToValueAtTime(2200, t+0.14);
+  nz.start(t); nz.stop(t+0.18);
+}
+
 /* ===== 간단 토스트 ===== */
 function toast(msg){
   let t=document.getElementById('eventToast');
@@ -190,17 +204,24 @@ function setHUD({timeLeft=null, hitsLeft=null, earn=null, chain=null, distanceM=
 
 /* ===== 아이콘(HTML) ===== */
 function makeImageDivIcon(url, sizePx){
-  const s = Math.round(Math.max(24, Math.min(Number(sizePx)||DEFAULT_ICON_PX, 256))); // 24~256px
+  const s = Math.round(Math.max(24, Math.min(Number(sizePx)||DEFAULT_ICON_PX, 256)));
+  const safe = (url && String(url).trim()) ? String(url).trim() : DEFAULT_IMG;
   const html = `
     <div class="mon-wrap" style="width:${s}px; height:${s}px;">
-      <img class="mon-img" src="${url||DEFAULT_IMG}" alt="monster"/>
+      <img class="mon-img" src="${safe}" alt="monster"
+           onerror="this.onerror=null; this.src='${DEFAULT_IMG}';" />
     </div>`;
-  return L.divIcon({
-    className: '',
-    html,
-    iconSize: [s, s],
-    iconAnchor: [s/2, s]
-  });
+  return L.divIcon({ className: '', html, iconSize: [s, s], iconAnchor: [s/2, s] });
+}
+
+/* 플레이어 아이콘을 divIcon으로 (slash 포함) */
+function makePlayerDivIcon(src="../images/mon/user.png"){
+  const html = `
+    <div class="player-wrap" style="width:48px;height:48px;position:relative;">
+      <img class="player-img" src="${src}" alt="player" style="width:100%;height:100%;display:block;"/>
+      <div class="slash"></div>
+    </div>`;
+  return L.divIcon({ className:'', html, iconSize:[48,48], iconAnchor:[24,24] });
 }
 
 /* ===== 제한시간 규칙 ===== */
@@ -255,7 +276,30 @@ function addStartGate(onStart){
   });
 }
 
+/* ===== 플레이어 칼질 연출 ===== */
+let playerMarker; // 전역에서 참조
+function swingSwordAt(targetLat, targetLon){
+  const el = playerMarker?.getElement();
+  if (!el) return;
+  const slash = el.querySelector('.slash');
+  if (!slash) return;
+
+  // 플레이어 -> 타깃 각도
+  const p1 = map.latLngToLayerPoint(playerMarker.getLatLng());
+  const p2 = map.latLngToLayerPoint(L.latLng(targetLat, targetLon));
+  const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+
+  // 위->아래 느낌으로 약간 보정(-90deg)
+  slash.style.setProperty('--angle', `${angleDeg - 90}deg`);
+  slash.classList.remove('on'); void slash.offsetWidth; // restart
+  slash.classList.add('on');
+
+  // 사운드
+  swordWhoosh();
+}
+
 /* ===== 메인 ===== */
+let map; // swingSwordAt에서 참조하려고 바깥에 둠
 async function main(){
   /* 점수/에너지 모듈 초기화 */
   await Score.init({ db, getGuestId, toast, playFail });
@@ -267,7 +311,7 @@ async function main(){
   Score.wireRespawn();
 
   /* 지도 */
-  const map = L.map('map',{maxZoom:22}).setView([37.5665,126.9780], 16);
+  map = L.map('map',{maxZoom:22}).setView([37.5665,126.9780], 16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
   // 현재 위치
@@ -281,13 +325,8 @@ async function main(){
   });
   if (userLat==null){ userLat=37.5665; userLon=126.9780; }
 
-  // 플레이어 마커 (이미지 아이콘)
-  const playerIcon = L.icon({
-    iconUrl: '../images/mon/user.png',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
-  });
-  const playerMarker = L.marker([userLat,userLon],{icon:playerIcon}).addTo(map);
+  // 플레이어 마커 (divIcon + slash)
+  playerMarker = L.marker([userLat,userLon],{ icon: makePlayerDivIcon('../images/mon/user.png') }).addTo(map);
   map.setView([userLat,userLon], 19);
 
   function flashPlayer(){
@@ -348,6 +387,8 @@ async function main(){
     onUserHit: (damage, towerInfo)=>{
       flashPlayer();
       Score.deductGP(damage, towerInfo.lat, towerInfo.lon);
+      // (선택) 막는 느낌을 주고 싶다면 아래 주석 해제
+      // swingSwordAt(towerInfo.lat, towerInfo.lon);
     },
     isAdmin: IS_ADMIN
   });
@@ -370,8 +411,10 @@ async function main(){
     onUserHit: (damage, mon)=>{
       flashPlayer();
       Score.deductGP(damage, mon.lat, mon.lon);
+      // (선택) 반격 연출 원하면 주석 해제
+      // swingSwordAt(mon.lat, mon.lon);
     },
-    isAdmin: IS_ADMIN // 운영툴에서만 true
+    isAdmin: IS_ADMIN
   });
 
   /* (선택) 몬스터 클릭 전투: 아이콘 배치 + 시간내 N타 */
@@ -380,16 +423,13 @@ async function main(){
     const qs = await getDocs(collection(db,'monsters'));
     qs.forEach(s=>{
       const d=s.data();
-      const sizePx = (()=>{
-        const n = Number(d.size);
-        return Number.isNaN(n) ? DEFAULT_ICON_PX : Math.max(24, Math.min(n, 256));
-      })();
+      const sizePx = (()=>{ const n = Number(d.size); return Number.isNaN(n) ? DEFAULT_ICON_PX : Math.max(24, Math.min(n, 256)); })();
       monsters.push({
         id: s.id,
         mid: Number(d.mid),
         lat: Number(d.lat),
         lon: Number(d.lon),
-        url: d.imagesURL || d.imageURL || d.iconURL || DEFAULT_IMG,
+        url: (d.imagesURL ?? d.imageURL ?? d.iconURL ?? DEFAULT_IMG),
         size: sizePx,
         power: Math.max(1, Number(d.power ?? 20))
       });
@@ -456,6 +496,9 @@ async function main(){
         try { playFail(); } catch {}
         return;
       }
+
+      // ===== 실제 공격 시점: 칼질 애니메이션 + 사운드 =====
+      swingSwordAt(m.lat, m.lon);
 
       ensureAudio();
       const el = getImg();

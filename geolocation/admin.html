@@ -16,6 +16,8 @@
     input,button{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0}
     button{cursor:pointer;background:#111827;color:#fff;font-weight:700}
     .hint{font-size:12px;color:#6b7280;margin-top:-4px}
+    .card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:14px}
+    .muted{color:#6b7280;font-size:12px}
   </style>
 </head>
 <body>
@@ -23,43 +25,122 @@
 
   <div id="map"></div>
   <div>선택 좌표: <span id="coordText">-</span></div>
+  <div class="muted">지도를 클릭하면 lat/lon이 자동 입력됩니다.</div>
 
-  <form id="monsterForm" autocomplete="off">
-    <div class="row">
-      <div>
-        <label for="imageURL">몬스터 이미지 URL</label>
-        <input type="url" id="imageURL" placeholder="https://puppi.netlify.app/images/mon/1.png" required />
-        <div class="hint">https://puppi.netlify.app/images/mon/1.png</div>
+  <!-- 몬스터 등록/수정 -->
+  <div class="card">
+    <h3>몬스터 등록/수정</h3>
+    <form id="monsterForm" autocomplete="off">
+      <div class="row">
+        <div>
+          <label for="m_lat">위도 (lat)</label>
+          <input type="number" step="any" id="m_lat" required />
+        </div>
+        <div>
+          <label for="m_lon">경도 (lon)</label>
+          <input type="number" step="any" id="m_lon" required />
+        </div>
       </div>
-      <div>
-        <label for="power">몬스터 파워 (필수)</label>
-        <input type="number" id="power" placeholder="예: 20" min="1" required />
-        <div class="hint">보상 = 파워, 제한시간 = (파워/4)초, 필요타격 = 파워회</div>
-      </div>
-    </div>
 
-    <div class="row">
-      <div>
-        <label for="mid">몬스터 ID (mid)</label>
-        <input type="number" id="mid" placeholder="예: 101" required />
+      <div class="row">
+        <div>
+          <label for="imageURL">몬스터 이미지 URL</label>
+          <input type="url" id="imageURL" placeholder="https://puppi.netlify.app/images/mon/1.png" required />
+          <div class="hint">예) https://puppi.netlify.app/images/mon/1.png</div>
+        </div>
+        <div>
+          <label for="power">몬스터 파워 (필수)</label>
+          <input type="number" id="power" placeholder="예: 20" min="1" required />
+          <div class="hint">보상=파워, 제한시간=(파워/4)초, 필요타격=파워회</div>
+        </div>
       </div>
-      <div>
-        <label for="pass">관리 비밀번호 (pass)</label>
-        <input type="number" id="pass" placeholder="숫자 비밀번호" required />
-      </div>
-    </div>
 
-    <div class="row">
-      <div>
-        <label for="size">아이콘 크기(px) (선택)</label>
-        <input type="number" id="size" placeholder="기본 96" min="24" />
-        <div class="hint">지도 위 아이콘 픽셀 크기. 비우면 96px</div>
+      <div class="row">
+        <div>
+          <label for="mid">몬스터 ID (mid)</label>
+          <input type="number" id="mid" placeholder="예: 101" required />
+        </div>
+        <div>
+          <label for="size">아이콘 크기(px) (선택)</label>
+          <input type="number" id="size" placeholder="기본 96" min="24" />
+          <div class="hint">지도 위 아이콘 픽셀 크기. 비우면 96px</div>
+        </div>
       </div>
-      <div></div>
-    </div>
 
-    <button type="submit">몬스터 등록</button>
-  </form>
+      <!-- 자동공격용 필드 -->
+      <div class="row">
+        <div>
+          <label for="m_range">사거리(m)</label>
+          <input type="number" id="m_range" placeholder="예: 50" min="10" />
+        </div>
+        <div>
+          <label for="m_damage">1회 데미지</label>
+          <input type="number" id="m_damage" placeholder="예: 1" min="1" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="m_cooldown">쿨다운(ms)</label>
+          <input type="number" id="m_cooldown" placeholder="예: 1800" min="200" />
+        </div>
+        <div>
+          <label for="m_docId">수정용 문서ID (선택)</label>
+          <input type="text" id="m_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="m_pass">관리 비밀번호</label>
+          <input type="password" id="m_pass" placeholder="숫자/문자" required />
+        </div>
+        <div></div>
+      </div>
+
+      <button type="submit">몬스터 등록/수정</button>
+    </form>
+  </div>
+
+  <!-- 망루 등록/수정 -->
+  <div class="card">
+    <h3>망루 등록/수정</h3>
+    <form id="towerForm" autocomplete="off">
+      <div class="row">
+        <div>
+          <label for="t_lat">위도 (lat)</label>
+          <input type="number" step="any" id="t_lat" required />
+        </div>
+        <div>
+          <label for="t_lon">경도 (lon)</label>
+          <input type="number" step="any" id="t_lon" required />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="t_range">사거리(m)</label>
+          <input type="number" id="t_range" placeholder="예: 60" min="10" required />
+        </div>
+        <div>
+          <label for="t_icon">아이콘 URL (선택)</label>
+          <input type="url" id="t_icon" placeholder="https://puppi.netlify.app/images/mon/tower.png" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="t_docId">수정용 문서ID (선택)</label>
+          <input type="text" id="t_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
+        </div>
+        <div>
+          <label for="t_pass">관리 비밀번호</label>
+          <input type="password" id="t_pass" placeholder="숫자/문자" required />
+        </div>
+      </div>
+
+      <button type="submit">망루 등록/수정</button>
+    </form>
+  </div>
 
   <!-- Libs -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>

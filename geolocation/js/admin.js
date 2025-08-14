@@ -1,10 +1,14 @@
-// /js/admin.js  — 지정 위치에 몬스터 등록 (size/power 포함), 검증/UX 보강
+// ./js/admin.js
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import {
+  getFirestore, collection, addDoc, setDoc, doc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-/* ================= Firebase ================= */
-const app = initializeApp({
+/* ====== 설정 ====== */
+// TODO: 필요 시 .env 또는 서버에서 주입하도록 변경하세요.
+const ADMIN_PASS = "1234"; // 데모용. 반드시 교체!
+const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
   projectId: "puppi-d67a1",
@@ -12,140 +16,177 @@ const app = initializeApp({
   messagingSenderId: "552900371836",
   appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
   measurementId: "G-9TZ81RW0PL"
-});
-const db = getFirestore(app);
-
-/* ================ Helpers ================ */
-const $ = (id) => document.getElementById(id);
-const asInt = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.trunc(n) : NaN;
 };
-const isHttpUrl = (s) => /^https?:\/\/.+/i.test(s || "");
 
-/* ================ Map ================ */
-const map = L.map("map").setView([37.5665, 126.9780], 13);
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+/* ====== 지도 ====== */
+const map = L.map("map", { maxZoom: 22 }).setView([21.0285, 105.8542], 16);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 
-L.Control.geocoder({ defaultMarkGeocode: false })
-  .on("markgeocode", (e) => {
-    const bbox = e.geocode.bbox;
-    const poly = L.polygon([
-      bbox.getSouthEast(),
-      bbox.getNorthEast(),
-      bbox.getNorthWest(),
-      bbox.getSouthWest(),
-    ]);
-    map.fitBounds(poly.getBounds());
-    setClicked(e.geocode.center);
+// Geocoder
+const geocoder = L.Control.geocoder({
+  defaultMarkGeocode: false
+})
+  .on("markgeocode", function(e) {
+    const center = e.geocode.center;
+    map.setView(center, 18);
+    setLatLon(center.lat, center.lng);
   })
   .addTo(map);
 
-// 현재 위치로 초기 중심 맞추기(가능한 경우)
-if (navigator.geolocation) {
-  navigator.geolocation.getCurrentPosition(
-    (p) => map.setView([p.coords.latitude, p.coords.longitude], 15),
-    () => {}, // 실패시 무시(기본 좌표 유지)
-    { enableHighAccuracy: true, timeout: 6000 }
-  );
-}
-
-let clickedLatLng = null;
-let currentMarker = null;
-
-map.on("click", (e) => setClicked(e.latlng));
-
-function setClicked(latlng) {
-  clickedLatLng = latlng;
-  const txt = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
-  const coordEl = $("coordText");
-  if (coordEl) coordEl.textContent = txt;
-
-  if (currentMarker) map.removeLayer(currentMarker);
-  currentMarker = L.marker(latlng).addTo(map).bindPopup("위치 선택됨").openPopup();
-}
-
-/* ================ Form ================ */
-const form = $("monsterForm");
-if (!form) {
-  console.error("monsterForm not found in DOM.");
-}
-
-form?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-
-  if (!clickedLatLng) {
-    alert("지도를 클릭해 위치를 선택하세요.");
-    return;
-  }
-
-  const mid = asInt($("mid")?.value);
-  const pass = asInt($("pass")?.value);
-  const imageURL = $("imageURL")?.value?.trim();
-  const power = asInt($("power")?.value); // 필수
-  const size = asInt($("size")?.value);   // 선택
-
-  // ---- 입력 검증 ----
-  if (!Number.isFinite(mid) || mid <= 0) {
-    alert("몬스터 ID(mid)는 1 이상의 숫자여야 합니다.");
-    return;
-  }
-  if (!Number.isFinite(pass) || pass <= 0) {
-    alert("비밀번호(pass)는 1 이상의 숫자여야 합니다.");
-    return;
-  }
-  if (!isHttpUrl(imageURL)) {
-    alert("이미지 URL을 올바른 http(s) 주소로 입력하세요.");
-    return;
-  }
-  if (!Number.isFinite(power) || power <= 0) {
-    alert("파워(power)는 1 이상의 숫자여야 합니다.");
-    return;
-  }
-  if (size != null && !(Number.isFinite(size) && size > 0)) {
-    alert("크기(size)가 있다면 1 이상의 숫자여야 합니다.");
-    return;
-  }
-
-  // 버튼 잠금(중복 제출 방지)
-  const submitBtn = form.querySelector('button[type="submit"]');
-  const prevLabel = submitBtn?.textContent;
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.textContent = "저장 중…";
-  }
-
-  try {
-    const payload = {
-      lat: clickedLatLng.lat,
-      lon: clickedLatLng.lng,
-      mid,
-      pass,
-      imagesURL: imageURL, // ← 지도에 표시할 아이콘 URL
-      power,               // ← 전투에 사용할 파워(필수)
-    };
-    if (Number.isFinite(size)) payload.size = size; // 선택: 아이콘 픽셀 크기
-
-    await addDoc(collection(db, "monsters"), payload);
-
-    alert("몬스터 등록 완료!");
-
-    // 폼/마커 리셋
-    form.reset();
-    if (currentMarker) {
-      map.removeLayer(currentMarker);
-      currentMarker = null;
-    }
-    clickedLatLng = null;
-    const coordEl = $("coordText");
-    if (coordEl) coordEl.textContent = "-";
-  } catch (err) {
-    console.error(err);
-    alert("저장 중 오류가 발생했습니다. 콘솔을 확인하세요.");
-  } finally {
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = prevLabel || "몬스터 등록";
-    }
-  }
+let pickMarker = null;
+map.on("click", (e) => {
+  const { lat, lng } = e.latlng;
+  setLatLon(lat, lng);
 });
+
+function setLatLon(lat, lon) {
+  // 마커 갱신
+  if (!pickMarker) {
+    pickMarker = L.marker([lat, lon], { draggable: true }).addTo(map);
+    pickMarker.on("dragend", () => {
+      const p = pickMarker.getLatLng();
+      setLatLon(p.lat, p.lng);
+    });
+  } else {
+    pickMarker.setLatLng([lat, lon]);
+  }
+
+  // 텍스트 표시
+  const ct = document.getElementById("coordText");
+  if (ct) ct.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+  // 폼 동시 반영
+  setInputValue("m_lat", lat);
+  setInputValue("m_lon", lon);
+  setInputValue("t_lat", lat);
+  setInputValue("t_lon", lon);
+}
+
+function setInputValue(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.value = String(v);
+}
+
+/* ====== 유틸 ====== */
+function valNum(elId, def = null, min = null) {
+  const el = document.getElementById(elId);
+  if (!el) return def;
+  const n = Number(el.value);
+  if (Number.isNaN(n)) return def;
+  if (min != null && n < min) return min;
+  return n;
+}
+function valStr(elId, def = "") {
+  const el = document.getElementById(elId);
+  const s = (el?.value ?? "").trim();
+  return s || def;
+}
+function checkPass(inputId) {
+  const pass = valStr(inputId, "");
+  return pass && pass === ADMIN_PASS;
+}
+function toast(msg) {
+  alert(msg); // 간단 처리. 필요하면 커스텀 토스트 추가
+}
+
+/* ====== 몬스터 등록/수정 ====== */
+const monsterForm = document.getElementById("monsterForm");
+if (monsterForm) {
+  monsterForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!checkPass("m_pass")) { toast("관리 비밀번호가 올바르지 않습니다."); return; }
+
+    const lat = valNum("m_lat");
+    const lon = valNum("m_lon");
+    const imageURL = valStr("imageURL");
+    const power = valNum("power", 20, 1);
+    const mid = valNum("mid", 0, 0);
+    const size = valNum("size", 96, 24);
+    const range = valNum("m_range", null, 10);        // null이면 MonsterGuard 기본값 사용
+    const damage = valNum("m_damage", null, 1);
+    const cooldownMs = valNum("m_cooldown", null, 200);
+
+    if (lat == null || lon == null) { toast("지도를 클릭해 좌표를 선택하세요."); return; }
+
+    const payload = {
+      lat, lon,
+      imageURL,
+      power,
+      mid,
+      ...(size ? { size } : {}),
+      ...(range ? { range } : {}),
+      ...(damage ? { damage } : {}),
+      ...(cooldownMs ? { cooldownMs } : {}),
+      updatedAt: serverTimestamp()
+    };
+
+    const docId = valStr("m_docId", "");
+    try {
+      if (docId) {
+        await setDoc(doc(db, "monsters", docId), payload, { merge: true });
+        toast(`몬스터 업데이트 완료 (doc: ${docId})`);
+      } else {
+        const ref = await addDoc(collection(db, "monsters"), { ...payload, createdAt: serverTimestamp() });
+        toast(`몬스터 등록 완료 (doc: ${ref.id})`);
+        setInputValue("m_docId", ref.id);
+      }
+    } catch (err) {
+      console.warn(err);
+      toast("몬스터 등록/수정 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+/* ====== 망루 등록/수정 ====== */
+const towerForm = document.getElementById("towerForm");
+if (towerForm) {
+  towerForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!checkPass("t_pass")) { toast("관리 비밀번호가 올바르지 않습니다."); return; }
+
+    const lat = valNum("t_lat");
+    const lon = valNum("t_lon");
+    const range = valNum("t_range", 60, 10);
+    const iconUrl = valStr("t_icon", "https://puppi.netlify.app/images/mon/tower.png");
+
+    if (lat == null || lon == null) { toast("지도를 클릭해 좌표를 선택하세요."); return; }
+
+    const payload = {
+      lat, lon,
+      range,
+      iconUrl,
+      updatedAt: serverTimestamp()
+    };
+
+    const docId = valStr("t_docId", "");
+    try {
+      if (docId) {
+        await setDoc(doc(db, "towers", docId), payload, { merge: true });
+        toast(`망루 업데이트 완료 (doc: ${docId})`);
+      } else {
+        const ref = await addDoc(collection(db, "towers"), { ...payload, createdAt: serverTimestamp() });
+        toast(`망루 등록 완료 (doc: ${ref.id})`);
+        setInputValue("t_docId", ref.id);
+      }
+    } catch (err) {
+      console.warn(err);
+      toast("망루 등록/수정 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+/* ====== 초기 좌표 세팅 (현재 위치 시도) ====== */
+(async function initPosition(){
+  try {
+    await new Promise(res=>{
+      if (!navigator.geolocation){ res(); return; }
+      navigator.geolocation.getCurrentPosition(
+        p=>{ setLatLon(p.coords.latitude, p.coords.longitude); map.setView([p.coords.latitude, p.coords.longitude], 18); res(); },
+        ()=>res(), { enableHighAccuracy:true, timeout:6000 }
+      );
+    });
+  } catch {}
+})();
