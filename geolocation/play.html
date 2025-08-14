@@ -8,7 +8,27 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <!-- UI -->
   <link rel="stylesheet" href="/css/map.css" />
-  <style>html,body,#map{height:100%;width:100%}</style>
+  <style>
+    html,body,#map{height:100%;width:100%}
+    .bottom-controls {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 2000;
+    }
+    .bottom-controls button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #fff;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+  </style>
 </head>
 <body>
   <div id="map"></div>
@@ -18,11 +38,17 @@
 
   <div class="bottom-controls">
     <button id="locateBtn">📍 내 위치</button>
+    <button id="homeBtn">🏠 홈</button>
   </div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-<script type="module" src="./js/main.js"></script>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+  <script type="module" src="./js/main.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
+  <script>
+    document.getElementById('homeBtn').addEventListener('click', () => {
+      window.location.href = '/geolocation/geohome.html';
+    });
+  </script>
 </body>
 </html>

@@ -40,6 +40,7 @@
         --ring: 0 0 0 4px rgba(59,130,246,0.25);
       }
     }
+
     body{
       background: var(--bg);
       color: var(--text);
@@ -47,16 +48,21 @@
       display: flex;
       flex-direction: column;
     }
+
+    /* Header */
     .brand-row{
       padding: 14px 0;
       border-bottom: 1px solid var(--card-border);
       margin-bottom: 12px;
     }
-    .navbar-brand img{ width: 32px; height: 32px; object-fit: contain; }
+    .navbar-brand img{
+      width: 32px; height: 32px; object-fit: contain;
+    }
     .game-subtitle{
       margin: 0; font-weight: 700; letter-spacing:.2px; color: var(--text);
     }
 
+    /* Hero */
     .hero{
       text-align: center; margin: 26px 0 10px;
     }
@@ -89,7 +95,9 @@
     .cta-buttons{
       display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap);
     }
-    @media (max-width: 640px){ .cta-buttons{ grid-template-columns: 1fr; } }
+    @media (max-width: 640px){
+      .cta-buttons{ grid-template-columns: 1fr; }
+    }
 
     .cta-card .btn{
       position: relative; display: inline-flex; align-items: center; justify-content: center;
@@ -118,7 +126,7 @@
     .btn--demo:focus-visible{ outline:none; box-shadow: var(--ring); }
     .cta-hint{ margin: 14px 4px 0; font-size: 12.5px; color: var(--muted); }
 
-    /* Info row (wallet / score / buttons) */
+    /* Info row */
     .info-row{
       background: var(--card);
       border: 1px solid var(--card-border);
@@ -147,25 +155,26 @@
   <div class="container">
 
     <!-- Brand / Title -->
-    <div class="brand-row d-flex align-items-center justify-content-between">
-      <a class="navbar-brand d-flex align-items-center gap-2" href="../p2e/WithPuppy.html" aria-label="WithPuppy">
-        <img src="../images/logo.png" alt="Logo">
+    <header class="brand-row d-flex align-items-center justify-content-between">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="../p2e/WithPuppy.html" aria-label="WithPuppy Home">
+        <img src="../images/logo.png" alt="Paw DAO Logo" />
         <span class="game-subtitle">Location-Based Dog Game</span>
       </a>
-    </div>
+    </header>
 
     <!-- Hero -->
-    <section class="hero">
-      <h1>Hunting with a dog</h1>
+    <section class="hero" aria-labelledby="hero-title">
+      <h1 id="hero-title">Hunting with a dog</h1>
       <p>Mobile Only</p>
       <p>Catch monsters or take a walk to earn points</p>
       <p>Exchange your accumulated points for game points</p>
     </section>
 
     <!-- CTA -->
-    <section class="cta-wrap">
+    <section class="cta-wrap" aria-labelledby="cta-title">
       <div class="cta-card">
-        <h2 class="cta-title">GeoHunt</h2>
+        <h2 id="cta-title" class="cta-title">Start your hunt</h2>
+        <p class="cta-sub">Enter the hunting ground and earn game points by walking or defeating monsters.</p>
 
         <div class="cta-buttons">
           <a href="../geolocation/play.html" class="btn btn--chain" aria-label="Start Hunting (Blockchain)">
@@ -173,60 +182,85 @@
             <span class="btn__text">Start Hunting</span>
             <span class="btn__badge">CHAIN</span>
           </a>
+          <!-- 필요 시 추가 CTA 예시
+          <a href="#" class="btn btn--demo" aria-label="Try Demo Mode">
+            <span class="btn__icon">🧭</span>
+            <span class="btn__text">Try Demo</span>
+          </a>
+          -->
+        </div>
+
+        <p class="cta-hint">Tip: You can also gain points by simply walking with your dog.</p>
       </div>
     </section>
 
     <!-- Info / Actions -->
-    <section class="info-row d-flex flex-wrap align-items-center gap-2">
-      <button class="btn btn-outline-primary"
-              onclick="(async()=>{try{const p=await getMyPoint(); const el=document.getElementById('myPoint'); if(el) el.textContent = p + ' P';}catch(e){alert(e?.message||'score 조회 실패')}})()">
-        🔄 my score
+    <section class="info-row d-flex flex-wrap align-items-center gap-2" aria-label="Wallet and Score">
+      <button
+        class="btn btn-outline-primary"
+        onclick="(async()=>{try{const p=await getMyPoint(); const el=document.getElementById('myPoint'); if(el) el.textContent = p + ' P';}catch(e){alert(e?.message||'Failed to fetch score')}})()"
+        aria-label="Refresh my score"
+      >
+        🔄 My Score
       </button>
 
-      <div class="status ms-auto">
-        <span id="walletAddress"></span>
-        <span>  <strong id="myPoint"></strong></span>
+      <div class="status ms-auto d-flex align-items-center gap-2">
+        <span id="walletAddress" aria-live="polite"></span>
+        <strong id="myPoint" aria-live="polite"></strong>
       </div>
 
-      <button class="btn btn-primary ms-auto ms-sm-0" onclick="claimScoreNow()">
-        🎁 Change score to game points
+      <button class="btn btn-primary ms-auto ms-sm-0" onclick="claimScoreNow()" aria-label="Convert score to game points">
+        🎁 Convert to Game Points
       </button>
     </section>
 
     <!-- Monster Section -->
-    <section class="monster-section text-center">
-      <button onclick="showMyMon()" class="btn btn-outline-primary mb-3">The Monster I Caught</button>
+    <section class="monster-section text-center" aria-labelledby="my-monsters-title">
+      <h2 id="my-monsters-title" class="visually-hidden">My Monsters</h2>
+      <button onclick="showMyMon()" class="btn btn-outline-primary mb-3" aria-label="Show monsters I caught">
+        The Monster I Caught
+      </button>
       <div id="myMonsters" class="container mt-4"></div>
     </section>
 
     <!-- DAO Proposal Section -->
-    <section class="proposal-section">
+    <section class="proposal-section" aria-labelledby="report-title">
       <div class="card">
         <div class="card-header text-center bg-transparent border-0">
-          <h4 class="text-primary m-0">Hunting ground report</h4>
+          <h2 id="report-title" class="text-primary m-0">Hunting ground report</h2>
         </div>
         <div class="card-body">
-          <p class="mb-2 fw-bold">Contract Balance: <span id="Ntvl"></span> PUP</p>
-          <button class="btn btn-secondary mb-3 w-100" onclick="togglePostForm()">report (-10 PUP)</button>
+          <p class="mb-2 fw-bold">
+            Contract Balance: <span id="Ntvl" aria-live="polite"></span> PUP
+          </p>
+
+          <button class="btn btn-secondary mb-3 w-100" onclick="togglePostForm()">
+            report (-10 PUP)
+          </button>
 
           <div id="post-notice-form" class="mt-3" style="display:none;">
+            <label for="post-content" class="form-label visually-hidden">Report content</label>
             <textarea class="form-control mb-2" id="post-content" rows="3" placeholder="Enter your proposal..."></textarea>
             <button class="btn btn-success w-100" onclick="postNotice()">Submit</button>
           </div>
+
           <div id="notices-container" class="row mt-3"></div>
         </div>
       </div>
     </section>
 
     <!-- Footer -->
-    <div id="footer" class="mt-5"></div>
+    <footer id="footer" class="mt-5" role="contentinfo"></footer>
   </div>
 
   <!-- Footer Loader -->
   <script>
     fetch('../footer.html')
       .then(r => r.text())
-      .then(html => { const f = document.getElementById('footer'); if (f) f.innerHTML = html; })
+      .then(html => {
+        const f = document.getElementById('footer');
+        if (f) f.innerHTML = html;
+      })
       .catch(err => console.error('Error loading the footer content:', err));
   </script>
 

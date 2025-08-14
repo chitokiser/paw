@@ -38,9 +38,10 @@ const db = getFirestore(app);
   .mon-death{animation:spinout .9s ease forwards;}
   @keyframes spinout{to{opacity:0; transform:rotate(540deg) scale(.1); filter:blur(2px)}}
 
-  /* 플레이어 반짝 */
+  /* 플레이어 반짝 (이미지 아이콘에도 적용) */
   .player-emoji{font-size:22px; transition:filter .12s ease}
   .player-hit{ animation: playerflash .22s steps(1) 2; }
+  .leaflet-marker-icon.player-hit{ animation: playerflash .22s steps(1) 2; }
   @keyframes playerflash{ 50%{ filter: brightness(2.2) contrast(1.5) } }
 
   /* HUD & Toast */
@@ -225,6 +226,16 @@ function haversineM(lat1, lon1, lat2, lon2){
   return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+/* ===== 근접 체크(10m) 유틸 ===== */
+function isInRange(userLat, userLon, targetLat, targetLon, maxMeters = 10){
+  const u = L.latLng(userLat, userLon);
+  const t = L.latLng(targetLat, targetLon);
+  return u.distanceTo(t) <= maxMeters;
+}
+function distanceToM(userLat, userLon, targetLat, targetLon){
+  return L.latLng(userLat, userLon).distanceTo(L.latLng(targetLat, targetLon));
+}
+
 /* ===== 메인 ===== */
 async function main(){
   /* 점수/에너지 모듈 초기화 */
@@ -251,9 +262,11 @@ async function main(){
   });
   if (userLat==null){ userLat=37.5665; userLon=126.9780; }
 
-  // 플레이어 마커
-  const playerIcon = L.divIcon({
-    className:'', html:'<div class="player-emoji">🧍</div>', iconSize:[22,22], iconAnchor:[11,11]
+  // 플레이어 마커 (이미지 아이콘)
+  const playerIcon = L.icon({
+    iconUrl: '../images/mon/user.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
   });
   const playerMarker = L.marker([userLat,userLon],{icon:playerIcon}).addTo(map);
   map.setView([userLat,userLon], 19);
@@ -261,10 +274,8 @@ async function main(){
   function flashPlayer(){
     const el = playerMarker.getElement();
     if (!el) return;
-    const e = el.querySelector('.player-emoji');
-    if (!e) return;
-    e.classList.remove('player-hit'); void e.offsetWidth;
-    e.classList.add('player-hit');
+    el.classList.remove('player-hit'); void el.offsetWidth; // reflow
+    el.classList.add('player-hit');
   }
 
   /* 이동 경로(Polyline) & 이동거리 HUD */
@@ -332,7 +343,10 @@ async function main(){
     const qs = await getDocs(collection(db,'monsters'));
     qs.forEach(s=>{
       const d=s.data();
-      const sizePx = (()=>{ const n = Number(d.size); return Number.isNaN(n) ? DEFAULT_ICON_PX : Math.max(24, Math.min(n, 256)); })();
+      const sizePx = (()=>{
+        const n = Number(d.size);
+        return Number.isNaN(n) ? DEFAULT_ICON_PX : Math.max(24, Math.min(n, 256));
+      })();
       monsters.push({
         id: s.id,
         mid: Number(d.mid),
@@ -398,7 +412,16 @@ async function main(){
       toast('실패… 다시 시도하세요');
     }
 
+    // 클릭 = 시작/타격 (근접 10m 가드)
     marker.on('click', async ()=>{
+      // 10m 이내 아니면 공격 불가
+      if (!isInRange(userLat, userLon, m.lat, m.lon, 10)) {
+        const d = Math.round(distanceToM(userLat, userLon, m.lat, m.lon));
+        toast(`가까이 가세요! (현재 약 ${d}m)`);
+        try { playFail(); } catch {}
+        return;
+      }
+
       ensureAudio();
       const el = getImg();
       if (el){ el.classList.remove('mon-hit'); void el.offsetWidth; el.classList.add('mon-hit'); }
