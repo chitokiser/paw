@@ -1,10 +1,9 @@
-// ./js/admin.js
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-import {
-  getFirestore, collection, addDoc, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+// /js/admin.js  — 지정 위치에 몬스터 등록 (size/power 포함), 검증/UX 보강
 
-/* ===== Firebase ===== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+
+/* ================= Firebase ================= */
 const app = initializeApp({
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
@@ -16,159 +15,137 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-/* ===== 지도 기본 세팅 ===== */
-const map = L.map('map', { maxZoom: 22 }).setView([37.5665, 126.9780], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom: 19,
-  attribution:'&copy; OpenStreetMap'
-}).addTo(map);
+/* ================ Helpers ================ */
+const $ = (id) => document.getElementById(id);
+const asInt = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : NaN;
+};
+const isHttpUrl = (s) => /^https?:\/\/.+/i.test(s || "");
 
-// Geocoder (검색 박스)
-if (L.Control && L.Control.Geocoder) {
-  L.Control.geocoder({
-    defaultMarkGeocode: false,
-    placeholder: '장소 검색…'
-  })
-  .on('markgeocode', (e)=>{
+/* ================ Map ================ */
+const map = L.map("map").setView([37.5665, 126.9780], 13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+
+L.Control.geocoder({ defaultMarkGeocode: false })
+  .on("markgeocode", (e) => {
     const bbox = e.geocode.bbox;
-    const center = e.geocode.center;
-    map.fitBounds(bbox);
-    setSelected(center.lat, center.lng);
+    const poly = L.polygon([
+      bbox.getSouthEast(),
+      bbox.getNorthEast(),
+      bbox.getNorthWest(),
+      bbox.getSouthWest(),
+    ]);
+    map.fitBounds(poly.getBounds());
+    setClicked(e.geocode.center);
   })
   .addTo(map);
-}
 
-/* ===== 좌표 선택/마커 ===== */
-let selected = { lat: null, lon: null };
-let selMarker = null;
-const coordText = document.getElementById('coordText');
-
-function setSelected(lat, lon){
-  selected.lat = lat;
-  selected.lon = lon;
-  coordText.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  if (!selMarker){
-    selMarker = L.marker([lat, lon], { draggable:true }).addTo(map);
-    selMarker.on('dragend', e=>{
-      const ll = e.target.getLatLng();
-      setSelected(ll.lat, ll.lng);
-    });
-  }else{
-    selMarker.setLatLng([lat, lon]);
-  }
-}
-
-map.on('click', (e)=> setSelected(e.latlng.lat, e.latlng.lng));
-
-/* ===== 몬스터 등록 폼 핸들러 ===== */
-const form = document.getElementById('monsterForm');
-form.addEventListener('submit', async (ev)=>{
-  ev.preventDefault();
-  if (selected.lat==null || selected.lon==null){
-    alert('먼저 지도에서 좌표를 선택하세요.');
-    return;
-  }
-  const imageURL = document.getElementById('imageURL').value.trim();
-  const power    = Number(document.getElementById('power').value);
-  const mid      = Number(document.getElementById('mid').value);
-  const pass     = Number(document.getElementById('pass').value);
-  const sizeRaw  = document.getElementById('size').value;
-  const size     = sizeRaw ? Math.max(24, Math.min(Number(sizeRaw)||96, 256)) : 96;
-
-  if (!imageURL || !power || !mid || !pass){
-    alert('필수 항목을 확인하세요.');
-    return;
-  }
-
-  try{
-    await addDoc(collection(db, 'monsters'), {
-      imagesURL: imageURL,
-      lat: selected.lat,
-      lon: selected.lon,
-      mid,
-      pass,
-      power,
-      size,
-      createdAt: serverTimestamp()
-    });
-    alert('몬스터가 등록되었습니다!');
-  }catch(err){
-    console.error(err);
-    alert('몬스터 등록 실패: ' + err.message);
-  }
-});
-
-/* ===== 망루 설치 패널 주입 ===== */
-(function injectTowerPanel(){
-  const panel = document.createElement('div');
-  panel.style.marginTop = '14px';
-  panel.innerHTML = `
-    <hr style="margin:16px 0; border:none; border-top:1px solid #eee">
-    <h3 style="margin:0 0 8px; font-size:18px;">망루 설치</h3>
-    <div class="row">
-      <div>
-        <label for="towerRange">사거리(m)</label>
-        <input type="number" id="towerRange" placeholder="예: 60" min="10" value="60" />
-        <div class="hint">유저가 이 반경 안으로 들어오면 자동 화살 공격(-1 GP/발)</div>
-      </div>
-      <div>
-        <label for="towerPlaceBtn"> </label>
-        <button id="towerPlaceBtn" type="button">현재 선택 좌표에 망루 설치</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(panel);
-
-  const btn = panel.querySelector('#towerPlaceBtn');
-  btn.addEventListener('click', async ()=>{
-    if (selected.lat==null || selected.lon==null){
-      alert('먼저 지도에서 좌표를 선택하세요.');
-      return;
-    }
-    const range = Math.max(10, Number(panel.querySelector('#towerRange').value)||60);
-    try{
-      await addDoc(collection(db, 'towers'), {
-        lat: selected.lat,
-        lon: selected.lon,
-        range,
-        createdAt: serverTimestamp()
-      });
-      drawTowerPreview(selected.lat, selected.lon, range);
-      alert('망루가 설치되었습니다!');
-    }catch(err){
-      console.error(err);
-      alert('망루 설치 실패: ' + err.message);
-    }
-  });
-})();
-
-/* ===== 망루 미리보기를 지도에 그려 즉시 확인 ===== */
-function towerIcon(){
-  const html = `
-    <div style="position:relative;width:48px;height:48px">
-      <img src="https://puppi.netlify.app/images/mon/tower.png"
-           style="width:100%;height:100%;object-fit:contain;display:block" alt="tower"/>
-    </div>`;
-  return L.divIcon({ className:'', html, iconSize:[48,48], iconAnchor:[24,48] });
-}
-
-function drawTowerPreview(lat, lon, range){
-  const marker = L.marker([lat, lon], { icon: towerIcon(), interactive:false }).addTo(map);
-  const circle = L.circle([lat, lon], {
-    radius: range,
-    color:'#ef4444', weight:1, fillColor:'#ef4444', fillOpacity:0.1
-  }).addTo(map);
-  // 2초 후 연한 표시 유지 (원하면 자동 제거 주석 해제)
-  // setTimeout(()=>{ map.removeLayer(marker); map.removeLayer(circle); }, 4000);
-}
-
-/* ===== 초기 현재 위치 시도 (선택 편의) ===== */
-if (navigator.geolocation){
+// 현재 위치로 초기 중심 맞추기(가능한 경우)
+if (navigator.geolocation) {
   navigator.geolocation.getCurrentPosition(
-    p=>{
-      map.setView([p.coords.latitude, p.coords.longitude], 17);
-      setSelected(p.coords.latitude, p.coords.longitude);
-    },
-    ()=>{}, {enableHighAccuracy:true, timeout:5000}
+    (p) => map.setView([p.coords.latitude, p.coords.longitude], 15),
+    () => {}, // 실패시 무시(기본 좌표 유지)
+    { enableHighAccuracy: true, timeout: 6000 }
   );
 }
+
+let clickedLatLng = null;
+let currentMarker = null;
+
+map.on("click", (e) => setClicked(e.latlng));
+
+function setClicked(latlng) {
+  clickedLatLng = latlng;
+  const txt = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+  const coordEl = $("coordText");
+  if (coordEl) coordEl.textContent = txt;
+
+  if (currentMarker) map.removeLayer(currentMarker);
+  currentMarker = L.marker(latlng).addTo(map).bindPopup("위치 선택됨").openPopup();
+}
+
+/* ================ Form ================ */
+const form = $("monsterForm");
+if (!form) {
+  console.error("monsterForm not found in DOM.");
+}
+
+form?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  if (!clickedLatLng) {
+    alert("지도를 클릭해 위치를 선택하세요.");
+    return;
+  }
+
+  const mid = asInt($("mid")?.value);
+  const pass = asInt($("pass")?.value);
+  const imageURL = $("imageURL")?.value?.trim();
+  const power = asInt($("power")?.value); // 필수
+  const size = asInt($("size")?.value);   // 선택
+
+  // ---- 입력 검증 ----
+  if (!Number.isFinite(mid) || mid <= 0) {
+    alert("몬스터 ID(mid)는 1 이상의 숫자여야 합니다.");
+    return;
+  }
+  if (!Number.isFinite(pass) || pass <= 0) {
+    alert("비밀번호(pass)는 1 이상의 숫자여야 합니다.");
+    return;
+  }
+  if (!isHttpUrl(imageURL)) {
+    alert("이미지 URL을 올바른 http(s) 주소로 입력하세요.");
+    return;
+  }
+  if (!Number.isFinite(power) || power <= 0) {
+    alert("파워(power)는 1 이상의 숫자여야 합니다.");
+    return;
+  }
+  if (size != null && !(Number.isFinite(size) && size > 0)) {
+    alert("크기(size)가 있다면 1 이상의 숫자여야 합니다.");
+    return;
+  }
+
+  // 버튼 잠금(중복 제출 방지)
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const prevLabel = submitBtn?.textContent;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "저장 중…";
+  }
+
+  try {
+    const payload = {
+      lat: clickedLatLng.lat,
+      lon: clickedLatLng.lng,
+      mid,
+      pass,
+      imagesURL: imageURL, // ← 지도에 표시할 아이콘 URL
+      power,               // ← 전투에 사용할 파워(필수)
+    };
+    if (Number.isFinite(size)) payload.size = size; // 선택: 아이콘 픽셀 크기
+
+    await addDoc(collection(db, "monsters"), payload);
+
+    alert("몬스터 등록 완료!");
+
+    // 폼/마커 리셋
+    form.reset();
+    if (currentMarker) {
+      map.removeLayer(currentMarker);
+      currentMarker = null;
+    }
+    clickedLatLng = null;
+    const coordEl = $("coordText");
+    if (coordEl) coordEl.textContent = "-";
+  } catch (err) {
+    console.error(err);
+    alert("저장 중 오류가 발생했습니다. 콘솔을 확인하세요.");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = prevLabel || "몬스터 등록";
+    }
+  }
+});

@@ -1,10 +1,12 @@
+// main.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
 import {
-  getFirestore, collection, getDocs, addDoc, getDoc, setDoc,
-  updateDoc, increment, serverTimestamp, doc
+  getFirestore, collection, getDocs
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
 import { TowerGuard } from "./tower.js";
+import { Score } from "./score.js";
+import { WalkPoints } from "./walk.js";
 
 /* ===== 기본 설정 ===== */
 const DEFAULT_ICON_PX = 96;
@@ -22,17 +24,13 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-/* ===== 스타일 주입(히트 플래시/처치 애니메이션/HUD/토스트) ===== */
+/* ===== 스타일 주입(몬스터/플레이어/HUD/토스트/스타트게이트) ===== */
 (function injectCSS(){
   const css = `
   .mon-wrap{position:relative;}
   .mon-img{
-    width:100%;
-    height:100%;
-    display:block;
-    object-fit:contain;
-    image-rendering:crisp-edges;
-    image-rendering:pixelated;
+    width:100%; height:100%; display:block; object-fit:contain;
+    image-rendering:crisp-edges; image-rendering:pixelated;
     transition:filter .15s ease, opacity .6s ease, transform .6s ease;
   }
   .mon-hit{animation:hitflash .12s steps(1) 2;}
@@ -40,224 +38,127 @@ const db = getFirestore(app);
   .mon-death{animation:spinout .9s ease forwards;}
   @keyframes spinout{to{opacity:0; transform:rotate(540deg) scale(.1); filter:blur(2px)}}
 
+  /* 플레이어 반짝 */
+  .player-emoji{font-size:22px; transition:filter .12s ease}
+  .player-hit{ animation: playerflash .22s steps(1) 2; }
+  @keyframes playerflash{ 50%{ filter: brightness(2.2) contrast(1.5) } }
+
+  /* HUD & Toast */
   #eventToast{
     position:fixed; top:12px; left:50%; transform:translateX(-50%);
     background:#111827; color:#fff; padding:8px 12px; border-radius:999px;
     display:none; z-index:1001; font-weight:600
   }
-
   .hud{
     position:fixed; right:12px; top:60px;
     background:rgba(17,24,39,.92); color:#fff; padding:10px 12px;
-    border-radius:12px; z-index:1000; min-width:180px;
+    border-radius:12px; z-index:1000; min-width:200px;
     font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     box-shadow:0 6px 20px rgba(0,0,0,.25);
   }
   .hud .row{display:flex; justify-content:space-between; gap:8px; margin:4px 0;}
   .hud .mono{font-variant-numeric:tabular-nums;}
-  .hud .big{font-size:18px; font-weight:700;}
   .hud .ok{color:#86efac}
   .hud .warn{color:#facc15}
-  `;
+
+  /* 스타트 게이트 */
+  #startGate{
+    position:fixed; inset:0; width:100%; height:100%;
+    background:#111827; color:#fff; font-size:20px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    z-index:2000; border:none; cursor:pointer;
+  }`;
   const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();
 
-/* ===== 사운드 ===== */
-/* ===== 사운드(명확한 성공/실패) ===== */
+/* ===== 사운드(명확한 성공/실패/타격) ===== */
 let audioCtx;
 function ensureAudio(){
   audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
-
-/* 공용: 간단 ADSR */
+/* 공용 ADSR */
 function applyADSR(g, t, {a=0.01, d=0.12, s=0.4, r=0.25, peak=0.9, sus=0.25}={}){
   g.gain.cancelScheduledValues(t);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + a);                // Attack
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, sus), t+a+d); // Decay→Sustain
-  g.gain.setTargetAtTime(0.0001, t+a+d, r);                         // Release
+  g.gain.exponentialRampToValueAtTime(peak, t+a);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, sus), t+a+d);
+  g.gain.setTargetAtTime(0.0001, t+a+d, r);
 }
-
-/* 공용: 노이즈 소스 (buffer white noise) */
+/* 공용 노이즈 */
 function createNoise(){
-  const sr = audioCtx.sampleRate;
-  const len = sr * 0.5;
+  ensureAudio();
+  const sr = audioCtx.sampleRate, len = sr * 0.5;
   const buf = audioCtx.createBuffer(1, len, sr);
   const data = buf.getChannelData(0);
   for (let i=0;i<len;i++) data[i] = Math.random()*2-1;
-  const src = audioCtx.createBufferSource();
-  src.buffer = buf;
-  src.loop = false;
-  return src;
+  const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = false; return src;
 }
-
-/* 타격: 짧은 클릭+삐 소리 */
-function blip(freq=260, dur=0.08, type='square', startGain=0.35){
+/* 타격 삐 */
+function blip(freq=300, dur=0.07, type='square', startGain=0.35){
   ensureAudio();
   const t = audioCtx.currentTime;
-
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
-
-  o.type = type;
-  o.frequency.setValueAtTime(freq, t);
+  o.type = type; o.frequency.setValueAtTime(freq, t);
   o.connect(g); g.connect(audioCtx.destination);
-
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(startGain, t+0.01);
   g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
-
   o.start(t); o.stop(t + dur + 0.03);
 }
-const playHit = ()=>blip(300, 0.07, 'square', 0.35);
-
-/* 실패: 하강 버저 + 거친 노이즈 (명확한 패배감) */
+const playHit = ()=>blip();
+/* 실패 */
 function playFail(){
   ensureAudio();
   const t = audioCtx.currentTime;
-
-  // 듀얼 사와스 + 살짝 디튠
-  const o1 = audioCtx.createOscillator();
-  const o2 = audioCtx.createOscillator();
+  const o1 = audioCtx.createOscillator(), o2 = audioCtx.createOscillator();
   const g  = audioCtx.createGain();
-  const lp = audioCtx.createBiquadFilter();
-  lp.type = 'lowpass'; lp.frequency.setValueAtTime(1200, t);
-
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(1200, t);
   o1.type='sawtooth'; o2.type='sawtooth';
-  o1.frequency.setValueAtTime(320, t);
-  o2.frequency.setValueAtTime(320*0.98, t);
-  // 내려가는 피치
-  o1.frequency.exponentialRampToValueAtTime(70,  t+0.7);
-  o2.frequency.exponentialRampToValueAtTime(65,  t+0.7);
-
-  // 노이즈 섞기(거친 감)
+  o1.frequency.setValueAtTime(320, t); o2.frequency.setValueAtTime(320*0.98, t);
+  o1.frequency.exponentialRampToValueAtTime(70, t+0.7);
+  o2.frequency.exponentialRampToValueAtTime(65, t+0.7);
   const nz = createNoise();
-  const nzGain = audioCtx.createGain();
-  nzGain.gain.setValueAtTime(0.15, t);
   nz.connect(lp);
-
-  // 믹스
-  o1.connect(g); o2.connect(g);
-  lp.connect(g);
-  g.connect(audioCtx.destination);
-
-  // ADSR (느낌을 확실히)
+  o1.connect(g); o2.connect(g); lp.connect(g); g.connect(audioCtx.destination);
   applyADSR(g, t, {a:0.005, d:0.1, s:0.2, r:0.35, peak:0.9, sus:0.15});
-
-  o1.start(t); o2.start(t);
-  nz.start(t);
-  o1.stop(t+0.75); o2.stop(t+0.75);
-  nz.stop(t+0.5);
+  o1.start(t); o2.start(t); nz.start(t);
+  o1.stop(t+0.75); o2.stop(t+0.75); nz.stop(t+0.5);
 }
-
-/* 성공(처치): 밝은 트라이애드+스파클 (명확한 승리감) */
+/* 성공(처치) */
 function playDeath(){
   ensureAudio();
   const t = audioCtx.currentTime;
-
-  // C5(523), E5(659), G5(784) 트라이애드
-  const freqs = [523.25, 659.25, 783.99];
+  const freqs = [523.25, 659.25, 783.99]; // C5 E5 G5
   const groupGain = audioCtx.createGain();
   groupGain.connect(audioCtx.destination);
   groupGain.gain.setValueAtTime(0.0001, t);
   groupGain.gain.exponentialRampToValueAtTime(0.9, t+0.02);
   groupGain.gain.exponentialRampToValueAtTime(0.0001, t+0.6);
-
-  // 각 음에 약간의 비브라토
   const lfo = audioCtx.createOscillator();
-  const lfoGain = audioCtx.createGain();
-  lfo.frequency.setValueAtTime(6, t);     // 6Hz
-  lfoGain.gain.setValueAtTime(5, t);      // ±5Hz
+  const lfoGain = audioCtx.createGain(); lfo.frequency.setValueAtTime(6, t); lfoGain.gain.setValueAtTime(5, t);
   lfo.connect(lfoGain);
-
   freqs.forEach((f,i)=>{
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'triangle';
-    o.frequency.setValueAtTime(f, t);
-
-    // 비브라토 적용
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(f, t);
     lfoGain.connect(o.frequency);
-
     o.connect(g); g.connect(groupGain);
     applyADSR(g, t + i*0.02, {a:0.01, d:0.12, s:0.5, r:0.25, peak:0.9, sus:0.2});
-    o.start(t + i*0.02);
-    o.stop(t + 0.6);
+    o.start(t + i*0.02); o.stop(t + 0.6);
   });
-
-  // 스파클 노이즈(밝은 반짝)
   const nz = createNoise();
-  const bp = audioCtx.createBiquadFilter(); bp.type='bandpass';
-  bp.frequency.setValueAtTime(3500, t);
-  bp.Q.value = 3;
+  const bp = audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(3500, t); bp.Q.value = 3;
   const ng = audioCtx.createGain();
   ng.gain.setValueAtTime(0.0001, t);
   ng.gain.exponentialRampToValueAtTime(0.35, t+0.02);
   ng.gain.exponentialRampToValueAtTime(0.0001, t+0.25);
   nz.connect(bp); bp.connect(ng); ng.connect(audioCtx.destination);
   nz.start(t); nz.stop(t+0.25);
-
-  // LFO 수명
   lfo.start(t); lfo.stop(t+0.6);
 }
 
-
-/* ===== 유틸/유저 & 포인트 ===== */
-function getGuestId(){
-  let id = localStorage.getItem('guestId');
-  if(!id){ id = 'guest-' + Math.random().toString(36).slice(2,8); localStorage.setItem('guestId', id); }
-  return id;
-}
-const userStats = { totalDistanceM:0, totalGP:0 };
-async function ensureUserDoc(){
-  const uid = getGuestId();
-  await setDoc(doc(db,'users',uid),{ address:uid, updatedAt:serverTimestamp() },{merge:true});
-  const snap = await getDoc(doc(db,'users',uid));
-  if (snap.exists()){
-    const d=snap.data(); userStats.totalDistanceM=Number(d.totalDistanceM||0); userStats.totalGP=Number(d.totalGP||0);
-  }
-}
-async function awardGP(gpUnits, lat, lon, totalDistanceM){
-  if(gpUnits<=0) return;
-  const uid=getGuestId();
-  await addDoc(collection(db,'walk_logs'),{
-    address:uid, gp:gpUnits, metersCounted:gpUnits*10, lat, lon, totalDistanceM, createdAt:serverTimestamp()
-  });
-  await updateDoc(doc(db,'users',uid),{
-    totalGP:increment(gpUnits), totalDistanceM:increment(gpUnits*10), updatedAt:serverTimestamp()
-  });
-  userStats.totalGP += gpUnits; userStats.totalDistanceM += gpUnits*10;
-}
-
-async function deductGP(points, fromLat, fromLon){
-  // points는 양수로 넣으면 해당 수치만큼 차감합니다.
-  if(points<=0) return;
-  const uid = getGuestId();
-  await addDoc(collection(db,'tower_hits'),{
-    address: uid, gp: -points, fromLat, fromLon, createdAt: serverTimestamp()
-  });
-  await updateDoc(doc(db,'users',uid),{
-    totalGP: increment(-points), updatedAt: serverTimestamp()
-  });
-  userStats.totalGP -= points;
-  setHUD({ total: userStats.totalGP });
-  toast(`-${points} GP (망루)`);
-  // 명확한 피격 사운드
-  if (typeof playFail === 'function') playFail();
-}
-
-
-/* ===== 온체인 누적(모의) ===== */
-function getChainTotal(){ return Number(localStorage.getItem('chainTotal')||0); }
-function setChainTotal(v){ localStorage.setItem('chainTotal', String(v)); }
-async function saveToChainMock(delta){
-  const before=getChainTotal(); const after=before+delta; setChainTotal(after);
-  const tx = '0x'+Math.random().toString(16).slice(2,10)+Math.random().toString(16).slice(2,10);
-  return { txHash: tx, total: after };
-}
-
-/* ===== 토스트 ===== */
+/* ===== 간단 토스트 ===== */
 function toast(msg){
   let t=document.getElementById('eventToast');
   if(!t){ t=document.createElement('div'); t.id='eventToast'; document.body.appendChild(t); }
@@ -274,18 +175,16 @@ function ensureHUD(){
     <div class="row"><div>남은 시간</div><div id="hudTime" class="mono warn">-</div></div>
     <div class="row"><div>남은 타격</div><div id="hudHits" class="mono ok">-</div></div>
     <div class="row"><div>이번 보상</div><div id="hudEarn" class="mono">-</div></div>
-    <div class="row"><div>총 점수</div><div id="hudTotal" class="mono big">0</div></div>
     <div class="row"><div>블록체인점수</div><div id="hudChain" class="mono">0</div></div>
   `;
   document.body.appendChild(hud);
   return hud;
 }
-function setHUD({timeLeft=null, hitsLeft=null, earn=null, total=null, chain=null}={}){
+function setHUD({timeLeft=null, hitsLeft=null, earn=null, chain=null}={}){
   const hud = ensureHUD();
   if (timeLeft!=null)  hud.querySelector('#hudTime').textContent  = timeLeft;
   if (hitsLeft!=null)  hud.querySelector('#hudHits').textContent  = hitsLeft;
   if (earn!=null)      hud.querySelector('#hudEarn').textContent  = `+${earn} GP`;
-  if (total!=null)     hud.querySelector('#hudTotal').textContent = total;
   if (chain!=null)     hud.querySelector('#hudChain').textContent = chain;
 }
 
@@ -314,11 +213,29 @@ function getChallengeDurationMs(power){
   return Math.round(sec * 1000);
 }
 
+/* ===== 유틸: 게스트 아이디 ===== */
+function getGuestId(){
+  let id = localStorage.getItem('guestId');
+  if(!id){ id = 'guest-' + Math.random().toString(36).slice(2,8); localStorage.setItem('guestId', id); }
+  return id;
+}
+
 /* ===== 메인 ===== */
 async function main(){
-  await ensureUserDoc();
-  setHUD({ total: userStats.totalGP, chain: getChainTotal() });
+  /* 점수/에너지 모듈 초기화 */
+  await Score.init({
+    db,
+    getGuestId,
+    toast,
+    playFail
+  });
+  // HUD 준비 + Score의 에너지 UI 삽입
+  Score.attachToHUD(ensureHUD());
+  setHUD({ chain: Score.getChainTotal() });
+  Score.updateEnergyUI();
+  Score.wireRespawn();
 
+  /* 지도 */
   const map = L.map('map',{maxZoom:22}).setView([37.5665,126.9780], 16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
@@ -332,38 +249,70 @@ async function main(){
     );
   });
   if (userLat==null){ userLat=37.5665; userLon=126.9780; }
-  const player = L.divIcon({ className:'', html:'<div style="font-size:22px">🧍</div>', iconSize:[22,22], iconAnchor:[11,11] });
-  const playerMarker = L.marker([userLat,userLon],{icon:player}).addTo(map).bindPopup(getGuestId());
+
+  // 플레이어 마커 (팝업 제거)
+  const playerIcon = L.divIcon({
+    className:'',
+    html:'<div class="player-emoji">🧍</div>',
+    iconSize:[22,22],
+    iconAnchor:[11,11]
+  });
+  const playerMarker = L.marker([userLat,userLon],{icon:playerIcon}).addTo(map);
   map.setView([userLat,userLon], 19);
-  // ... playerMarker, watchPosition 설정 코드 아래쪽에 배치
-const IS_ADMIN = location.search.includes('admin=1') || localStorage.getItem('isAdmin') === '1';
 
-const towers = new TowerGuard({
-  map,
-  db,
-  iconUrl: "https://puppi.netlify.app/images/mon/tower.png",
-  rangeDefault: 60,          // 기본 사거리(m) — 필요 시 조정
-  fireCooldownMs: 1500,      // 발사 간격 — 필요 시 조정
-  getUserLatLng: ()=>[userLat, userLon],
-  onUserHit: (damage, towerInfo)=>{
-    // damage=1 고정, towerInfo: {lat, lon, range, ...}
-    deductGP(damage, towerInfo.lat, towerInfo.lon);
-  },
-  isAdmin: IS_ADMIN
-});
+  function flashPlayer(){
+    const el = playerMarker.getElement();
+    if (!el) return;
+    const e = el.querySelector('.player-emoji');
+    if (!e) return;
+    e.classList.remove('player-hit'); void e.offsetWidth; // reflow
+    e.classList.add('player-hit');
+  }
 
-  /* 몬스터 로드 */
+  // 내 위치 추적
+  if (navigator.geolocation){
+    navigator.geolocation.watchPosition(p=>{
+      userLat=p.coords.latitude; userLon=p.coords.longitude;
+      playerMarker.setLatLng([userLat,userLon]);
+    },()=>{}, {enableHighAccuracy:true});
+  }
+
+  /* ===== 스타트 게이트: 탭하면 오디오/타워 시작 ===== */
+  let towers; // 나중에 초기화되지만, 게이트 콜백에서 접근 가능
+  addStartGate(() => {
+    try { ensureAudio(); } catch {}
+    try { towers?.setUserReady(true); } catch {}
+  });
+
+  /* ===== 망루(타워) 초기화 ===== */
+  const IS_ADMIN = location.search.includes('admin=1') || localStorage.getItem('isAdmin') === '1';
+  towers = new TowerGuard({
+    map,
+    db,
+    iconUrl: "https://puppi.netlify.app/images/mon/tower.png",
+    rangeDefault: 60,
+    fireCooldownMs: 1500,
+    getUserLatLng: ()=>[userLat, userLon],
+    onUserHit: (damage, towerInfo)=>{
+      flashPlayer();
+      Score.deductGP(damage, towerInfo.lat, towerInfo.lon); // 점수 차감 + 사망 판정까지 Score가 수행
+    },
+    isAdmin: IS_ADMIN
+  });
+
+  // 혹시 모를 정책 대비: 첫 포인터로 오디오/타워 오디오 재개
+  window.addEventListener('pointerdown', ()=>{
+    try { ensureAudio(); } catch {}
+    try { towers.resumeAudio(); } catch {}
+  }, { once:true, passive:true });
+
+  /* ===== 몬스터 로드 ===== */
   const monsters=[];
   try{
     const qs = await getDocs(collection(db,'monsters'));
     qs.forEach(s=>{
       const d=s.data();
-      const sizePx = (()=>{                 // DB size 안전 파싱
-        const n = Number(d.size);
-        if (Number.isNaN(n)) return DEFAULT_ICON_PX;
-        return Math.max(24, Math.min(n, 256));
-      })();
-
+      const sizePx = (()=>{ const n = Number(d.size); return Number.isNaN(n) ? DEFAULT_ICON_PX : Math.max(24, Math.min(n, 256)); })();
       monsters.push({
         id: s.id,
         mid: Number(d.mid),
@@ -377,21 +326,18 @@ const towers = new TowerGuard({
   }catch(e){ console.warn('monsters load fail:', e); }
 
   if (monsters.length===0){
-    // 데이터 없을 때 임시 배치
     monsters.push({ id:'test', mid:23, lat:userLat, lon:userLon, url:DEFAULT_IMG, size:96, power:20 });
   }
 
-  /* 배치 + 시간내 N타 전투 */
+  /* ===== 배치 + 시간내 N타 전투 ===== */
   monsters.forEach(m=>{
     const icon = makeImageDivIcon(m.url, m.size);
     const marker = L.marker([m.lat, m.lon], { icon, interactive: true }).addTo(map);
-
 
     let chal = null; // {remain, deadline, timer}
     let imgEl = null;
 
     function getImg(){
-      // marker.element는 add 직후엔 null일 수 있으므로 매번 갱신 시도
       if (imgEl && document.body.contains(imgEl)) return imgEl;
       const root = marker.getElement();
       imgEl = root ? root.querySelector('.mon-img') : null;
@@ -400,7 +346,7 @@ const towers = new TowerGuard({
     function stopChallenge(){
       if (chal?.timer){ clearInterval(chal.timer); }
       chal = null;
-      setHUD({ timeLeft:'-', hitsLeft:'-', earn:m.power, total:userStats.totalGP, chain:getChainTotal() });
+      setHUD({ timeLeft:'-', hitsLeft:'-', earn:m.power, chain: Score.getChainTotal() });
     }
     function updateHUD(){
       if (!chal) return;
@@ -415,10 +361,11 @@ const towers = new TowerGuard({
       if (el){ el.classList.add('mon-death'); }
       playDeath();
 
-      await awardGP(m.power, m.lat, m.lon, Math.round(userStats.totalDistanceM));
-      setHUD({ total: userStats.totalGP });
+      const distM = Math.round(Score.getStats().totalDistanceM);
+      await Score.awardGP(m.power, m.lat, m.lon, distM);
+      Score.updateEnergyUI();
 
-      const tx = await saveToChainMock(m.power);
+      const tx = await Score.saveToChainMock(m.power);
       setHUD({ chain: tx.total });
       toast(`+${m.power} GP! (tx: ${tx.txHash.slice(0,10)}…)`);
 
@@ -431,11 +378,11 @@ const towers = new TowerGuard({
       toast('실패… 다시 시도하세요');
     }
 
-    // 첫 클릭 = 챌린지 시작, 진행 중이면 타격 카운트
+    // 클릭 = 시작/타격
     marker.on('click', async ()=>{
-      ensureAudio();
+      ensureAudio(); // 사용자 상호작용 시 오디오 보장
 
-      // 히트 플래시
+      // 히트 플래시 + 타격음
       const el = getImg();
       if (el){ el.classList.remove('mon-hit'); void el.offsetWidth; el.classList.add('mon-hit'); }
       playHit();
@@ -443,7 +390,6 @@ const towers = new TowerGuard({
       // 챌린지 시작
       if (!chal){
         const durationMs = getChallengeDurationMs(m.power);
-        // 요구사항: 파워만큼 타격 → 첫 클릭이 1타이므로 remain = power - 1
         chal = { remain: Math.max(1, m.power) - 1, deadline: Date.now() + durationMs, timer: null };
         updateHUD();
         chal.timer = setInterval(()=>{
@@ -462,14 +408,24 @@ const towers = new TowerGuard({
       else { updateHUD(); }
     });
   });
+}
 
-  // 내 위치 추적
-  if (navigator.geolocation){
-    navigator.geolocation.watchPosition(p=>{
-      userLat=p.coords.latitude; userLon=p.coords.longitude;
-      playerMarker.setLatLng([userLat,userLon]);
-    },()=>{}, {enableHighAccuracy:true});
-  }
+/* ===== 스타트 게이트(탭해서 시작) ===== */
+function addStartGate(onStart){
+  if (document.getElementById('startGate')) return;
+  const btn = document.createElement('button');
+  btn.id = 'startGate';
+  btn.textContent = '탭해서 시작';
+  document.body.appendChild(btn);
+  const kick = ()=>{
+    try { onStart?.(); } catch {}
+    btn.remove();
+  };
+  btn.addEventListener('pointerdown', kick, { once:true });
+  // 브라우저 포커스 복귀 시 오디오 재개 보강
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.visibilityState === 'visible') { try { ensureAudio(); } catch {} }
+  });
 }
 
 main();
