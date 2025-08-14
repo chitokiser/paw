@@ -7,13 +7,14 @@ import {
 import { TowerGuard } from "./tower.js";
 import { Score } from "./score.js";
 import { WalkPoints } from "./walk.js";
+import { MonsterGuard } from "./monster.js";
 
 /* ===== 기본 설정 ===== */
 const DEFAULT_ICON_PX = 96;
 const DEFAULT_IMG = "https://puppi.netlify.app/images/mon/1.png";
 
 /* ===== Firebase ===== */
-const app = initializeApp({
+const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
   projectId: "puppi-d67a1",
@@ -21,8 +22,9 @@ const app = initializeApp({
   messagingSenderId: "552900371836",
   appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
   measurementId: "G-9TZ81RW0PL"
-});
-const db = getFirestore(app);
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
 
 /* ===== 스타일 주입(몬스터/플레이어/HUD/토스트/스타트게이트) ===== */
 (function injectCSS(){
@@ -226,7 +228,7 @@ function haversineM(lat1, lon1, lat2, lon2){
   return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-/* ===== 근접 체크(10m) 유틸 ===== */
+/* ===== 근접 체크/거리 ===== */
 function isInRange(userLat, userLon, targetLat, targetLon, maxMeters = 10){
   const u = L.latLng(userLat, userLon);
   const t = L.latLng(targetLat, targetLon);
@@ -234,6 +236,23 @@ function isInRange(userLat, userLon, targetLat, targetLon, maxMeters = 10){
 }
 function distanceToM(userLat, userLon, targetLat, targetLon){
   return L.latLng(userLat, userLon).distanceTo(L.latLng(targetLat, targetLon));
+}
+
+/* ===== 스타트 게이트(탭해서 시작) ===== */
+function addStartGate(onStart){
+  if (document.getElementById('startGate')) return;
+  const btn = document.createElement('button');
+  btn.id = 'startGate';
+  btn.textContent = '탭해서 시작';
+  document.body.appendChild(btn);
+  const kick = ()=>{
+    try { onStart?.(); } catch {}
+    btn.remove();
+  };
+  btn.addEventListener('pointerdown', kick, { once:true });
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.visibilityState === 'visible') { try { ensureAudio(); } catch {} }
+  });
 }
 
 /* ===== 메인 ===== */
@@ -308,15 +327,17 @@ async function main(){
   walker.start();
   window.addEventListener('pagehide', ()=> walker?.stop());
 
-  /* 스타트 게이트: 탭하면 오디오/타워 시작 */
-  let towers;
+  /* 스타트 게이트: 탭하면 오디오/타워/몬스터 시작 */
+  let towers, monstersGuard;
+  const IS_ADMIN = location.search.includes('admin=1') || localStorage.getItem('isAdmin') === '1';
+
   addStartGate(() => {
     try { ensureAudio(); } catch {}
     try { towers?.setUserReady(true); } catch {}
+    try { monstersGuard?.setUserReady(true); } catch {}
   });
 
   /* 망루(타워) 초기화 */
-  const IS_ADMIN = location.search.includes('admin=1') || localStorage.getItem('isAdmin') === '1';
   towers = new TowerGuard({
     map,
     db,
@@ -335,9 +356,25 @@ async function main(){
   window.addEventListener('pointerdown', ()=>{
     try { ensureAudio(); } catch {}
     try { towers.resumeAudio(); } catch {}
+    try { monstersGuard.resumeAudio(); } catch {}
   }, { once:true, passive:true });
 
-  /* 몬스터 로드 */
+  /* 몬스터 오토공격 초기화 (MonsterGuard) */
+  monstersGuard = new MonsterGuard({
+    map,
+    db,
+    iconUrl: "https://puppi.netlify.app/images/mon/monster.png",
+    rangeDefault: 50,
+    fireCooldownMs: 1800,
+    getUserLatLng: ()=>[userLat, userLon],
+    onUserHit: (damage, mon)=>{
+      flashPlayer();
+      Score.deductGP(damage, mon.lat, mon.lon);
+    },
+    isAdmin: IS_ADMIN // 운영툴에서만 true
+  });
+
+  /* (선택) 몬스터 클릭 전투: 아이콘 배치 + 시간내 N타 */
   const monsters=[];
   try{
     const qs = await getDocs(collection(db,'monsters'));
@@ -363,7 +400,6 @@ async function main(){
     monsters.push({ id:'test', mid:23, lat:userLat, lon:userLon, url:DEFAULT_IMG, size:96, power:20 });
   }
 
-  /* 배치 + 시간내 N타 전투 */
   monsters.forEach(m=>{
     const icon = makeImageDivIcon(m.url, m.size);
     const marker = L.marker([m.lat, m.lon], { icon, interactive: true }).addTo(map);
@@ -412,10 +448,9 @@ async function main(){
       toast('실패… 다시 시도하세요');
     }
 
-    // 클릭 = 시작/타격 (근접 10m 가드)
+    // 클릭 = 시작/타격 (근접 가드: 기본 25m)
     marker.on('click', async ()=>{
-      // 10m 이내 아니면 공격 불가
-      if (!isInRange(userLat, userLon, m.lat, m.lon, 10)) {
+      if (!isInRange(userLat, userLon, m.lat, m.lon, 25)) {
         const d = Math.round(distanceToM(userLat, userLon, m.lat, m.lon));
         toast(`가까이 가세요! (현재 약 ${d}m)`);
         try { playFail(); } catch {}
@@ -445,23 +480,6 @@ async function main(){
       if (chal.remain <= 0) { await win(); }
       else { updateHUD(); }
     });
-  });
-}
-
-/* ===== 스타트 게이트(탭해서 시작) ===== */
-function addStartGate(onStart){
-  if (document.getElementById('startGate')) return;
-  const btn = document.createElement('button');
-  btn.id = 'startGate';
-  btn.textContent = '탭해서 시작';
-  document.body.appendChild(btn);
-  const kick = ()=>{
-    try { onStart?.(); } catch {}
-    btn.remove();
-  };
-  btn.addEventListener('pointerdown', kick, { once:true });
-  document.addEventListener('visibilitychange', ()=>{
-    if (document.visibilityState === 'visible') { try { ensureAudio(); } catch {} }
   });
 }
 
