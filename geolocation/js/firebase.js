@@ -1,7 +1,8 @@
-// /js/firebase.js
+// /geolocation/js/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { getFirestore }   from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
+// ▶ Firebase 프로젝트 키 (실서비스)
 const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
@@ -12,5 +13,6 @@ const firebaseConfig = {
   measurementId: "G-9TZ81RW0PL"
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const app = initializeApp(firebaseConfig);
+// ✅ 에뮬레이터 연결 코드 전부 제거
+export const db  = getFirestore(app);

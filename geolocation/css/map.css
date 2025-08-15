@@ -59,7 +59,13 @@ body.admin {
 .admin .subhead{ font-weight:700; margin:10px 0 6px; }
 .admin .sep{ height:1px; background:#edf2f7; margin:12px 0; }
 
-/* map.css (또는 전역 css) */
+/* ===== Leaflet 아이콘 관련 (안전 설정) ===== */
+/* FIX: Leaflet이 inline으로 주는 width/height를 건드리지 말고, 배경/테두리/오버플로우만 조정 */
+.leaflet-div-icon { background: transparent; border: none; }
+.leaflet-marker-icon { overflow: visible !important; } /* slash/임팩트가 밖으로 나와도 보이게 */
+
+/* (문제 원인 제거) */
+/* ❌ 지우세요: width/height:auto !important 는 아이콘 크기를 망가뜨립니다
 .leaflet-marker-icon,
 .leaflet-marker-shadow {
   width: auto !important;
@@ -67,57 +73,65 @@ body.admin {
   max-width: none !important;
   max-height: none !important;
 }
+*/
 
-  .player-emoji{font-size:22px; transition:filter .12s ease}
-  .player-hit{ animation: playerflash .22s steps(1) 2; }
-  @keyframes playerflash{ 50%{ filter: brightness(2.2) contrast(1.5) } }
+/* 플레이어 히트 반짝 */
+.player-emoji{font-size:22px; transition:filter .12s ease}
+.player-hit{ animation: playerflash .22s steps(1) 2; }
+@keyframes playerflash{ 50%{ filter: brightness(2.2) contrast(1.5) } }
 
-    /* ----- Energy Bar (총점수=에너지) ----- */
-  .energy-box{margin-top:6px}
-  .energy-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-  .energy-label{font-weight:700}
-  .energy-val{font-variant-numeric:tabular-nums}
-  .energy-wrap{
-    position:relative;height:12px;border-radius:999px;overflow:hidden;background:#1f2937;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
-  }
-  .energy-fill{
-    position:absolute;left:0;top:0;height:100%;
-    background:linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
-    width:0%; transition:width .25s ease;
-  }
-
-  /* 사망 오버레이 */
-  #deathOverlay{
-    position:fixed; inset:0; z-index:3000; background:rgba(0,0,0,.8);
-    color:#fff; display:none; align-items:center; justify-content:center; text-align:center;
-    padding:24px; font-weight:800;
-  }
-  #deathOverlay .inner{max-width:520px}
-  #deathOverlay .title{font-size:28px;margin-bottom:8px}
-  #deathOverlay .desc{opacity:.9;margin-bottom:16px}
-  #deathOverlay button{
-    background:#ef4444; color:#fff; font-weight:800; border:none; border-radius:12px;
-    padding:12px 16px; cursor:pointer;
-  }
-
-  /* ===== Player sword slash ===== */
-.player-wrap{
-  position:relative; width:48px; height:48px; transform: translateZ(0);
+/* ----- Energy Bar (총점수=에너지) ----- */
+.energy-box{margin-top:6px}
+.energy-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.energy-label{font-weight:700}
+.energy-val{font-variant-numeric:tabular-nums}
+.energy-wrap{
+  position:relative;height:12px;border-radius:999px;overflow:hidden;background:#1f2937;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
 }
+.energy-fill{
+  position:absolute;left:0;top:0;height:100%;
+  background:linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
+  width:0%; transition:width .25s ease;
+}
+
+/* 사망 오버레이 */
+#deathOverlay{
+  position:fixed; inset:0; z-index:3000; background:rgba(0,0,0,.8);
+  color:#fff; display:none; align-items:center; justify-content:center; text-align:center;
+  padding:24px; font-weight:800;
+}
+#deathOverlay .inner{max-width:520px}
+#deathOverlay .title{font-size:28px;margin-bottom:8px}
+#deathOverlay .desc{opacity:.9;margin-bottom:16px}
+#deathOverlay button{
+  background:#ef4444; color:#fff; font-weight:800; border:none; border-radius:12px;
+  padding:12px 16px; cursor:pointer;
+}
+
+/* ===== Player sword slash ===== */
+.player-wrap{ position:relative; width:48px; height:48px; }
+.player-img{
+  width:100%; height:100%; display:block;
+  transform: scaleX(var(--face, 1));     /* 1 = 오른쪽, -1 = 왼쪽 */
+  transform-origin: 50% 50%;
+  transition: transform .08s linear;
+  image-rendering: pixelated;            /* 픽셀아트면 선명 */
+}
+.player-wrap.face-left  { --face: -1; }
+.player-wrap.face-right { --face:  1; }
+
 .player-wrap .slash{
   position:absolute; left:50%; top:50%;
   width:70px; height:70px; pointer-events:none;
-  transform-origin:10% 0%;              /* 위→아래 내리치는 축 */
+  transform-origin:10% 0%;
   opacity:0;
-  z-index: 10000;                        /* 다른 마커 위로 */
+  z-index: 10000;
   will-change: transform, opacity;
 }
 .player-wrap .slash.on{
   animation: swordSlash 240ms ease-out forwards;
 }
-
-/* 칼 궤적(간단한 빛 효과) */
 .player-wrap .slash::before{
   content:"";
   position:absolute; inset:-10px;
@@ -125,9 +139,24 @@ body.admin {
     radial-gradient(closest-side, rgba(255,255,255,.9), rgba(255,255,255,0) 70%) center/10px 10px no-repeat,
     conic-gradient(from 0.2turn, rgba(255,255,255,.85), rgba(255,255,255,.2) 45%, rgba(255,255,255,0) 55%);
   filter: drop-shadow(0 4px 6px rgba(0,0,0,.25));
-  /* 마스크가 브라우저별로 다를 수 있어 둘 다 */
   -webkit-mask: linear-gradient(to bottom, black 30%, transparent 95%);
   mask: linear-gradient(to bottom, black 30%, transparent 95%);
+}
+/* ===== Player attack sprite ===== */
+.player-wrap .attack-sprite{
+  background: url("../images/user/act800x257.png") 0 0 no-repeat;
+  background-size: 400% 100%; /* 4프레임 가로 */
+  image-rendering: pixelated; /* 픽셀풍이면 유지, 아니면 삭제해도 무방 */
+}
+
+.player-wrap .attack-sprite.on{
+  display: block;
+  animation: player-attack-anim 0.45s steps(4) 1;
+}
+
+@keyframes player-attack-anim{
+  from { background-position:   0% 0; }
+  to   { background-position: -300% 0; } /* 0 → -300% (4프레임) */
 }
 
 @keyframes swordSlash{
@@ -135,53 +164,25 @@ body.admin {
   50%  { opacity:1; transform: rotate(var(--angle, -90deg)) scaleY(1.1) translate(0px,0px); }
   100% { opacity:0; transform: rotate(var(--angle, -90deg)) scaleY(0.9) translate(6px,28px); }
 }
-/* ===== Impact FX at enemy ===== */
-.hitfx{
-  position:absolute; left:50%; top:50%;
-  transform: translate(-50%,-50%);
-  pointer-events:none; width:84px; height:84px; z-index:12000;
-}
 
-/* 중앙 섬광 */
-.hitfx .spark{
-  position:absolute; inset:0; border-radius:50%;
-  background:
-    radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,.6) 22%, rgba(255,255,255,0) 60%),
-    conic-gradient(from .25turn, rgba(255,255,255,1), rgba(255,255,255,0) 30%);
+/* ===== Impact FX at enemy ===== */
+.hitfx{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); pointer-events:none; width:84px; height:84px; z-index:12000; }
+.hitfx .spark{ position:absolute; inset:0; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,.6) 22%, rgba(255,255,255,0) 60%),
+             conic-gradient(from .25turn, rgba(255,255,255,1), rgba(255,255,255,0) 30%);
   filter: drop-shadow(0 6px 18px rgba(255,255,255,.8));
   animation: hitSpark .24s ease-out forwards;
 }
-
-/* 충격파 링 */
-.hitfx .ring{
-  position:absolute; inset:0; border-radius:50%;
-  border:2px solid rgba(255,255,255,.95);
-  box-shadow:0 0 24px rgba(255,255,255,.75);
-  animation: hitRing .34s ease-out forwards;
-}
-
-/* 파편들 (6개) */
-.hitfx .shard{
-  position:absolute; left:50%; top:50%;
-  width:4px; height:22px; transform-origin:50% 0%;
-  background:linear-gradient(#fff, rgba(255,255,255,0));
-  filter: drop-shadow(0 2px 6px rgba(255,255,255,.75));
-  opacity:.95; animation: hitShard .34s ease-out forwards;
-}
-
-@keyframes hitSpark{
-  0%   { transform: scale(.25) rotate(-15deg); opacity:0; }
-  50%  { opacity:1; }
-  100% { transform: scale(1.25) rotate(15deg); opacity:0; }
-}
-@keyframes hitRing{
-  0%   { transform: scale(.2); opacity:.95; }
-  100% { transform: scale(1.5); opacity:0; }
-}
+.hitfx .ring{ position:absolute; inset:0; border-radius:50%; border:2px solid rgba(255,255,255,.95);
+  box-shadow:0 0 24px rgba(255,255,255,.75); animation: hitRing .34s ease-out forwards; }
+.hitfx .shard{ position:absolute; left:50%; top:50%; width:4px; height:22px; transform-origin:50% 0%;
+  background:linear-gradient(#fff, rgba(255,255,255,0)); filter: drop-shadow(0 2px 6px rgba(255,255,255,.75));
+  opacity:.95; animation: hitShard .34s ease-out forwards; }
+@keyframes hitSpark{ 0%{ transform:scale(.25) rotate(-15deg); opacity:0 } 50%{ opacity:1 } 100%{ transform:scale(1.25) rotate(15deg); opacity:0 } }
+@keyframes hitRing{ 0%{ transform:scale(.2); opacity:.95 } 100%{ transform:scale(1.5); opacity:0 } }
 @keyframes hitShard{
-  0%   { transform: rotate(var(--deg,0)) translate(-50%,-50%) scaleY(.3); opacity:1; }
-  100% { transform: rotate(var(--deg,0)) translate(calc(-50% + var(--dx,0px)), calc(-50% + var(--dy,0px))) scaleY(1);
-         opacity:0; }
+  0%{ transform:rotate(var(--deg,0)) translate(-50%,-50%) scaleY(.3); opacity:1 }
+  100%{ transform:rotate(var(--deg,0)) translate(calc(-50% + var(--dx,0px)), calc(-50% + var(--dy,0px))) scaleY(1); opacity:0 }
 }
 
 /* (선택) 가벼운 화면 흔들림 */
@@ -193,6 +194,7 @@ body.admin {
   100% { transform: translate(0,0) } 
 }
 .shake-map { animation: tinyShake 120ms ease; }
+
 /* 몬스터 HP 바 */
 .mon-hp{
   position:absolute; left:50%; bottom:calc(100% + 6px);
@@ -212,5 +214,3 @@ body.admin {
   font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6);
   pointer-events:none;
 }
-
-

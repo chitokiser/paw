@@ -1,20 +1,15 @@
 // score.js — 유저 점수/에너지/사망/체인 관리 모듈
-// 사용법 (main.js):
-// import { Score } from "./score.js";
-// await Score.init({ db, getGuestId, toast, playFail });
-// Score.attachToHUD(ensureHUD());   // HUD 안에 에너지바/오버레이 주입
-// Score.updateEnergyUI();           // 초기 표시
-// Score.wireRespawn();              // 부활 버튼 활성화
-//
-// 사용 중:
-// await Score.awardGP(power, lat, lon, totalDistanceM);
-// await Score.deductGP(1, towerLat, towerLon);
-// const stats = Score.getStats();  // { totalGP, totalDistanceM }
 
 import {
   getDoc, setDoc, updateDoc, addDoc, increment, serverTimestamp,
   collection, doc
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+
+/** 🔒 로그 컬렉션 쓰기 비활성화 스위치
+ *  - tower_hits / walk_logs 같은 “이벤트 로그”를 남기지 않도록 기본 false
+ *  - 필요하면 true로 바꾸세요.
+ */
+const ENABLE_DB_LOGS = false;
 
 /* ---------------- 내부 상태 ---------------- */
 const _state = {
@@ -26,7 +21,7 @@ const _state = {
   energyMax: Number(localStorage.getItem('energyMax') || 100),
   isDead: false,
   hudEl: null,
-  onChainChanged: null,   // 체인 변경시 HUD 반영용 콜백
+  onChainChanged: null,
   _chainCache: Number(localStorage.getItem('chainTotal') || 0),
 };
 
@@ -39,7 +34,6 @@ function _setEnergyMax(v){
 function _injectCSS(){
   if (document.getElementById('score-css')) return;
   const css = `
-  /* ----- Energy Bar ----- */
   .energy-box{margin-top:6px}
   .energy-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
   .energy-label{font-weight:700}
@@ -53,8 +47,6 @@ function _injectCSS(){
     background:linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
     width:0%; transition:width .25s ease;
   }
-
-  /* ----- Death Overlay ----- */
   #deathOverlay{
     position:fixed; inset:0; z-index:3000; background:rgba(0,0,0,.8);
     color:#fff; display:none; align-items:center; justify-content:center; text-align:center;
@@ -86,7 +78,6 @@ function _ensureDeathOverlay(){
 
 /* ---------------- 공개 API ---------------- */
 export const Score = {
-  /* 초기화 */
   async init({ db, getGuestId, toast, playFail }){
     _state.db = db;
     _state.getGuestId = getGuestId;
@@ -96,21 +87,16 @@ export const Score = {
     _injectCSS();
     _ensureDeathOverlay();
 
-    // 유저 문서 보장 + 로드
     await this.ensureUserDoc();
 
-    // 체인 변경시 HUD 반영
     _state.onChainChanged = (val)=>{
       try { window.setHUD?.({ chain: val }); } catch {}
     };
-
-    // 최초 체인 표시 갱신
     _state.onChainChanged?.(this.getChainTotal());
 
     this.updateEnergyUI();
   },
 
-  /* HUD 연결 (에너지바 주입) */
   attachToHUD(hudEl){
     _state.hudEl = hudEl;
     if (!hudEl) return;
@@ -130,13 +116,12 @@ export const Score = {
     }
   },
 
-  /* 부활 버튼 동작 연결 */
   wireRespawn(){
     const btn = document.getElementById('btnRespawn');
     const ov  = document.getElementById('deathOverlay');
     if (!btn || !ov) return;
     btn.addEventListener('click', ()=>{
-      this._refillEnergy();          // 풀 회복
+      this._refillEnergy();
       this.updateEnergyUI();
       _state.isDead = false;
       ov.style.display = 'none';
@@ -144,7 +129,6 @@ export const Score = {
     }, { once: false });
   },
 
-  /* Firestore: 유저 문서 확보/조회 */
   async ensureUserDoc(){
     const uid = _state.getGuestId();
     await setDoc(doc(_state.db, 'users', uid), {
@@ -165,15 +149,43 @@ export const Score = {
     return { totalDistanceM: _state.stats.totalDistanceM, totalGP: _state.stats.totalGP };
   },
 
-  /* 점수 지급 (걷기/몬스터 승리 등) */
+    // 아이템(예: 빨간약)로 에너지 늘리기 — Firestore 로그 문서 생성 없이 users.totalGP 만 증가
+  async addEnergy(delta = 10){
+    if (!Number.isFinite(delta) || delta <= 0) return;
+
+    // 로컬 상태 갱신
+    _state.stats.totalGP = Math.max(0, Number(_state.stats.totalGP || 0) + delta);
+    this.updateEnergyUI();
+
+    // Firestore users.totalGP 만 증가 (로그 컬렉션 기록 없음)
+    try{
+      const uid = _state.getGuestId?.();
+      if (uid){
+        await updateDoc(doc(_state.db, 'users', uid), {
+          totalGP: increment(delta),
+          updatedAt: serverTimestamp()
+        });
+      }
+    }catch(e){ console.warn('addEnergy failed:', e); }
+
+    // 안내
+    try { _state.toast?.(`에너지 +${delta}`); } catch {}
+  },
+
+  /* 점수 지급 */
   async awardGP(gpUnits, lat, lon, totalDistanceM){
     if (gpUnits <= 0) return;
     const uid = _state.getGuestId();
 
-    await addDoc(collection(_state.db, 'walk_logs'), {
-      address: uid, gp: gpUnits, metersCounted: gpUnits*10,
-      lat, lon, totalDistanceM, createdAt: serverTimestamp()
-    });
+    // ⛔ 기본 비활성화: walk_logs 기록
+    if (ENABLE_DB_LOGS) {
+      try {
+        await addDoc(collection(_state.db, 'walk_logs'), {
+          address: uid, gp: gpUnits, metersCounted: gpUnits*10,
+          lat, lon, totalDistanceM, createdAt: serverTimestamp()
+        });
+      } catch {}
+    }
 
     await updateDoc(doc(_state.db, 'users', uid), {
       totalGP: increment(gpUnits),
@@ -187,14 +199,19 @@ export const Score = {
     this.updateEnergyUI();
   },
 
-  /* 점수 차감 (타워 피격 등) + 사망 판정 */
+  /* 점수 차감 (타워 피격 등) */
   async deductGP(points, fromLat, fromLon){
     if (points <= 0) return;
     const uid = _state.getGuestId();
 
-    await addDoc(collection(_state.db, 'tower_hits'), {
-      address: uid, gp: -points, fromLat, fromLon, createdAt: serverTimestamp()
-    });
+    // ⛔ 기본 비활성화: ★여기가 tower_hits를 만들던 부분입니다.
+    if (ENABLE_DB_LOGS) {
+      try {
+        await addDoc(collection(_state.db, 'tower_hits'), {
+          address: uid, gp: -points, fromLat, fromLon, createdAt: serverTimestamp()
+        });
+      } catch {}
+    }
 
     await updateDoc(doc(_state.db, 'users', uid), {
       totalGP: increment(-points),
@@ -206,11 +223,9 @@ export const Score = {
 
     this.updateEnergyUI();
 
-    // 피격 사운드 + 토스트
     try { _state.playFail(); } catch {}
     _state.toast(`-${points} GP (망루)`);
 
-    // 사망 체크
     this._checkAndMaybeDie();
   },
 
@@ -230,24 +245,18 @@ export const Score = {
 
   /* ------------ 에너지 UI ------------ */
   updateEnergyUI(){
-    // 최대 에너지 자동 성장(원한다면 고정으로 바꿔도 됨)
     if (_state.stats.totalGP > _state.energyMax) _setEnergyMax(_state.stats.totalGP);
-
     const fill = document.getElementById('hudEnergyFill');
     const txt  = document.getElementById('hudEnergyText');
-
     const cur = Math.max(0, _state.stats.totalGP);
     const pct = Math.max(0, Math.min(100, (cur / _state.energyMax) * 100));
-
     if (fill) fill.style.width = pct.toFixed(1) + '%';
     if (txt)  txt.textContent  = `${cur} / ${_state.energyMax}`;
   },
 
   /* ------------ 사망/부활 ------------ */
   _refillEnergy(){
-    // 사망 후 부활 시: 에너지(=totalGP) 풀회복 → 현재 max로 채움
     _state.stats.totalGP = _state.energyMax;
-    // Firestore 반영
     const uid = _state.getGuestId?.();
     if (uid){
       updateDoc(doc(_state.db, 'users', uid), {
@@ -263,10 +272,8 @@ export const Score = {
 
     try { _state.playFail(); } catch {}
 
-    // 1) 체인 점수 0으로 리셋
     this.setChainTotal(0);
 
-    // 2) Firestore totalGP 0으로 리셋
     try{
       const uid = _state.getGuestId();
       await updateDoc(doc(_state.db, 'users', uid), {
@@ -274,11 +281,9 @@ export const Score = {
       });
     }catch(e){ console.warn('death reset fail:', e); }
 
-    // 3) 로컬 상태 0
     _state.stats.totalGP = 0;
     this.updateEnergyUI();
 
-    // 4) 사망 오버레이 노출
     const ov = document.getElementById('deathOverlay');
     if (ov) ov.style.display = 'flex';
   },
