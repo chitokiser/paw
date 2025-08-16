@@ -1,15 +1,6 @@
 // /geolocation/js/battle.js
-import { doc, setDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-
-/**
- * 사용:
- * import { createAttachMonsterBattle } from './battle.js';
- * // 또는
- * import createAttachMonsterBattle from './battle.js';
- */
+// ✅ DB 최소화: 죽음/부활 상태는 쓰지 않음, 전리품 이전만 트랜잭션 수행
 export function createAttachMonsterBattle({
-
-
   db, map, playerMarker, dog, Score, toast,
   ensureAudio, isInRange, distanceToM, setFacingByLatLng,
   swingSwordAt, attackOnceToward, spawnImpactAt, shakeMap, playAttackImpact, playFail, playDeath,
@@ -17,137 +8,115 @@ export function createAttachMonsterBattle({
   monstersGuard, setHUD
 }) {
 
-  // px 기준 히스테리시스(지터 방지). 6~10px 권장
-const FACING_THRESHOLD_PX = 8;
+  const FACING_THRESHOLD_PX = 8;
+  function getFacingDirLR(map, playerMarker, targetLL, thresholdPx = FACING_THRESHOLD_PX){
+    const p1 = map.latLngToLayerPoint(playerMarker.getLatLng());
+    const p2 = map.latLngToLayerPoint(targetLL);
+    const dx = p2.x - p1.x;
+    if (dx >  thresholdPx) return 'right';
+    if (dx < -thresholdPx) return 'left';
+    return null;
+  }
+  function faceTowards(map, playerMarker, targetLL){
+    const dir = getFacingDirLR(map, playerMarker, targetLL);
+    if (dir) { try { setFacingByLatLng(map, playerMarker, targetLL, dir); } catch {} }
+    return dir;
+  }
 
-// 플레이어 위치 대비 타깃이 왼쪽/오른쪽인지 계산
-function getFacingDirLR(map, playerMarker, targetLL, thresholdPx = FACING_THRESHOLD_PX){
-  const p1 = map.latLngToLayerPoint(playerMarker.getLatLng());
-  const p2 = map.latLngToLayerPoint(targetLL);
-  const dx = p2.x - p1.x;
-  if (dx >  thresholdPx) return 'right';
-  if (dx < -thresholdPx) return 'left';
-  return null; // 거의 정면(미세 지터)일 땐 유지
-}
+  // 인자 정규화: (marker,id,data) | ({marker,id,data})
+  function normalizeArgs(...args){
+    if (args.length === 3) return { marker: args[0], id: args[1], data: args[2] || {} };
+    if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+      const o = args[0];
+      return { marker: o.marker, id: o.id, data: o.data || o.mon || o.meta || {} };
+    }
+    return { marker: args?.[0], id: args?.[1], data: args?.[2] || {} };
+  }
 
-// 계산된 방향으로 실제 페이싱 적용
-function faceTowards(map, playerMarker, targetLL){
-  const dir = getFacingDirLR(map, playerMarker, targetLL);
-  if (dir) { try { setFacingByLatLng(map, playerMarker, targetLL, dir); } catch {} }
-  return dir;
-}
+  function attachMonsterBattle(...rawArgs){
+    const { marker, id: monsterId, data: rawData } = normalizeArgs(...rawArgs);
+    if (!marker || !monsterId) { console.warn('[battle] invalid args'); return; }
 
+    const data = {
+      lat: rawData.lat, lon: rawData.lon,
+      power: Number.isFinite(rawData.power) ? Number(rawData.power) : 20,
+      hp: Number.isFinite(rawData.hp) ? Number(rawData.hp) : undefined,
+      cooldownMs: Number.isFinite(rawData.cooldownMs) ? Number(rawData.cooldownMs) : 2000,
+      approachMaxM:     Number.isFinite(rawData.approachMaxM)     ? Number(rawData.approachMaxM)     : 25,
+      meleeRange:       Number.isFinite(rawData.meleeRange)       ? Number(rawData.meleeRange)       : 1.6,
+      approachSpeedMps: Number.isFinite(rawData.approachSpeedMps) ? Number(rawData.approachSpeedMps) : 6.2,
+    };
 
-  function attachMonsterBattle(marker, monsterId, data) {
-    const power = Math.max(1, Number(data.power ?? 20));
-
-    // ── HP Bar & 초기 HUD ─────────────────────────────────────────
-    let hpLeft = power;
+    // HP 바
+    let hpLeft = Math.max(1, Number(data.hp ?? data.power));
     let hpUI = { set: ()=>{} };
     setTimeout(() => {
-      hpUI = attachHPBar(marker, hpLeft);
-      hpUI.set(hpLeft);
+      try { hpUI = attachHPBar(marker, hpLeft) || { set: ()=>{} }; } catch {}
+      try { hpUI.set(hpLeft); } catch {}
       try {
         setHUD?.({
           timeLeft: '-',
           hitsLeft: hpLeft,
-          earn: power,
+          earn: data.power,
           chain: Score.getChainTotal()
         });
       } catch {}
     }, 0);
 
-    // ── 타임어택 상태/HUD ────────────────────────────────────────
-    let chal = null; // { remain, deadline, timer }
-
+    // 타임어택 HUD
+    let chal = null;
     const stop = () => {
       if (chal?.timer) clearInterval(chal.timer);
       chal = null;
       try {
-        setHUD?.({
-          timeLeft: '-',
-          hitsLeft: '-',
-          earn: power,
-          chain: Score.getChainTotal()
-        });
+        setHUD?.({ timeLeft: '-', hitsLeft: '-', earn: data.power, chain: Score.getChainTotal() });
       } catch {}
     };
-
     const hud = () => {
       if (!chal) return;
       const s = Math.max(0, chal.deadline - Date.now());
-      try {
-        setHUD?.({
-          timeLeft: (s / 1000).toFixed(1) + 's',
-          hitsLeft: chal.remain,
-          earn: power
-        });
-      } catch {}
+      try { setHUD?.({ timeLeft: (s/1000).toFixed(1)+'s', hitsLeft: chal.remain, earn: data.power }); } catch {}
     };
 
-    // ── 부활 예약(클라 타이머) ───────────────────────────────────
-    async function reviveLater(respawnMs = 60_000) {
-      const monRef = doc(db, 'monsters', String(monsterId));
-      setTimeout(async () => {
-        try {
-          await runTransaction(db, async tx => {
-            const snap = await tx.get(monRef);
-            if (!snap.exists()) return;
-            const cur = snap.data() || {};
-            if ((cur.dead === true || cur.alive === false) && Number(cur.respawnAt || 0) <= Date.now()) {
-              tx.update(monRef, { alive: true, dead: false, respawnAt: 0, updatedAt: Date.now() });
-            }
-          });
-          try { monstersGuard?.killedLocal?.delete(String(monsterId)); } catch {}
-        } catch (e) { console.warn('reviveLater failed', e); }
-      }, respawnMs + 120);
-    }
-
-    // ── 처치 ─────────────────────────────────────────────────────
-    async function win() {
+    // 승리: 로컬 쿨다운만 기록, 전리품 이전만 1회 DB
+    async function win(){
       stop();
       try { playDeath(); } catch {}
 
-      // 점수/체인
       try {
         const distM = Math.round(Score.getStats().totalDistanceM);
-        await Score.awardGP(power, data.lat, data.lon, distM);
+        await Score.awardGP(data.power, data.lat, data.lon, distM);
         Score.updateEnergyUI();
-        const tx = await Score.saveToChainMock(power);
+        const tx = await Score.saveToChainMock(data.power);
         setHUD?.({ chain: tx.total });
-      } catch {}
+      } catch (e){ console.warn('[battle] score/chain fail', e); }
 
-      // 전리품 이전
+      // ✅ 로컬 쿨다운 기록 (DB X)
+      try { localStorage.setItem('mon_cd:'+monsterId, String(Date.now() + data.cooldownMs)); } catch {}
+
+      // 전리품 이전(트랜잭션은 내부 구현)
       try {
         const moved = await transferMonsterInventory({ monsterId, guestId: getGuestId() });
         toast(moved?.length
-          ? `+${power} GP & 전리품: ${moved.map(it => `${it.name || it.id} x${it.qty || 1}`).join(', ')}`
-          : `+${power} GP!`);
+          ? `+${data.power} GP & 전리품: ${moved.map(it => `${it.name || it.id} x${it.qty || 1}`).join(', ')}`
+          : `+${data.power} GP!`);
       } catch (e) {
         console.warn('loot transfer fail', e);
-        toast('전리품 이전 실패. 다시 시도해 주세요.');
+        toast('전리품 이전 실패. 잠시 후 다시 시도해 주세요.');
       }
 
-      // 지도에서 제거
-      setTimeout(() => { try { map.removeLayer(marker); } catch {} }, 900);
+      // 지도에서 제거(다른 클라는 폴링 시 자연히 숨김)
+      setTimeout(()=>{ try { map.removeLayer(marker); } catch {} }, 900);
 
-      // 죽음 기록 + 부활 예약
-      try {
-        const now = Date.now(), respawnMs = 60_000;
-        await setDoc(doc(db, 'monsters', String(monsterId)), {
-          alive: false, dead: true, respawnAt: now + respawnMs, updatedAt: now
-        }, { merge: true });
-        try { monstersGuard?.markKilled?.(monsterId); } catch {}
-        await reviveLater(respawnMs);
-      } catch {}
+      // 로컬 가드 마킹
+      try { monstersGuard?.markKilled?.(monsterId); } catch {}
     }
 
-    // ── 실패 ─────────────────────────────────────────────────────
-    function fail() { stop(); try { playFail(); } catch {}; toast('실패… 다시!'); }
+    function fail(){ stop(); try { playFail(); } catch {}; toast('실패… 다시!'); }
 
-    // ── 클릭 전투: "접근 → (성공/타임아웃/소프트범위) → 무조건 공격" ─────
+    // 클릭 전투
     marker.options.interactive = true;
-    marker.on('click', async () => {
+    marker.on('click', async ()=>{
       try { ensureAudio(); } catch {}
       if (attachMonsterBattle._busy) return;
       attachMonsterBattle._busy = true;
@@ -156,10 +125,10 @@ function faceTowards(map, playerMarker, targetLL){
         const uLL = playerMarker.getLatLng();
         const mLL = marker.getLatLng();
 
-        const approachMaxM     = Number(data.approachMaxM     ?? 25);   // 접근 허용 범위
-        const meleeRangeM      = Number(data.meleeRange       ?? 1.6);  // 정지/타격 거리(유연화)
-        const softRangeM       = Math.max(meleeRangeM + 1.2, 3.0);      // 지터 대비 소프트 범위
-        const approachSpeedMps = Number(data.approachSpeedMps ?? 6.2);  // 접근 속도
+        const approachMaxM = data.approachMaxM;
+        const meleeRangeM  = data.meleeRange;
+        const softRangeM   = Math.max(meleeRangeM + 1.2, 3.0);
+        const approachSpeedMps = data.approachSpeedMps;
 
         const dist0 = map.distance(uLL, mLL);
         if (dist0 > approachMaxM) {
@@ -168,21 +137,20 @@ function faceTowards(map, playerMarker, targetLL){
           return;
         }
 
-        // 1) 멀면 먼저 유연 대시(타깃 추적 + 타임아웃/소프트범위)
         if (dist0 > meleeRangeM) {
           await dashToMeleeDynamic({
             map, playerMarker,
-            getTargetLatLng: () => marker.getLatLng(),
+            getTargetLatLng: ()=> marker.getLatLng(),
             speedMps: approachSpeedMps,
-            meleeRangeM, softRangeM, timeoutMs: 2200
+            meleeRangeM, softRangeM, timeoutMs: 2200,
+            onStep: (lat,lng)=>{ try { dog?.update?.(lat,lng); } catch {} }
           });
         }
 
-        // 2) 도착했건, 소프트 종료/타임아웃이건 → "무조건" 공격 이펙트 호출
         const nowLL = marker.getLatLng();
         const curLL = playerMarker.getLatLng();
 
-        try { setFacingByLatLng(map, playerMarker, nowLL, 'right'); } catch {}
+        faceTowards(map, playerMarker, nowLL);
         try { dog?.setFacingByTarget?.(curLL.lat, curLL.lng, nowLL.lat, nowLL.lng); } catch {}
 
         try {
@@ -191,20 +159,16 @@ function faceTowards(map, playerMarker, targetLL){
           shakeMap();
           playAttackImpact({ intensity: 1.15 });
           dog?.playBark?.();
-        } catch (e) {
-          console.warn('attack fx error', e);
-        }
+        } catch (e) { console.warn('attack fx error', e); }
 
-        // === 이하 기존 HP/타이머/데미지 ===
         if (!chal) {
           const ms = getChallengeDurationMs(data.power);
           chal = {
             remain: Math.max(1, data.power),
             deadline: Date.now() + ms,
-            timer: setInterval(() => {
+            timer: setInterval(()=>{
               if (!chal) return;
-              if (Date.now() >= chal.deadline) fail();
-              else hud();
+              if (Date.now() >= chal.deadline) fail(); else hud();
             }, 80)
           };
           hud();
@@ -215,32 +179,28 @@ function faceTowards(map, playerMarker, targetLL){
         chal.remain = Math.max(0, chal.remain - 1);
         try { hpUI.set(hpLeft); } catch {}
         if (hpLeft <= 0) await win(); else hud();
+
       } finally {
         attachMonsterBattle._busy = false;
-        window.__pf_dashing = false; // 혹시 남아있으면 정리
+        window.__pf_dashing = false;
       }
     });
 
     try { marker.bringToFront?.(); } catch {}
   }
 
-  // 연타 방지 플래그 초기값
   attachMonsterBattle._busy = false;
-
   return attachMonsterBattle;
 }
 
-/* ────────────────────────────────────────────────────────────────
-   유연한 대시: 타깃이 움직여도 추적, 시간 초과/소프트 범위에서 종료
-   → 종료 후에는 "무조건" 공격 호출 쪽에서 이펙트를 재생
-   ──────────────────────────────────────────────────────────────── */
 function dashToMeleeDynamic({
   map, playerMarker,
-  getTargetLatLng,              // () => L.LatLng  (항상 최신 몬스터 위치 반환)
+  getTargetLatLng,
   speedMps = 6.2,
-  meleeRangeM = 1.6,            // 정확 근접
-  softRangeM  = 3.0,            // 이 안에서 정체면 종료
-  timeoutMs   = 2000            // 최대 추적 시간
+  meleeRangeM = 1.6,
+  softRangeM  = 3.0,
+  timeoutMs   = 2000,
+  onStep      = null
 }){
   return new Promise((resolve)=>{
     window.__pf_dashing = true;
@@ -256,30 +216,25 @@ function dashToMeleeDynamic({
       const tgt = getTargetLatLng();
       const dist = map.distance(cur, tgt);
 
-      // 1) 정확 근접
       if (dist <= meleeRangeM) return done();
-
-      // 2) 시간 초과
       if ((now - start) >= timeoutMs) return done();
 
-      // 3) 소프트 범위에서 더 안 가까워지면 종료
       if (dist <= softRangeM) {
-        if (dist >= lastDist - 0.05) { // 5cm 이내로 정체
+        if (dist >= lastDist - 0.05) {
           notCloserFrames++;
-          if (notCloserFrames >= 6) return done(); // 6프레임(≈100ms) 정체
+          if (notCloserFrames >= 6) return done();
         } else {
           notCloserFrames = 0;
         }
       }
 
-      // 이동 스텝
       const step = speedMps * dt;
       const t = Math.min(1, step / Math.max(dist, 1e-6));
       const newLat = cur.lat + (tgt.lat - cur.lat) * t;
       const newLng = cur.lng + (tgt.lng - cur.lng) * t;
       playerMarker.setLatLng([newLat, newLng]);
 
-      try { dog?.update?.(newLat, newLng); } catch {}
+      try { onStep?.(newLat, newLng); } catch {}
 
       lastDist = dist;
       requestAnimationFrame(tick);
@@ -290,5 +245,4 @@ function dashToMeleeDynamic({
   });
 }
 
-// 이름/기본 둘 다 export (import 방식 혼용 대비)
 export default createAttachMonsterBattle;

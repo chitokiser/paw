@@ -73,7 +73,7 @@ window.__hit = ()=> attackOnceToward(map, playerMarker, playerMarker.getLatLng()
   if (userLat==null){ userLat=37.5665; userLon=126.9780; }
 
   // Player
-  playerMarker = L.marker([userLat,userLon],{ icon: makePlayerDivIcon('../images/user/1.png',48) }).addTo(map);
+  playerMarker = L.marker([userLat,userLon],{ icon: makePlayerDivIcon('../images/user/1.png',38) }).addTo(map);
   map.setView([userLat,userLon], 19);
 
   // Dog

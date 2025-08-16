@@ -49,12 +49,14 @@
       <div class="row">
         <div>
           <label for="imageURL">몬스터 이미지 URL</label>
-          <input type="url" id="imageURL" placeholder="https://puppi.netlify.app/images/mon/1.png" required />
-          <div class="hint">예) https://puppi.netlify.app/images/mon/1.png</div>
+          <!-- ✅ placeholder가 아니라 실제 기본값으로 입력 -->
+          <input type="url" id="imageURL" value="https://puppi.netlify.app/images/mon/1.png" required />
+          <div class="hint">이미지를 바꾸려면 위 값을 원하는 URL로 변경하세요.</div>
         </div>
         <div>
           <label for="power">몬스터 파워 (필수)</label>
-          <input type="number" id="power" placeholder="예: 20" min="1" required />
+          <!-- ✅ 기본값 10 -->
+          <input type="number" id="power" min="1" value="10" required />
           <div class="hint">보상=파워, 제한시간=(파워/4)초, 필요타격=파워회</div>
         </div>
       </div>
@@ -66,7 +68,8 @@
         </div>
         <div>
           <label for="size">아이콘 크기(px) (선택)</label>
-          <input type="number" id="size" placeholder="기본 96" min="24" />
+          <!-- ✅ 기본값 44 -->
+          <input type="number" id="size" min="24" value="44" />
           <div class="hint">지도 위 아이콘 픽셀 크기. 비우면 96px</div>
         </div>
       </div>
@@ -75,17 +78,18 @@
       <div class="row">
         <div>
           <label for="m_range">사거리(m)</label>
-          <input type="number" id="m_range" placeholder="예: 50" min="10" />
+          <!-- ✅ 기본값 5 -->
+          <input type="number" id="m_range" min="1" value="5" />
         </div>
         <div>
           <label for="m_damage">1회 데미지</label>
-          <input type="number" id="m_damage" placeholder="예: 1" min="1" />
+          <input type="number" id="m_damage" min="1" value="1" />
         </div>
       </div>
       <div class="row">
         <div>
           <label for="m_cooldown">쿨다운(ms)</label>
-          <input type="number" id="m_cooldown" placeholder="예: 1800" min="200" />
+          <input type="number" id="m_cooldown" min="200" value="1800" />
         </div>
         <div>
           <label for="m_docId">수정용 문서ID (선택)</label>
@@ -101,11 +105,8 @@
 - <b>lootTable</b>: 확률 드랍 테이블(비어 있으면 무시). items가 비어 있으면 lootTable을 굴려서 전리품을 확정합니다.</div>
 
         <label for="m_items">items (JSON 배열 또는 라인/CSV)</label>
-        <textarea id="m_items" placeholder="예)
-red_potion|빨간약|1|common
-bone_fragment,3
-또는
-[{ &quot;id&quot;:&quot;potion_small&quot;, &quot;name&quot;:&quot;Small Potion&quot;, &quot;qty&quot;:2, &quot;rarity&quot;:&quot;common&quot; }]"></textarea>
+        <!-- ✅ 기본으로 빨간약 1개를 미리 입력 -->
+        <textarea id="m_items">red_potion|빨간약|1|common</textarea>
 
         <label for="m_loot">lootTable (JSON 배열 또는 라인/CSV)</label>
         <textarea id="m_loot" placeholder="예)
@@ -150,11 +151,11 @@ mystic_orb|Mystic Orb|rare|0.1|1|1
       <div class="row">
         <div>
           <label for="t_range">사거리(m)</label>
-          <input type="number" id="t_range" placeholder="예: 60" min="10" required />
+          <input type="number" id="t_range" min="1" value="60" required />
         </div>
         <div>
           <label for="t_icon">아이콘 URL (선택)</label>
-          <input type="url" id="t_icon" placeholder="https://puppi.netlify.app/images/mon/tower.png" />
+          <input type="url" id="t_icon" value="https://puppi.netlify.app/images/mon/tower.png" />
         </div>
       </div>
 

@@ -1,5 +1,5 @@
-//monster.js — 자동 공격형 몬스터 가드(읽기 전용, 무로그/무히트기록)
-// 사용처 예: 
+// /geolocation/js/monster.js — 자동 공격형 몬스터 가드(읽기 최적화 버전)
+// 사용 예:
 // monstersGuard = new MonsterGuard({
 //   map, db,
 //   iconUrl: "https://puppi.netlify.app/images/mon/monster.png",
@@ -7,11 +7,16 @@
 //   fireCooldownMs: 1800,
 //   getUserLatLng: () => [userLat, userLon],
 //   onUserHit: (damage, monInfo) => { /* HP 차감 등 */ },
-//   renderMarkers: false,   // 지도에 아이콘/사거리 원을 그리지 않으려면 false
+//   renderMarkers: false,
+//   // 🔧 읽기 최적화 옵션 (필요 시 조정)
+//   pollMs: 2500,      // 폴링 주기(ms)
+//   tileSizeDeg: 0.01, // 타일 그리드 간격(위경도도 단위)
+//   maxDocs: 60,       // 한 번에 가져올 최대 문서 수
+//   useTiles: true     // monsters 문서에 'tile' 필드가 있을 때 true 권장
 // });
 
 import {
-  collection, onSnapshot
+  collection, query, where, limit, getDocs
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
 export class MonsterGuard {
@@ -24,7 +29,12 @@ export class MonsterGuard {
     getUserLatLng,          // ()=>[lat, lon]
     onUserHit = ()=>{},     // (damage, monInfo)=>void
     onImpact = null,        // (damage, monInfo)=>void (선택)
-    renderMarkers = false   // 기본 false: 자동공격 전용(표시는 app.js에서)
+    renderMarkers = false,  // 기본 false
+    // 🔧 읽기 최적화 옵션
+    pollMs = 2500,
+    tileSizeDeg = 0.01,
+    maxDocs = 60,
+    useTiles = true
   }){
     this.map = map;
     this.db = db;
@@ -36,7 +46,13 @@ export class MonsterGuard {
     this.onImpact = onImpact;
     this.renderMarkers = !!renderMarkers;
 
-    // id -> {id, lat, lon, range, damage, cooldownMs, marker?, circle?, lastFire, alive, respawnAt}
+    // 읽기 최적화 설정
+    this.pollMs = Math.max(800, Number(pollMs)||2500);
+    this.tileSizeDeg = Math.max(0.0025, Number(tileSizeDeg)||0.01);
+    this.maxDocs = Math.max(10, Number(maxDocs)||60);
+    this.useTiles = !!useTiles;
+
+    // id -> {id, lat, lon, range, damage, cooldownMs, marker?, circle?, lastFire, alive}
     this.mons = new Map();
     // 처치 즉시 공격 중단을 위한 로컬 플래그
     this.killedLocal = new Set();
@@ -44,10 +60,18 @@ export class MonsterGuard {
     this._userReady = false;
     this._ac = null;
 
+    // 읽기 관련 내부 상태
+    this._pollTid = null;
+    this._lastTilesKey = '';     // 마지막으로 질의했던 타일 집합 키
+    this._lastIdsInView = new Set(); // 마지막 페치 결과의 id 집합
+
+    this._cssInjected = false;
+
     this._injectCSS();
     this._initAudio();
-    this._initRealtime();
-    this._startLoop();
+
+    // ✅ 실시간 구독 제거. 유저 준비되면 폴링 시작.
+    this._startLoop(); // 발사 루프(로컬)
   }
 
   /* -------- 외부 API -------- */
@@ -55,14 +79,19 @@ export class MonsterGuard {
   setUserReady(v = true){
     this._userReady = !!v;
     this.resumeAudio();
+    if (this._userReady && !this._pollTid){
+      this._beginPolling();
+    }
   }
-  // 처치 직후 즉시 공격 중단(서버 반영과 무관)
   markKilled(id){
     if (!id) return;
     this.killedLocal.add(String(id));
+    // 즉시 맵에서 제거
+    this._removeMon(String(id));
   }
   destroy(){
     if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._pollTid) { clearInterval(this._pollTid); this._pollTid = null; }
     this.mons.forEach(m=>{
       if (m.marker) { try { this.map.removeLayer(m.marker); } catch {} }
       if (m.circle) { try { this.map.removeLayer(m.circle); } catch {} }
@@ -148,55 +177,129 @@ export class MonsterGuard {
     return L.divIcon({ className:'', html, iconSize:[16,16], iconAnchor:[8,8] });
   }
 
-  /* -------- 실시간 몬스터 -------- */
-  _initRealtime(){
-    const ref = collection(this.db, 'monsters');
-    onSnapshot(ref, (snap)=>{
-      const now = Date.now();
-      snap.docChanges().forEach(ch=>{
-        const id = ch.doc.id;
-        if (ch.type === 'removed'){
-          this._removeMon(id);
-          return;
-        }
-        if (ch.type === 'added' || ch.type === 'modified'){
-          const d = ch.doc.data() || {};
-          // 서버 상태 해석
-          const alive = (d.alive !== false) && (d.dead !== true);
-          const respawnAt = Number(d.respawnAt || 0);
-          if (!alive || respawnAt > now){
-            // 표시/공격 대상에서 제외
-            this._removeMon(id);
-            // 부활 예정이면 로컬 처치 플래그도 유지(부활시 스냅이 다시 온다)
-            return;
-          }
-          // 좌표/스탯
-          const info = {
-            id,
-            lat: Number(d.lat),
-            lon: Number(d.lon),
-            range: Math.max(10, Number(d.range || this.rangeDefault)),
-            damage: Math.max(1, Number(d.damage || 1)),
-            cooldownMs: Math.max(300, Number(d.cooldownMs || this.fireCooldownMs)),
-            alive: true,
-            respawnAt: 0
-          };
-          // 만약 클라이언트에서 markKilled로 처리했다면 공격 금지
-          if (this.killedLocal.has(id)){
-            this._removeMon(id);
-            return;
-          }
-          this._upsertMon(info);
-        }
-      });
-    }, ()=>{}); // 오류 무음 처리
+  /* -------- 타일 계산 -------- */
+  _tileOf(lat, lon, g=this.tileSizeDeg){
+    const fy = Math.floor(lat / g), fx = Math.floor(lon / g);
+    return `${fy}_${fx}`;
+  }
+  _tilesFromBounds(bounds, g=this.tileSizeDeg){
+    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+    const y0 = Math.floor(sw.lat / g), y1 = Math.floor(ne.lat / g);
+    const x0 = Math.floor(sw.lng / g), x1 = Math.floor(ne.lng / g);
+    const tiles = [];
+    for (let y=y0; y<=y1; y++){
+      for (let x=x0; x<=x1; x++){
+        tiles.push(`${y}_${x}`);
+      }
+    }
+    // Firestore where-in 은 10개 제한 → 중심 9개 우선
+    if (tiles.length > 10){
+      const center = this.getUserLatLng?.();
+      if (center){
+        const cTile = this._tileOf(center[0], center[1], g);
+        tiles.sort((a,b)=> (a===cTile? -1:0) - (b===cTile? -1:0));
+      }
+      return tiles.slice(0, 10);
+    }
+    return tiles;
+  }
+  _currentTilesKey(){
+    if (!this.map) return '';
+    const pad = 0.0005; // 아주 소폭 패딩
+    const b = this.map.getBounds();
+    const bounds = L.latLngBounds(
+      [b.getSouth() - pad, b.getWest() - pad],
+      [b.getNorth() + pad, b.getEast() + pad]
+    );
+    const tiles = this._tilesFromBounds(bounds);
+    return tiles.join(',');
+  }
+
+  /* -------- 폴링 시작 -------- */
+  _beginPolling(){
+    // 즉시 한 번
+    this._fetchOnce().catch(()=>{});
+    // 주기적으로
+    this._pollTid = setInterval(()=> this._fetchOnce().catch(()=>{}), this.pollMs);
+  }
+
+  /* -------- 한 번 가져오기(읽기 최적화) -------- */
+  async _fetchOnce(){
+    if (!this.db) return;
+    // 뷰 타일 집합이 변했을 때만 쿼리 (무의미한 읽기 피함)
+    let q;
+    let useTiles = this.useTiles;
+    let tilesKey = '';
+    if (useTiles && this.map){
+      tilesKey = this._currentTilesKey();
+      if (tilesKey === this._lastTilesKey) return; // 바뀐 게 없으면 스킵
+      this._lastTilesKey = tilesKey;
+
+      const tiles = tilesKey ? tilesKey.split(',') : [];
+      if (tiles.length === 0) return;
+
+      // 타일 + alive 필터 + 제한
+      q = query(
+        collection(this.db, 'monsters'),
+        where('alive', '==', true),
+        where('tile', 'in', tiles),
+        limit(this.maxDocs)
+      );
+    } else {
+      // 타일 인덱스가 없다면: alive==true 만 받아서 클라이언트 필터
+      // (그래도 onSnapshot 전체 구독보다 훨씬 적음)
+      q = query(
+        collection(this.db, 'monsters'),
+        where('alive', '==', true),
+        limit(this.maxDocs)
+      );
+    }
+
+    const snap = await getDocs(q);
+    const nowMs = Date.now();
+    const nextIds = new Set();
+
+    snap.forEach(docSnap=>{
+      const id = docSnap.id;
+      const d = docSnap.data() || {};
+      // respawnAt 체크(미래면 제외)
+      const alive = (d.alive !== false) && (d.dead !== true);
+      const respawnAt = Number(d.respawnAt || 0);
+      if (!alive || respawnAt > nowMs) return;
+      // 좌표 유효성
+      const lat = Number(d.lat), lon = Number(d.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+      const info = {
+        id,
+        lat, lon,
+        range: Math.max(10, Number(d.range || this.rangeDefault)),
+        damage: Math.max(1, Number(d.damage || 1)),
+        cooldownMs: Math.max(300, Number(d.cooldownMs || this.fireCooldownMs)),
+        alive: true
+      };
+      // 로컬 처치면 제외
+      if (this.killedLocal.has(id)) { this._removeMon(id); return; }
+
+      nextIds.add(id);
+      this._upsertMon(info);
+    });
+
+    // 현재 뷰에서 사라진 몬스터는 제거 (읽기 최소화를 위해 "뷰 내에서만" 동기화)
+    // useTiles=false면 이 단계는 스킵(뷰 경계 불명확)
+    if (useTiles){
+      // 이전에 보이던 것 중 이번에 안 온 것 제거
+      for (const id of this._lastIdsInView){
+        if (!nextIds.has(id)) this._removeMon(id);
+      }
+      this._lastIdsInView = nextIds;
+    }
   }
 
   _upsertMon(info){
-    let m = this.mons.get(info.id);
+    const m = this.mons.get(info.id);
     if (!m){
-      // 좌표 유효성
-      if (!Number.isFinite(info.lat) || !Number.isFinite(info.lon)) return;
+      // 새로 추가
       let marker=null, circle=null;
       if (this.renderMarkers){
         marker = L.marker([info.lat, info.lon], { icon: this._monIcon(), interactive:false }).addTo(this.map);
@@ -204,13 +307,19 @@ export class MonsterGuard {
           radius: info.range, color:'#f97316', weight:1, fillColor:'#f97316', fillOpacity:0.1, className:'mon-guard-range'
         }).addTo(this.map);
       }
-      m = { ...info, marker, circle, lastFire: 0 };
-      this.mons.set(info.id, m);
-    } else {
-      m.lat = info.lat; m.lon = info.lon; m.range = info.range;
-      m.damage = info.damage; m.cooldownMs = info.cooldownMs;
-      if (m.marker){ m.marker.setLatLng([m.lat, m.lon]); }
-      if (m.circle){ m.circle.setLatLng([m.lat, m.lon]); m.circle.setRadius(m.range); }
+      this.mons.set(info.id, { ...info, marker, circle, lastFire: 0 });
+      return;
+    }
+    // 셔로우 비교 후 변경 있을 때만 DOM 업데이트
+    let changed = false;
+    if (m.lat !== info.lat) { m.lat = info.lat; changed = true; }
+    if (m.lon !== info.lon) { m.lon = info.lon; changed = true; }
+    if (m.range !== info.range){ m.range = info.range; changed = true; }
+    m.damage = info.damage; m.cooldownMs = info.cooldownMs;
+
+    if (changed){
+      if (m.marker) { m.marker.setLatLng([m.lat, m.lon]); }
+      if (m.circle) { m.circle.setLatLng([m.lat, m.lon]); m.circle.setRadius(m.range); }
     }
   }
 
@@ -222,7 +331,7 @@ export class MonsterGuard {
     this.mons.delete(id);
   }
 
-  /* -------- 루프 & 발사 -------- */
+  /* -------- 루프 & 발사 (로컬만) -------- */
   _startLoop(){
     const tick = ()=>{
       if (!this._userReady) { this._raf = requestAnimationFrame(tick); return; }
@@ -279,4 +388,3 @@ export class MonsterGuard {
     requestAnimationFrame(anim);
   }
 }
-

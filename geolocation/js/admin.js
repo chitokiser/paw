@@ -66,6 +66,13 @@ function setInputValue(id, v) {
 }
 
 /* ====== 유틸 ====== */
+
+function tileFromLatLon(lat, lon, g = 0.01) {
+  const fy = Math.floor(lat / g);
+  const fx = Math.floor(lon / g);
+  return `${fy}_${fx}`;
+}
+
 function valNum(elId, def = null, min = null) {
   const el = document.getElementById(elId);
   if (!el) return def;
@@ -341,8 +348,11 @@ if (monsterForm) {
     let lootTable = parseLootTable(lootText);
     items = ensureFirstIsRedPotion(items); // 첫 아이템 빨간약 보장
 
+    // ✅ 타일 필드 필수
+    const tile = tileFromLatLon(lat, lon);
+
     const payload = {
-      lat, lon,
+      lat, lon, tile,          // ← tile 추가
       imageURL,
       power,
       mid,
@@ -358,10 +368,15 @@ if (monsterForm) {
     const docId = valStr("m_docId", "");
     try {
       if (docId) {
+        // 위치가 바뀌면 tile도 갱신되도록 merge
         await setDoc(doc(db, "monsters", docId), payload, { merge: true });
         toast(`몬스터 업데이트 완료 (doc: ${docId})`);
       } else {
-        const ref = await addDoc(collection(db, "monsters"), { ...payload, createdAt: serverTimestamp() });
+        // ✅ 새 문서는 addDoc으로 생성 (runTransaction 제거)
+        const ref = await addDoc(collection(db, "monsters"), {
+          ...payload,
+          createdAt: serverTimestamp()
+        });
         toast(`몬스터 등록 완료 (doc: ${ref.id})`);
         setInputValue("m_docId", ref.id);
       }
@@ -371,6 +386,7 @@ if (monsterForm) {
     }
   });
 }
+
 
 /* ====== 망루 등록/수정 ====== */
 const towerForm = document.getElementById("towerForm");
