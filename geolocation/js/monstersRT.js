@@ -37,6 +37,15 @@ export class RealTimeMonsters {
     this._onZoomEnd = this._onZoomEnd.bind(this);
   }
 
+  getVisibleMonsters(){
+  const out = [];
+  for (const [id, rec] of this.reg){
+    if (!rec?.data) continue;
+    out.push({ id, data: rec.data });
+  }
+  return out;
+}
+
   start(){
     if (this._started) return; this._started = true;
     try { this.map.on('moveend', this._onMoveEnd); this.map.on('zoomend', this._onZoomEnd); } catch {}
@@ -132,7 +141,7 @@ export class RealTimeMonsters {
     const sizePx = this._sizeOf(d.size);
     let rec = this.reg.get(id);
     if (!rec){
-      const url = d.imagesURL ?? d.imageURL ?? d.iconURL ?? this.DEFAULT_IMG;
+      const url = d.imagesURL || d.imageURL || d.iconURL || this.DEFAULT_IMG;
       const icon = this.makeImageDivIcon(url, sizePx);
       const marker = L.marker([d.lat, d.lon], { icon, interactive:true }).addTo(this.map);
       rec = { marker, data:d, sizePx, bound:false };
@@ -149,8 +158,8 @@ export class RealTimeMonsters {
       if (dist > this.epsilonM) rec.marker.setLatLng([d.lat, d.lon]);
     }catch{ try{ rec.marker.setLatLng([d.lat, d.lon]); }catch{} }
 
-    const prevUrl = (rec.data?.imagesURL ?? rec.data?.imageURL ?? rec.data?.iconURL);
-    const nextUrl = (d.imagesURL ?? d.imageURL ?? d.iconURL);
+    const prevUrl = (rec.data?.imagesURL || rec.data?.imageURL || rec.data?.iconURL);
+     const nextUrl = (d.imagesURL || d.imageURL || d.iconURL);
     if (prevUrl !== nextUrl || rec.sizePx !== sizePx){
       rec.marker.setIcon(this.makeImageDivIcon(nextUrl ?? this.DEFAULT_IMG, sizePx));
       rec.sizePx = sizePx; rec.bound = false;

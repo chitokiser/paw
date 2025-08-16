@@ -331,7 +331,7 @@ if (monsterForm) {
 
     const lat = valNum("m_lat");
     const lon = valNum("m_lon");
-    const imageURL = valStr("imageURL");
+    const imageURL = valStr("imageURL", "https://puppi.netlify.app/images/mon/1.png");
     const power = valNum("power", 20, 1);
     const mid = valNum("mid", 0, 0);
     const size = valNum("size", 96, 24);

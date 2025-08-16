@@ -1,4 +1,5 @@
 // /js/fx.js
+
 /* 임팩트 FX + 몬스터 HP바 CSS 주입 */
 export function ensureImpactCSS() {
   if (document.getElementById('impactfx-css')) return;
@@ -39,14 +40,117 @@ export function ensureImpactCSS() {
     position:absolute; left:0; right:0; top:-16px;
     font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6);
     pointer-events:none;
-  }`;
+  }
+
+  /* ===== Emoji FX (호환용) ===== */
+  .emojifx{
+    font-size: 36px;
+    animation: popUp .8s ease-out forwards;
+  }
+  @keyframes popUp{
+    0%{ transform:translateY(0) scale(0.2); opacity:0; }
+    40%{ transform:translateY(-20px) scale(1.2); opacity:1; }
+    100%{ transform:translateY(-40px) scale(1); opacity:0; }
+  }
+
+  .crit-ring{
+    position:absolute;inset:0;border-radius:50%;
+    border:3px solid gold;
+    box-shadow:0 0 20px gold;
+    animation:critRing .5s ease-out forwards;
+  }
+  @keyframes critRing{
+    0%{ transform:scale(0.2); opacity:1; }
+    100%{ transform:scale(2.2); opacity:0; }
+  }
+
+  /* ===== Explosion FX (user → monster) ===== */
+  .boomfx{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    pointer-events:none; width:var(--boom-size,120px); height:var(--boom-size,120px);
+    z-index:20000;
+  }
+  .boom-core{
+    position:absolute; inset:0; border-radius:50%;
+    background:
+      radial-gradient(circle at 50% 50%,
+        rgba(255,255,255,.95) 0%,
+        rgba(255,255,255,.75) 22%,
+        rgba(255,200,120,.25) 40%,
+        rgba(255,150,0,0) 60%);
+    filter: blur(1px);
+    animation: boomCore .22s ease-out forwards;
+  }
+  @keyframes boomCore{
+    0%{ transform:scale(.3); opacity:0; }
+    60%{ opacity:1; }
+    100%{ transform:scale(1.35); opacity:0; }
+  }
+
+  .boom-ring{
+    position:absolute; inset:0; border-radius:50%;
+    border:2px solid hsl(var(--boom-hue,20) 90% 60% / .95);
+    box-shadow:0 0 24px hsl(var(--boom-hue,20) 90% 55% / .8);
+    animation: boomRing .38s ease-out forwards;
+  }
+  @keyframes boomRing{
+    0%{ transform:scale(.25); opacity:1; }
+    100%{ transform:scale(1.8); opacity:0; }
+  }
+
+  .boom-rays>i{
+    position:absolute; left:50%; top:50%; width:3px; height:26px; transform-origin:50% 0%;
+    background:linear-gradient(hsl(var(--boom-hue,20) 90% 70%), transparent);
+    filter: drop-shadow(0 2px 6px hsl(var(--boom-hue,20) 90% 70% / .8));
+    opacity:.95; animation: boomRay .34s ease-out forwards;
+  }
+  @keyframes boomRay{
+    0%{ transform:rotate(var(--deg)) translate(-50%,-50%) scaleY(.3); }
+    100%{ transform:rotate(var(--deg)) translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scaleY(1); opacity:0; }
+  }
+
+  .boom-sparks>em{
+    position:absolute; left:50%; top:50%; width:6px; height:6px; border-radius:50%;
+    background:#fff; box-shadow:0 0 10px #fff; animation: boomSpark .5s ease-out forwards;
+  }
+  @keyframes boomSpark{
+    0%{ transform:translate(-50%,-50%) scale(.6); opacity:1; }
+    100%{ transform:translate(var(--sx), var(--sy)) scale(.2); opacity:0; }
+  }
+
+  .boom-heat{
+    position:absolute; inset:0; border-radius:50%;
+    background: radial-gradient(closest-side, rgba(255,255,255,.35), rgba(255,255,255,0));
+    mix-blend-mode: screen; animation: boomHeat .4s ease-out forwards;
+  }
+  @keyframes boomHeat{
+    0%{ transform:scale(.6); opacity:.8; }
+    100%{ transform:scale(1.6); opacity:0; }
+  }
+
+  /* 크리티컬 강조 */
+  .boomfx.crit{ --boom-size:140px; --boom-hue:48; }   /* gold 계열 */
+  `;
   const s = document.createElement('style');
   s.id = 'impactfx-css';
   s.textContent = css;
   document.head.appendChild(s);
 }
 
-/* 적에게 꽂히는 임팩트 FX */
+/* (호환) 이모지 FX — 필요 시 여전히 사용 가능 */
+export function spawnEmojiAt(map, lat, lon, emoji="💥") {
+  const html = `<div class="emojifx">${emoji}</div>`;
+  const icon = L.divIcon({
+    className: '',
+    html,
+    iconSize: [48, 48],
+    iconAnchor: [24, 24]
+  });
+  const fx = L.marker([lat, lon], { icon, interactive:false, zIndexOffset:20000 }).addTo(map);
+  setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, 800);
+}
+
+/* 적에게 꽂히는 기본 임팩트 FX (화이트 스파클) */
 export function spawnImpactAt(map, lat, lon) {
   const angles = [0,45,90,135,180,225,270,315];
   const radius = 16;
@@ -58,6 +162,40 @@ export function spawnImpactAt(map, lat, lon) {
   const icon = L.divIcon({ className:'', html, iconSize:[84,84], iconAnchor:[42,42] });
   const fx = L.marker([lat, lon], { icon, interactive:false, zIndexOffset: 20000 }).addTo(map);
   setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, 380);
+}
+
+/* 새 폭발 이펙트 (user → monster) */
+export function spawnExplosionAt(map, lat, lon, { size=120, hue=20, crit=false } = {}){
+  const angles = [0,30,60,90,120,150,180,210,240,270,300,330];
+  const radius = size * 0.16;
+  const rays = angles.map(a=>{
+    const rad = a*Math.PI/180;
+    const dx = (Math.cos(rad)*radius).toFixed(1) + 'px';
+    const dy = (Math.sin(rad)*radius).toFixed(1) + 'px';
+    return `<i style="--deg:${a}deg; --dx:${dx}; --dy:${dy};"></i>`;
+  }).join('');
+
+  // 작은 스파크(파편) 랜덤
+  let sparks = '';
+  for (let i=0;i<10;i++){
+    const sx = (Math.random()*80 - 40).toFixed(0) + 'px';
+    const sy = (Math.random()*80 - 40).toFixed(0) + 'px';
+    sparks += `<em style="--sx:${sx}; --sy:${sy};"></em>`;
+  }
+
+  const cls = crit ? 'boomfx crit' : 'boomfx';
+  const html = `
+    <div class="${cls}" style="--boom-size:${size}px; --boom-hue:${hue}">
+      <div class="boom-heat"></div>
+      <div class="boom-core"></div>
+      <div class="boom-ring"></div>
+      <div class="boom-rays">${rays}</div>
+      <div class="boom-sparks">${sparks}</div>
+    </div>
+  `;
+  const icon = L.divIcon({ className:'', html, iconSize:[size,size], iconAnchor:[size/2,size/2] });
+  const fx = L.marker([lat, lon], { icon, interactive:false, zIndexOffset:20000 }).addTo(map);
+  setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, crit ? 700 : 520);
 }
 
 /* 아주 약한 화면 흔들림 */

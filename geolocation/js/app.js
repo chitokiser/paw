@@ -9,7 +9,7 @@ import { TowerGuard } from "./tower.js";
 import { Score } from "./score.js";
 import { WalkPoints } from "./walk.js";
 import { MonsterGuard } from "./monster.js";
-import { ensureImpactCSS, spawnImpactAt, shakeMap, attachHPBar } from './fx.js';
+import { ensureImpactCSS, spawnImpactAt, spawnExplosionAt, shakeMap, attachHPBar } from './fx.js';
 import { swingSwordAt } from './playerFx.js';
 import { attackOnceToward } from './playerFx.js';
 import DogCompanion from './dogCompanion.js';
@@ -116,47 +116,82 @@ window.__hit = ()=> attackOnceToward(map, playerMarker, playerMarker.getLatLng()
   };
 
   // Towers auto attack
-  const towers = new TowerGuard({
-    map, db,
-    iconUrl:"https://puppi.netlify.app/images/mon/tower.png",
-    rangeDefault:60, fireCooldownMs:1500,
-    getUserLatLng:()=>[userLat,userLon],
-    onUserHit:(damage, info)=>{
-      flashPlayer(); Score.deductGP(damage, info.lat, info.lon);
-      try{ setFacingByLatLng(map, playerMarker, {lat:info.lat, lng:info.lon}, 'right'); }catch{}
-      try{ dog.setFacingByTarget(userLat,userLon, info.lat, info.lon); }catch{}
-      try{ spawnImpactAt(map, userLat, userLon); }catch{}
-      try{ playAttackImpact({ intensity:0.9 }); }catch{}
-    }
+const towers = new TowerGuard({
+  map, db,
+  iconUrl:"https://puppi.netlify.app/images/mon/tower.png",
+  rangeDefault:60,
+  fireCooldownMs:1500,
+  getUserLatLng: ()=> {
+    const {lat, lng} = playerMarker.getLatLng();
+    return [lat, lng];
+  },
+  onUserHit: (damage, tower)=>{
+    // 유저 현재 위치에서 데미지 반영 + 이펙트
+    const { lat, lng } = playerMarker.getLatLng();
+    try { flashPlayer(); } catch {}
+    try { Score.deductGP(damage, lat, lng); } catch {}
+    try { spawnExplosionAt(map, lat, lng, { size: 180, hue: 0 }); } catch {}
+    try { playAttackImpact({ intensity: 1.0 }); shakeMap(); } catch {}
+  }
+});
+towers.setUserReady(true);
+
+
+// Monster auto attack (no markers)
+const monstersGuard = new MonsterGuard({
+  map, db,
+  iconUrl:"https://puppi.netlify.app/images/mon/1.png",
+  rangeDefault:50, fireCooldownMs:1800,
+  getUserLatLng:()=>[userLat,userLon],
+  onUserHit:(damage, mon)=>{
+    flashPlayer();
+    Score.deductGP(damage, mon.lat, mon.lon);
+    // 유저 위치에 타격 폭발
+ try {
+      const { lat: uLat, lng: uLng } = playerMarker.getLatLng();
+      spawnExplosionAt(map, uLat, uLng, { size: 95, hue: 0, crit: false });
+      shakeMap();
+      playAttackImpact({ intensity: 1.0 });
+    } catch {}
+    },
+    renderMarkers: false
   });
 
-  // Monster auto attack (no markers)
-  const monstersGuard = new MonsterGuard({
-    map, db,
-    iconUrl:"https://puppi.netlify.app/images/mon/monster.png",
-    rangeDefault:50, fireCooldownMs:1800,
-    getUserLatLng:()=>[userLat,userLon],
-    onUserHit:(damage, mon)=>{ flashPlayer(); Score.deductGP(damage, mon.lat, mon.lon); },
-    renderMarkers:false
-  });
+// ▶ 폴러 시작 보장
+monstersGuard.start?.();
 
-  // Resume audio on first pointer
-  window.addEventListener('pointerdown', ()=>{ try{ ensureAudio(); }catch{}; try{ towers.resumeAudio(); }catch{}; try{ monstersGuard.resumeAudio(); }catch{}; }, { once:true, passive:true });
+  // ====== 첫 입력에서 오디오/타이머/가드 재개 ======
+window.addEventListener('pointerdown', () => {
+  try { ensureAudio(); } catch {}
+  try { towers.resumeAudio?.(); } catch {}
+  try { monstersGuard.resumeAudio?.(); } catch {}
+  // 혹시 start가 아직 안 불렸다면 여기서도 보장
+  try { towers.start?.(); } catch {}
+  try { monstersGuard.start?.(); } catch {}
+}, { once:true, passive:true });
 
-  // Start gate
-  addStartGate(()=>{ try{ ensureAudio(); }catch{}; try{ towers.setUserReady(true); }catch{}; try{ monstersGuard.setUserReady(true); }catch{}; try{ dog.warmBark(); }catch{}; });
+// ====== 게임 시작 게이트: userReady 신호 보장 ======
+addStartGate(()=>{
+  try { ensureAudio(); } catch {}
+  try { towers.setUserReady?.(true); } catch {}
+  try { monstersGuard.setUserReady?.(true); } catch {}
+});
 
+// (선택) 디버깅용: 즉시 한 틱 돌려보기
+window.__guardsDebug = () => {
+  try { towers.tickOnce?.(); } catch {}
+  try { monstersGuard.tickOnce?.(); } catch {}
+};
   // Attach battle factory
   const attachMonsterBattle = createAttachMonsterBattle({
     db, map, playerMarker, dog, Score, toast,
     ensureAudio, isInRange, distanceToM, setFacingByLatLng,
-    swingSwordAt, attackOnceToward, spawnImpactAt, shakeMap, playAttackImpact, playFail, playDeath,
-    attachHPBar, getChallengeDurationMs, transferMonsterInventory: (args)=>transferMonsterInventory(db, args), getGuestId,
-    monstersGuard,
-    setHUD
+    swingSwordAt, attackOnceToward, spawnImpactAt, spawnExplosionAt, shakeMap, playAttackImpact, playFail, playDeath,
+    attachHPBar, getChallengeDurationMs, transferMonsterInventory, getGuestId,
+    monstersGuard, setHUD
   });
 
-  // Real-time monsters
+ // Real-time monsters
   const rtMon = new RealTimeMonsters({
     db, map,
     makeImageDivIcon, DEFAULT_IMG,

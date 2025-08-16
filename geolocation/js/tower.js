@@ -1,4 +1,4 @@
-// /js/tower.js — 망루(타워) 자동 공격 모듈 (완전 읽기 전용, 로그/쓰기 없음)
+// /js/tower.js — 망루(타워) 자동 공격 모듈 (읽기 전용)
 
 import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
@@ -7,28 +7,33 @@ export class TowerGuard {
     map,
     db,
     iconUrl = "https://puppi.netlify.app/images/mon/tower.png",
-    rangeDefault = 30,     // 사거리(m)
-    fireCooldownMs = 1500, // 1.5초/발
-    getUserLatLng,         // ()=>[lat, lon]
-    onUserHit = () => {},  // (damage, towerInfo)=>void
-    onImpact = null        // (damage, towerInfo)=>void (선택)
+    rangeDefault = 10,        // 사거리(m)
+    fireCooldownMs = 1500,    // 1.5초/발
+    getUserLatLng,            // ()=>[lat, lon]
+    onUserHit = () => {},     // (damage, towerInfo)=>void
+    onImpact = null,          // (damage, towerInfo)=>void (선택)
+    towerSize = 80,          // ✅ 타워 사이즈(px)
+    damageDefault = 3         // ✅ 기본 데미지(문서에 damage 없을 때)
   }){
     this.map = map;
     this.db = db;
     this.iconUrl = iconUrl;
     this.rangeDefault = rangeDefault;
-    this.fireCooldownMs = fireCooldownMs;
+    this.fireCooldownMs = Math.max(400, fireCooldownMs|0);
     this.getUserLatLng = getUserLatLng;
     this.onUserHit = onUserHit;
     this.onImpact = onImpact;
+    this.towerSizePx = Math.max(24, Number(towerSize || 128));     // 최소 24px
+    this.damageDefault = Math.max(1, Number(damageDefault || 3));   // 최소 1
 
-    // id -> {id, lat, lon, range, marker, circle, lastFire}
+    // id -> {id, lat, lon, range, damage, marker, circle, lastFire}
     this.towers = new Map();
     this._userReady = false;
+    this._raf = null;
 
     this._injectCSS();
     this._initAudio();
-    this._initRealtime();   // 읽기(onSnapshot)만
+    this._initRealtime(); // 읽기(onSnapshot)만
     this._startLoop();
   }
 
@@ -38,17 +43,26 @@ export class TowerGuard {
     this._userReady = !!v;
     this.resumeAudio();
   }
+  /** 런타임 사이즈 변경 */
+  setTowerSize(px = 48){
+    this.towerSizePx = Math.max(24, Number(px) || 48);
+    // 기존 마커들 아이콘 갱신
+    for (const t of this.towers.values()){
+      try { t.marker.setIcon(this._towerIcon()); } catch {}
+    }
+  }
 
   /* ---------- CSS ---------- */
   _injectCSS(){
+    if (document.getElementById('tower-css')) return;
     const css = `
-      .tower-wrap{ position:relative; width:48px; height:48px; }
+      .tower-wrap{ position:relative; width:var(--tw-size,48px); height:var(--tw-size,48px); }
       .tower-wrap img{ width:100%; height:100%; object-fit:contain; display:block; }
       .tower-range{ pointer-events:none; }
       .arrow-wrap{ font-size:22px; transform-origin:center; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
       .arrow-wrap .arrow{ will-change: transform; user-select:none; }
     `;
-    const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
+    const s = document.createElement('style'); s.id='tower-css'; s.textContent = css; document.head.appendChild(s);
   }
 
   /* ---------- Audio (순수 WebAudio, Firestore 쓰기 없음) ---------- */
@@ -90,7 +104,7 @@ export class TowerGuard {
     this._ensureAC(); const ac = this._ac, t = ac.currentTime;
     const o = ac.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(110, t);
     const g = ac.createGain(); o.connect(g); g.connect(ac.destination);
-    this._adsr(g, t, {a:0.005, d:0.06, s:0.15, r:0.1, peak:0.9, sus:0.08});
+    this._adsr(g, t, {a:0.005, d:0.06, s:0.15, r:0.1, peak:0.9, sus:0.08}); // 문법 OK
     o.start(t); o.stop(t+0.18);
     const nz = this._noise(0.12);
     const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.setValueAtTime(3000, t);
@@ -104,10 +118,11 @@ export class TowerGuard {
   /* ---------- Icons ---------- */
   _towerIcon(){
     const html = `
-      <div class="tower-wrap">
+      <div class="tower-wrap" style="--tw-size:${this.towerSizePx}px">
         <img src="${this.iconUrl}" alt="tower"/>
       </div>`;
-    return L.divIcon({ className:'', html, iconSize:[48,48], iconAnchor:[24,48] });
+    const s = this.towerSizePx;
+    return L.divIcon({ className:'', html, iconSize:[s, s], iconAnchor:[s/2, s] }); // 바닥 중심 앵커
   }
   _arrowIcon(angleDeg){
     const html = `
@@ -124,12 +139,13 @@ export class TowerGuard {
       snap.docChanges().forEach(ch=>{
         const id = ch.doc.id;
         if (ch.type === 'added' || ch.type === 'modified'){
-          const d = ch.doc.data();
+          const d = ch.doc.data() || {};
           const info = {
             id,
             lat: Number(d.lat),
             lon: Number(d.lon),
-            range: Math.max(10, Number(d.range || this.rangeDefault))
+            range: Math.max(10, Number(d.range || this.rangeDefault)),
+            damage: Math.max(1, Number(d.damage ?? this.damageDefault)) // ✅ 기본 3 적용
           };
           this._upsertTower(info);
         } else if (ch.type === 'removed'){
@@ -152,7 +168,7 @@ export class TowerGuard {
       t = { ...info, marker, circle, lastFire: 0 };
       this.towers.set(info.id, t);
     } else {
-      t.lat = info.lat; t.lon = info.lon; t.range = info.range;
+      t.lat = info.lat; t.lon = info.lon; t.range = info.range; t.damage = info.damage;
       t.marker.setLatLng([t.lat, t.lon]);
       t.circle.setLatLng([t.lat, t.lon]);
       t.circle.setRadius(t.range);
@@ -199,34 +215,45 @@ export class TowerGuard {
     this.towers.clear();
   }
 
-  _fireArrow(tower, userLL){
+  _fireArrow(tower, userLLAtFire){
     const from = L.latLng(tower.lat, tower.lon);
-    const to = userLL;
+    const to0 = userLLAtFire;
     const p1 = this.map.latLngToLayerPoint(from);
-    const p2 = this.map.latLngToLayerPoint(to);
+    const p2 = this.map.latLngToLayerPoint(to0);
     const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
 
     const arrow = L.marker(from, { icon: this._arrowIcon(angleDeg), interactive:false, zIndexOffset:9999 }).addTo(this.map);
 
-    const dur = 600; // ms
+    const dur = 600; // ms (비행 시간)
     const start = performance.now();
     const anim = (now)=>{
       const k = Math.min(1, (now - start) / dur);
-      const lat = from.lat + (to.lat - from.lat) * k;
-      const lon = from.lng + (to.lng - from.lng) * k;
+      // 유도 없이 직선: 발사 시점의 좌표로 비행
+      const lat = from.lat + (to0.lat - from.lat) * k;
+      const lon = from.lng + (to0.lng - from.lng) * k;
       arrow.setLatLng([lat, lon]);
       if (k < 1) {
         requestAnimationFrame(anim);
       } else {
         try { this.map.removeLayer(arrow); } catch {}
         try { this._playImpact(); } catch {}
+
+        // 🔸 명중 순간의 유저 현재 좌표 & 데미지 계산
+        let impactLat = to0.lat, impactLon = to0.lng;
         try {
-          // ✔ Firestore 쓰기 없이, 콜백만 호출
-          if (typeof this.onUserHit === 'function') this.onUserHit(1, tower);
-          if (typeof this.onImpact === 'function') this.onImpact(1, tower);
+          const cur = this.getUserLatLng?.();
+          if (cur && Number.isFinite(cur[0]) && Number.isFinite(cur[1])) { impactLat = cur[0]; impactLon = cur[1]; }
         } catch {}
+        const damage = Math.max(1, Number(tower.damage ?? this.damageDefault)); // ✅ 기본 3 적용
+        const payload = { ...tower, damage, impactLat, impactLon };
+
+        // ✔ 콜백 호출 (Firestore 쓰기 없음)
+        try { if (typeof this.onUserHit === 'function') this.onUserHit(damage, payload); } catch {}
+        try { if (typeof this.onImpact === 'function') this.onImpact(damage, payload); } catch {}
       }
     };
     requestAnimationFrame(anim);
   }
 }
+
+export default TowerGuard;
