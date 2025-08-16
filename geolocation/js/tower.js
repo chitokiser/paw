@@ -7,7 +7,7 @@ export class TowerGuard {
     map,
     db,
     iconUrl = "https://puppi.netlify.app/images/mon/tower.png",
-    rangeDefault = 60,     // 사거리(m)
+    rangeDefault = 30,     // 사거리(m)
     fireCooldownMs = 1500, // 1.5초/발
     getUserLatLng,         // ()=>[lat, lon]
     onUserHit = () => {},  // (damage, towerInfo)=>void

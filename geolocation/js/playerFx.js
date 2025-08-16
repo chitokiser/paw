@@ -14,11 +14,22 @@ function imgOk(src){
 }
 let SPRITE_URL_RESOLVED = null, SPRITE_PRELOAD_DONE = false;
 const SPRITE_CANDIDATES = [
-  '/images/user/act800x257.png',            // ★ 실제 위치 (우선 시도)
-  safeUrl('../images/user/act800x257.png'), // → /geolocation/images/... 로 해석될 수 있음
-  '/geolocation/images/user/act800x257.png',
-  '../images/user/act800x257.png'
+ '/images/user/act800x257.png',            // ✅ 실제 위치 최우선
+  safeUrl('../images/user/act800x257.png'),
+ '/geolocation/images/user/act800x257.png',
+ '../images/user/act800x257.png'
 ];
+
+// playerFx.js 어디든 유틸 영역에 추가
+function raf(){ return new Promise(r=>requestAnimationFrame(r)); }
+async function ensureMarkerEl(playerMarker, tries=10){
+  for (let i=0;i<tries;i++){
+    const el = playerMarker?.getElement?.();
+    if (el) return el;
+    await raf();
+  }
+  return null; // 끝까지 못 찾으면 null
+}
 
 function preloadSpriteOnce(){
   if (SPRITE_PRELOAD_DONE) return;
@@ -112,9 +123,11 @@ function getPlayerIconSize(playerMarker){
 }
 
 /* ✅ 붉은 칼바람: 시작 경계 = 유저 아이콘 테두리 */
-export function swingSwordAt(map, playerMarker, targetLat, targetLon, withSound=true){
+export async function swingSwordAt(map, playerMarker, targetLat, targetLon, withSound=true){
   injectCSS();
-  const slash=ensureSlashEl(playerMarker); if(!slash) return;
+  const el = await ensureMarkerEl(playerMarker);
+if (!el) return; // PC 타이밍 이슈 방지
+const slash=ensureSlashEl(playerMarker); if(!slash) return;
 
   // 타겟 각도 (Leaflet 레이어 좌표 기준)
   const p1=map.latLngToLayerPoint(playerMarker.getLatLng());
@@ -142,9 +155,10 @@ export function swingSwordAt(map, playerMarker, targetLat, targetLon, withSound=
 
 /* (옵션) 4컷 스프라이트: 아이콘 크기로 스케일 */
 /* (옵션) 4컷 스프라이트: 아이콘 크기로 스케일 — PC 레이스 픽스 */
-export function playPlayerAttackOnce(playerMarker, opts = {}) {
+export async function playPlayerAttackOnce(playerMarker, opts = {}) {
   injectCSS();
-
+ const el = await ensureMarkerEl(playerMarker);
+ if (!el) return
   const [iconW, iconH] = getPlayerIconSize(playerMarker);
   const scaleX = iconW / 200, scaleY = iconH / 257; // 200x257 프레임 기준
   const scaledSheetW = SHEET_W * scaleX, scaledSheetH = SHEET_H * scaleY; // 800x257 → 스케일
@@ -203,9 +217,9 @@ export function playPlayerAttackOnce(playerMarker, opts = {}) {
 
 
 /* 두 효과 동시 실행 */
-export function attackOnceToward(map, playerMarker, targetLat, targetLon){
-  swingSwordAt(map, playerMarker, targetLat, targetLon, true);
-  playPlayerAttackOnce(playerMarker);
+export async function attackOnceToward(map, playerMarker, targetLat, targetLon){
+ await swingSwordAt(map, playerMarker, targetLat, targetLon, true);
+ await playPlayerAttackOnce(playerMarker);
 }
 
 preloadSpriteOnce();

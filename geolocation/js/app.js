@@ -53,6 +53,10 @@ async function main(){
   }
 
 
+  // app.js, map/marker가 만들어진 뒤
+window.__hit = ()=> attackOnceToward(map, playerMarker, playerMarker.getLatLng().lat + 0.00001, playerMarker.getLatLng().lng);
+
+
   // Map
   map = L.map('map',{maxZoom:22}).setView([37.5665,126.9780], 16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
