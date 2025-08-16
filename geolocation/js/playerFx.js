@@ -14,11 +14,12 @@ function imgOk(src){
 }
 let SPRITE_URL_RESOLVED = null, SPRITE_PRELOAD_DONE = false;
 const SPRITE_CANDIDATES = [
-  safeUrl('../images/user/act800x257.png'),
+  '/images/user/act800x257.png',            // ★ 실제 위치 (우선 시도)
+  safeUrl('../images/user/act800x257.png'), // → /geolocation/images/... 로 해석될 수 있음
   '/geolocation/images/user/act800x257.png',
-  '/images/user/act800x257.png',
   '../images/user/act800x257.png'
 ];
+
 function preloadSpriteOnce(){
   if (SPRITE_PRELOAD_DONE) return;
   SPRITE_PRELOAD_DONE = true;
@@ -28,6 +29,7 @@ function preloadSpriteOnce(){
     }
     SPRITE_URL_RESOLVED=SPRITE_CANDIDATES.at(-1);
   })();
+  
 }
 
 /* 시트 스펙 */
@@ -139,39 +141,71 @@ export function swingSwordAt(map, playerMarker, targetLat, targetLon, withSound=
 }
 
 /* (옵션) 4컷 스프라이트: 아이콘 크기로 스케일 */
-export function playPlayerAttackOnce(playerMarker, opts={}){
+/* (옵션) 4컷 스프라이트: 아이콘 크기로 스케일 — PC 레이스 픽스 */
+export function playPlayerAttackOnce(playerMarker, opts = {}) {
   injectCSS();
-  const [iconW, iconH]=getPlayerIconSize(playerMarker);
-  const scaleX=iconW/200, scaleY=iconH/257;                 // 200x257 프레임 기준
-  const scaledSheetW=SHEET_W*scaleX, scaledSheetH=SHEET_H*scaleY;   // 시트 전체 스케일
-  const lastOffsetX=-(SHEET_W-FRAME_W)*scaleX;                      // -600 * scaleX
 
-  const { durationMs=DURATION_MS, frames=FRAMES, spriteUrl=SPRITE_URL_RESOLVED||'' } = opts;
+  const [iconW, iconH] = getPlayerIconSize(playerMarker);
+  const scaleX = iconW / 200, scaleY = iconH / 257; // 200x257 프레임 기준
+  const scaledSheetW = SHEET_W * scaleX, scaledSheetH = SHEET_H * scaleY; // 800x257 → 스케일
+  const lastOffsetX = -(SHEET_W - FRAME_W) * scaleX;                       // -600 * scaleX
 
-  const root=playerMarker?.getElement(); if(!root) return;
-  const wrap=root.querySelector('.player-wrap')||root;
-  const img= root.querySelector('.player-img');
+  const { durationMs = DURATION_MS, frames = FRAMES } = opts;
+
+  const root = playerMarker?.getElement(); if (!root) return;
+  const wrap = root.querySelector('.player-wrap') || root;
+  const img  = root.querySelector('.player-img');
   if (img) img.classList.add('pf-hide');
 
-  const sp=document.createElement('div');
-  sp.className='pf-attack-sprite';
-  sp.style.width = iconW+'px'; sp.style.height = iconH+'px';
+  const sp = document.createElement('div');
+  sp.className = 'pf-attack-sprite';
+  sp.style.width  = iconW + 'px';
+  sp.style.height = iconH + 'px';
+  sp.style.backgroundRepeat = 'no-repeat';
+  sp.style.imageRendering   = 'pixelated';
+  sp.style.willChange = 'background-position';
+  sp.style.zIndex = 10001;
   sp.style.setProperty('--pf-endX', `${lastOffsetX}px`);
   sp.style.backgroundSize = `${scaledSheetW}px ${scaledSheetH}px`;
-  if (spriteUrl) sp.style.backgroundImage = `url("${spriteUrl}")`;
-  sp.style.animation = `pf_attack_once ${durationMs}ms steps(${frames}) 1 forwards`;
+  // ✅ 애니메이션은 아직 설정하지 않음 — 이미지 준비되면 시작
   wrap.appendChild(sp);
 
-  if (!spriteUrl){
-    (async()=>{ while(!SPRITE_URL_RESOLVED){ await new Promise(r=>setTimeout(r,50)); }
-      sp.style.backgroundImage=`url("${SPRITE_URL_RESOLVED}")`;
-    })();
-  }
-  sp.addEventListener('animationend', ()=>{ sp.remove(); if(img) img.classList.remove('pf-hide'); }, { once:true });
+  // 내부 헬퍼
+  const sleep = (ms)=>new Promise(r=>setTimeout(r, ms));
+  const startAnim = () => {
+    // 애니메이션 리셋 후 시작 (강제 리플로우)
+    sp.style.animation = 'none';
+    // @ts-ignore
+    void sp.offsetWidth;
+    sp.style.animation = `pf_attack_once ${durationMs}ms steps(${frames}) 1 forwards`;
+  };
+
+  (async () => {
+    // URL 확보 (프리로드 대기)
+    preloadSpriteOnce();
+    while (!SPRITE_URL_RESOLVED) await sleep(16);
+
+    // 디코드까지 보장 (진짜 로드 확인)
+    await imgOk(SPRITE_URL_RESOLVED);
+
+    // 배경 세팅 후 다음 프레임에서 애니메이션 시작
+    sp.style.backgroundImage = `url("${SPRITE_URL_RESOLVED}")`;
+    requestAnimationFrame(() => {
+      startAnim();
+    });
+  })().catch(()=>{}); // 실패 시 조용히 무시
+
+  sp.addEventListener('animationend', () => {
+    sp.remove();
+    if (img) img.classList.remove('pf-hide');
+  }, { once: true });
 }
+
 
 /* 두 효과 동시 실행 */
 export function attackOnceToward(map, playerMarker, targetLat, targetLon){
   swingSwordAt(map, playerMarker, targetLat, targetLon, true);
   playPlayerAttackOnce(playerMarker);
 }
+
+preloadSpriteOnce();
