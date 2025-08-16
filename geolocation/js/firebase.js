@@ -14,5 +14,5 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-// ✅ 에뮬레이터 연결 코드 전부 제거
+
 export const db  = getFirestore(app);

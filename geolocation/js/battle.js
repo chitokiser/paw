@@ -1,6 +1,12 @@
 // /geolocation/js/battle.js
 import { doc, setDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
+/**
+ * 사용:
+ * import { createAttachMonsterBattle } from './battle.js';
+ * // 또는
+ * import createAttachMonsterBattle from './battle.js';
+ */
 export function createAttachMonsterBattle({
   db, map, playerMarker, dog, Score, toast,
   ensureAudio, isInRange, distanceToM, setFacingByLatLng,
@@ -8,16 +14,17 @@ export function createAttachMonsterBattle({
   attachHPBar, getChallengeDurationMs, transferMonsterInventory, getGuestId,
   monstersGuard, setHUD
 }) {
-  return function attachMonsterBattle(marker, monsterId, data) {
+
+  // 내부에서 참조해야 하므로 먼저 선언형 함수로 만든 뒤 반환합니다.
+  function attachMonsterBattle(marker, monsterId, data) {
     const power = Math.max(1, Number(data.power ?? 20));
 
-    // HP 바
+    // ── HP Bar & 초기 HUD ─────────────────────────────────────────
     let hpLeft = power;
     let hpUI = { set: ()=>{} };
     setTimeout(() => {
       hpUI = attachHPBar(marker, hpLeft);
       hpUI.set(hpLeft);
-      // ✅ 전투 시작 전에도 HUD 기본값 노출
       try {
         setHUD?.({
           timeLeft: '-',
@@ -28,10 +35,9 @@ export function createAttachMonsterBattle({
       } catch {}
     }, 0);
 
-    // 타임어택 상태
+    // ── 타임어택 상태/HUD ────────────────────────────────────────
     let chal = null; // { remain, deadline, timer }
 
-    // HUD 도우미
     const stop = () => {
       if (chal?.timer) clearInterval(chal.timer);
       chal = null;
@@ -57,7 +63,7 @@ export function createAttachMonsterBattle({
       } catch {}
     };
 
-    // 부활 예약(클라이언트 타이머)
+    // ── 부활 예약(클라 타이머) ───────────────────────────────────
     async function reviveLater(respawnMs = 60_000) {
       const monRef = doc(db, 'monsters', String(monsterId));
       setTimeout(async () => {
@@ -75,7 +81,7 @@ export function createAttachMonsterBattle({
       }, respawnMs + 120);
     }
 
-    // 처치
+    // ── 처치 ─────────────────────────────────────────────────────
     async function win() {
       stop();
       try { playDeath(); } catch {}
@@ -114,38 +120,54 @@ export function createAttachMonsterBattle({
       } catch {}
     }
 
-    // 실패
+    // ── 실패 ─────────────────────────────────────────────────────
     function fail() { stop(); try { playFail(); } catch {}; toast('실패… 다시!'); }
 
-    // 클릭 전투 핸들러
+    // ── 클릭 전투: "사정거리 안이면 빠르게 접근→붙은 뒤 공격" ──────────
     marker.options.interactive = true;
     marker.on('click', async () => {
       try { ensureAudio(); } catch {}
-      const u = playerMarker.getLatLng(), m = marker.getLatLng();
+      if (attachMonsterBattle._dashing) return;
 
-      // 사거리 10m 가드
-      if (!isInRange(u.lat, u.lng, m.lat, m.lng, 10)) {
-        const d = Math.round(distanceToM(u.lat, u.lng, m.lat, m.lng));
-        try { attackOnceToward(map, playerMarker, m.lat, m.lng); } catch {}
-        toast(`가까이 가세요! (현재 ${d}m)`); try { playFail(); } catch {}; return;
+      const mLL = marker.getLatLng();
+      const uLL = playerMarker.getLatLng();
+
+      // 문서 값 있으면 우선 적용
+      const approachMaxM     = Number(data.approachMaxM     ?? 25);  // 접근 허용 범위
+      const meleeRange       = Number(data.meleeRange       ?? 1.1); // 정지/타격 거리
+      const approachSpeedMps = Number(data.approachSpeedMps ?? 6.2); // 접근 속도
+
+      // 현재 거리
+      const distM = L.latLng(uLL).distanceTo(L.latLng(mLL));
+      if (distM > approachMaxM) {
+        try { playFail(); } catch {}
+        toast(`먼저 가까이 가세요 (현재 ${Math.round(distM)}m / 필요 ${approachMaxM}m)`);
+        return;
       }
 
-      // 연출
-      try { setFacingByLatLng(map, playerMarker, { lat: m.lat, lng: m.lng }, 'right'); } catch {}
-      try { dog?.setFacingByTarget?.(u.lat, u.lng, m.lat, m.lng); } catch {}
+      // 1) 접근(대시): 목표 앞 meleeRange 지점까지 빠르게
+      await dashToMelee(L.latLng(mLL), meleeRange, approachSpeedMps);
+
+      // 2) 붙은 뒤 실제 타격 (오차 가드)
+      const cur = playerMarker.getLatLng();
+      const afterDash = L.latLng(cur).distanceTo(L.latLng(mLL));
+      if (afterDash > meleeRange + 0.15) return;
+
+      try { setFacingByLatLng(map, playerMarker, { lat: mLL.lat, lng: mLL.lng }, 'right'); } catch {}
+      try { dog?.setFacingByTarget?.(cur.lat, cur.lng, mLL.lat, mLL.lng); } catch {}
       try {
-        swingSwordAt(map, playerMarker, m.lat, m.lng, true);
-        spawnImpactAt(map, m.lat, m.lng);
+        swingSwordAt(map, playerMarker, mLL.lat, mLL.lng, true);
+        spawnImpactAt(map, mLL.lat, mLL.lng);
         shakeMap();
         playAttackImpact({ intensity: 1.15 });
         dog?.playBark?.();
       } catch {}
 
-      // 타임어택 시작
+      // === 이하 기존 HP/타이머/데미지 ===
       if (!chal) {
-        const ms = getChallengeDurationMs(power);
+        const ms = getChallengeDurationMs(data.power);
         chal = {
-          remain: Math.max(1, power),
+          remain: Math.max(1, data.power),
           deadline: Date.now() + ms,
           timer: setInterval(() => {
             if (!chal) return;
@@ -153,17 +175,73 @@ export function createAttachMonsterBattle({
             else hud();
           }, 80)
         };
-        hud(); // 첫 갱신
+        hud();
       }
       if (Date.now() >= chal.deadline) return fail();
 
-      // 데미지 적용
       hpLeft = Math.max(0, hpLeft - 1);
       chal.remain = Math.max(0, chal.remain - 1);
       try { hpUI.set(hpLeft); } catch {}
       if (hpLeft <= 0) await win(); else hud();
     });
 
+    // ── 대시 유틸: 이징으로 "빠르게 접근" 느낌 ───────────────────────
+    async function dashToMelee(targetLL, meleeRange = 1.1, speedMps = 6.2) {
+      attachMonsterBattle._dashing = true;
+      window.__pf_dashing = true; // app.js의 GPS setLatLng 가드에 사용
+
+      // easeInOutCubic
+      const ease = t => (t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2);
+
+      try {
+        const startLL = playerMarker.getLatLng();
+        const totalDist = L.latLng(startLL).distanceTo(targetLL); // m
+        const moveDist  = Math.max(0, totalDist - meleeRange);
+        if (moveDist <= 0) return;
+
+        const duration = (moveDist / Math.max(0.1, speedMps)) * 1000; // ms
+        const start = performance.now();
+
+        // 목표 앞 정지 지점
+        const kStop = (totalDist - meleeRange) / totalDist;
+        const stopLL = L.latLng(
+          startLL.lat + (targetLL.lat - startLL.lat) * kStop,
+          startLL.lng + (targetLL.lng - startLL.lng) * kStop
+        );
+
+        // 진행방향 바라보기
+        try { setFacingByLatLng(map, playerMarker, stopLL, 'right'); } catch {}
+
+        await new Promise(resolve => {
+          const step = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            const e = ease(t);
+            const lat = startLL.lat + (stopLL.lat - startLL.lat) * e;
+            const lng = startLL.lng + (stopLL.lng - startLL.lng) * e;
+            const cur = L.latLng(lat, lng);
+
+            try { playerMarker.setLatLng(cur); } catch {}
+            try { dog?.update?.(cur.lat, cur.lng); } catch {}
+
+            if (t < 1) requestAnimationFrame(step);
+            else resolve();
+          };
+          requestAnimationFrame(step);
+        });
+      } finally {
+        attachMonsterBattle._dashing = false;
+        window.__pf_dashing = false;
+      }
+    }
+
     try { marker.bringToFront?.(); } catch {}
-  };
+  }
+
+  // 연타 방지 플래그 초기값
+  attachMonsterBattle._dashing = false;
+
+  return attachMonsterBattle;
 }
+
+// 이름/기본 둘 다 export (import 방식 혼용 대비)
+export default createAttachMonsterBattle;

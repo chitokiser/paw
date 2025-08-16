@@ -100,7 +100,8 @@ export class InventoryUI {
     const css = document.createElement('style');
     css.id = 'inv-css';
     css.textContent = `
-      .inv-root { position: fixed; right: 16px; bottom: 16px; z-index: 10000; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+      .inv-root { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+      
       .inv-bag { width: 48px; height: 48px; border-radius: 12px; border: none; box-shadow: 0 6px 18px rgba(0,0,0,.15); font-size: 20px; cursor: pointer; background:#111;color:#fff; }
       .inv-panel { position: fixed; right: 16px; bottom: 80px; width: 320px; max-height: 60vh; overflow:auto; background: #171717; color: #eee; border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
       .inv-header { display:flex; align-items:center; justify-content:space-between; padding: 12px 14px; border-bottom: 1px solid #2a2a2a; }

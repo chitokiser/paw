@@ -17,6 +17,8 @@ import DogCompanion from './dogCompanion.js';
 import { createAttachMonsterBattle } from './battle.js';
 import { RealTimeMonsters } from './monstersRT.js';
 import { transferMonsterInventory } from './inventoryTransfer.js';
+import { Inventory } from "./inventory.js";
+import { InventoryUI } from "./inventoryUI.js";
 
 injectCSS(); ensureImpactCSS();
 
@@ -32,6 +34,24 @@ async function main(){
 
   // Inventory UI
   const guestId = getGuestId();
+
+  const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
+  const invUI = new InventoryUI({
+    inventory: inv,
+    toast: (m)=>console.log('[toast]', m),
+    onUseItem: async (id)=>{ await inv.useItem(id, 1); },
+    onDropItem: async (id)=>{ await inv.dropItem(id, 1); },
+  });
+
+  try {
+    await inv.load({ autoListen: true });
+    await invUI.mount();
+-   invUI.open(); // 처음부터 패널 보이게
+    console.log('[InventoryUI] mounted');
+  } catch (e) {
+    console.error('[InventoryUI] failed to mount/load:', e);
+  }
+
 
   // Map
   map = L.map('map',{maxZoom:22}).setView([37.5665,126.9780], 16);
@@ -49,7 +69,7 @@ async function main(){
   if (userLat==null){ userLat=37.5665; userLon=126.9780; }
 
   // Player
-  playerMarker = L.marker([userLat,userLon],{ icon: makePlayerDivIcon('../images/user/1.png', 48) }).addTo(map);
+  playerMarker = L.marker([userLat,userLon],{ icon: makePlayerDivIcon('../images/user/1.png',48) }).addTo(map);
   map.setView([userLat,userLon], 19);
 
   // Dog
@@ -76,6 +96,11 @@ async function main(){
         const seg = haversineM(lastLat,lastLon,userLat,userLon);
         if (seg>=0.5){ totalWalkedM+=seg; localStorage.setItem('ui_total_walk_m', String(totalWalkedM)); setHUD({ distanceM: totalWalkedM }); }
       }
+      if (!window.__pf_dashing) {
+  playerMarker.setLatLng([userLat, userLon]);
+  dog.update(userLat, userLon);
+}
+
       lastLat=userLat; lastLon=userLon;
     },()=>{}, {enableHighAccuracy:true});
   }

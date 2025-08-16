@@ -20,7 +20,7 @@ function preloadSpriteOnce(){
 /* 시트 스펙 */
 const SHEET_W=800, SHEET_H=257, FRAMES=4; // 4컷(200x257)
 const FRAME_W=SHEET_W/FRAMES, FRAME_H=SHEET_H;
-const DURATION_MS=600;
+const DURATION_MS=1600;
 
 let cssInjected=false;
 function injectCSS(){
@@ -66,10 +66,12 @@ function injectCSS(){
   }
 
   /* (옵션) 스프라이트 4컷 공격: 끝 위치를 변수로 둬서 스케일 대응 */
-  @keyframes pf_attack_once {
-    from { background-position: 0px 0; }
-    to   { background-position: var(--pf-endX, -600px) 0; }
-  }
+  /* X축 전용 키프레임 — Y축 흔들림 방지 */
+@keyframes pf_attack_once_x {
+  from { background-position-x: 0px;   background-position-y: 0; }
+  to   { background-position-x: var(--pf-endX, -600px); background-position-y: 0; }
+}
+
   .pf-attack-sprite{
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     background-repeat:no-repeat; image-rendering:pixelated; pointer-events:none;
@@ -126,36 +128,81 @@ export function swingSwordAt(map, playerMarker, targetLat, targetLon, withSound=
 }
 
 /* (옵션) 4컷 스프라이트: 아이콘 크기로 스케일 */
-export function playPlayerAttackOnce(playerMarker, opts={}){
+/* (옵션) 4컷 스프라이트: 아이콘 크기로 스케일 — 로드 완료 후 정확히 실행 */
+export function playPlayerAttackOnce(playerMarker, opts = {}) {
   injectCSS();
-  const [iconW, iconH]=getPlayerIconSize(playerMarker);
-  const scaleX=iconW/200, scaleY=iconH/257;                 // 200x257 프레임 기준
-  const scaledSheetW=800*scaleX, scaledSheetH=257*scaleY;   // 시트 전체 스케일
-  const lastOffsetX=-(800-200)*scaleX;                      // -600 * scaleX
 
-  const { durationMs=DURATION_MS, frames=FRAMES, spriteUrl=SPRITE_URL_RESOLVED||'' } = opts;
+  const root = playerMarker?.getElement(); if (!root) return;
+  const wrap = root.querySelector('.player-wrap') || root;
+  const img  = root.querySelector('.player-img');
 
-  const root=playerMarker?.getElement(); if(!root) return;
-  const wrap=root.querySelector('.player-wrap')||root;
-  const img= root.querySelector('.player-img');
-  if (img) img.classList.add('pf-hide');
+  const { durationMs = DURATION_MS, frames = FRAMES } = opts;
 
-  const sp=document.createElement('div');
-  sp.className='pf-attack-sprite';
-  sp.style.width = iconW+'px'; sp.style.height = iconH+'px';
-  sp.style.setProperty('--pf-endX', `${lastOffsetX}px`);
-  sp.style.backgroundSize = `${scaledSheetW}px ${scaledSheetH}px`;
-  if (spriteUrl) sp.style.backgroundImage = `url("${spriteUrl}")`;
-  sp.style.animation = `pf_attack_once ${durationMs}ms steps(${frames}) 1 forwards`;
-  wrap.appendChild(sp);
+  // 1) 스프라이트 URL 확보 & 로드가 끝난 뒤 계산/실행
+  const ensureUrl = async () => {
+    if (SPRITE_URL_RESOLVED) return SPRITE_URL_RESOLVED;
+    // preloadSpriteOnce()는 이미 호출됨. 대기:
+    while (!SPRITE_URL_RESOLVED) { await new Promise(r => setTimeout(r, 20)); }
+    return SPRITE_URL_RESOLVED;
+  };
 
-  if (!spriteUrl){
-    (async()=>{ while(!SPRITE_URL_RESOLVED){ await new Promise(r=>setTimeout(r,50)); }
-      sp.style.backgroundImage=`url("${SPRITE_URL_RESOLVED}")`;
-    })();
-  }
-  sp.addEventListener('animationend', ()=>{ sp.remove(); if(img) img.classList.remove('pf-hide'); }, { once:true });
+  (async () => {
+    const spriteUrl = await ensureUrl();
+
+    // 이미지 자연 해상도 읽기
+    const meta = await new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => resolve({ w: im.naturalWidth || im.width, h: im.naturalHeight || im.height });
+      im.onerror = () => resolve({ w: SHEET_W, h: SHEET_H }); // 폴백
+      im.decoding = 'async';
+      im.src = spriteUrl;
+    });
+
+    // 2) 자연 프레임폭/높이 → 아이콘 크기에 정확히 맞춰 스케일
+    const sheetW = meta.w || SHEET_W;
+    const sheetH = meta.h || SHEET_H;
+    const frameW = Math.round(sheetW / frames);   // = 200 기대
+    const frameH = sheetH;                        // = 257 기대
+
+    const [iconW, iconH] = getPlayerIconSize(playerMarker);
+    // 각각 정수화하여 subpixel 블러 최소화
+    const scaleX = Math.max(1e-6, Math.round((iconW / frameW) * 1000) / 1000);
+    const scaleY = Math.max(1e-6, Math.round((iconH / frameH) * 1000) / 1000);
+
+    const scaledSheetW = Math.round(sheetW * scaleX);
+    const scaledSheetH = Math.round(sheetH * scaleY);
+    const endX = -Math.round((frameW * (frames - 1)) * scaleX); // 마지막 프레임까지 이동(-600*scaleX)
+
+    // 3) 기존 아이콘 숨기고 스프라이트 엘리먼트 생성
+    if (img) img.classList.add('pf-hide');
+
+    const sp = document.createElement('div');
+    sp.className = 'pf-attack-sprite';
+    sp.style.width  = `${Math.round(iconW)}px`;
+    sp.style.height = `${Math.round(iconH)}px`;
+    sp.style.backgroundRepeat = 'no-repeat';
+    sp.style.imageRendering = 'pixelated';
+    sp.style.backgroundSize = `${scaledSheetW}px ${scaledSheetH}px`;
+    sp.style.backgroundImage = `url("${spriteUrl}")`;
+    sp.style.setProperty('--pf-endX', `${endX}px`);
+
+    // 4) X축만 steps(frames)로 전진 (Y축은 0 유지)
+    //    animation-timing-function을 steps로 분리해 확실히 적용
+    sp.style.animationName = 'pf_attack_once_x';
+    sp.style.animationDuration = `${durationMs}ms`;
+    sp.style.animationTimingFunction = `steps(${frames})`;
+    sp.style.animationFillMode = 'forwards';
+    sp.style.animationIterationCount = '1';
+
+    wrap.appendChild(sp);
+
+    sp.addEventListener('animationend', () => {
+      sp.remove();
+      if (img) img.classList.remove('pf-hide');
+    }, { once: true });
+  })();
 }
+
 
 /* 두 효과 동시 실행 */
 export function attackOnceToward(map, playerMarker, targetLat, targetLon){
