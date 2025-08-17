@@ -4,22 +4,26 @@
   <meta charset="UTF-8" />
   <title>GeoHunt 관리자 페이지</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <!-- Geocoder -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
   <style>
     :root{ --side-w: 420px; }
     *{ box-sizing: border-box; }
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;color:#111827;background:#fff}
 
-    /* 상단 헤더 */
     header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #e5e7eb}
     header h2{margin:0;font-size:18px}
 
-    /* 좌우 레이아웃 */
     .layout{display:grid;grid-template-columns: 1fr var(--side-w); height: calc(100vh - 56px);}
     #map{height:100%; width:100%}
 
-    /* 오른쪽 패널 */
     .side{border-left:1px solid #e5e7eb; padding:14px; overflow:auto; height:100%}
     .muted{color:#6b7280;font-size:12px}
     .card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:14px}
@@ -85,7 +89,7 @@
           <div class="row">
             <div>
               <label for="mid">몬스터 ID (mid)</label>
-              <input type="number" id="mid" placeholder="예: 101" required />
+              <input type="number" id="mid" placeholder="1" required value="1"/>
             </div>
             <div>
               <label for="size">아이콘 크기(px) (선택)</label>
@@ -104,6 +108,7 @@
               <input type="number" id="m_damage" min="1" value="3" />
             </div>
           </div>
+
           <div class="row">
             <div>
               <label for="m_cooldown">쿨다운(ms)</label>
@@ -113,6 +118,16 @@
               <label for="m_docId">수정용 문서ID (선택)</label>
               <input type="text" id="m_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
             </div>
+          </div>
+
+          <!-- NEW: 몬스터 애니메이션 ID -->
+          <div class="row">
+            <div>
+              <label for="m_animId">애니메이션 ID (선택)</label>
+              <input type="number" id="m_animId" placeholder="예: 101" value="1"/>
+              <div class="hint">나중에 런타임에서 이 ID로 스프라이트/효과를 매칭합니다.</div>
+            </div>
+            <div></div>
           </div>
 
           <div class="subtle">
@@ -167,7 +182,7 @@ mystic_orb|Mystic Orb|rare|0.1|1|1
           <div class="row">
             <div>
               <label for="t_range">사거리(m)</label>
-              <input type="number" id="t_range" min="1" value="60" required />
+              <input type="number" id="t_range" min="1" value="10" required />
             </div>
             <div>
               <label for="t_icon">아이콘 URL (선택)</label>
@@ -193,82 +208,80 @@ mystic_orb|Mystic Orb|rare|0.1|1|1
   </div>
 
   <!-- 보물박스 등록 -->
-<div class="card">
-  <h3>보물박스 등록</h3>
-  <form id="treasureForm" autocomplete="off">
-    <div class="row">
-      <div>
-        <label for="tr_lat">위도 (lat)</label>
-        <input type="number" step="any" id="tr_lat" required />
-      </div>
-      <div>
-        <label for="tr_lon">경도 (lon)</label>
-        <input type="number" step="any" id="tr_lon" required />
-      </div>
-    </div>
-
-    <div class="row">
-      <div>
-        <label>이미지 URL (고정)</label>
-        <input type="url" id="tr_img" readonly
-               value="https://puppi.netlify.app/images/event/tresure.png" />
-      </div>
-      <div>
-        <label>파워 (고정)</label>
-        <input type="number" id="tr_power" value="800" readonly />
-      </div>
-    </div>
-
-    <div class="row">
-      <div>
-        <label>점수 보상</label>
-        <input type="number" id="tr_score" min="0" value="100" />
-      </div>
-      <div>
-        <label>애니메이션(고정)</label>
-        <input type="text" id="tr_anim" readonly
-               value="https://puppi.netlify.app/images/event/tresure800x200.png (200x200 x4, once)" />
-      </div>
-    </div>
-
-    <!-- 아이템 선택/추가 -->
-    <div class="subtle">
-      <strong>아이템 보상</strong>
+  <div class="card" style="margin:14px">
+    <h3>보물박스 등록</h3>
+    <form id="treasureForm" autocomplete="off">
       <div class="row">
         <div>
-          <label>아이템 ID</label>
-          <input id="tr_item_id" placeholder="red_potion" />
+          <label for="tr_lat">위도 (lat)</label>
+          <input type="number" step="any" id="tr_lat" required />
         </div>
         <div>
-          <label>수량</label>
-          <input id="tr_item_qty" type="number" min="1" value="1" />
+          <label for="tr_lon">경도 (lon)</label>
+          <input type="number" step="any" id="tr_lon" required />
         </div>
       </div>
-      <button type="button" id="tr_add_item">아이템 추가</button>
-      <div class="hint">아래 목록은 저장 시 함께 지급됩니다.</div>
-      <textarea id="tr_items" placeholder="id|name|qty&#10;red_potion|빨간약|1"></textarea>
-    </div>
 
-    <div class="row">
-      <div>
-        <label for="tr_docId">수정용 문서ID (선택)</label>
-        <input type="text" id="tr_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
+      <div class="row">
+        <div>
+          <label>이미지 URL (수정 가능)</label>
+          <input type="url" id="tr_img"
+                 value="https://puppi.netlify.app/images/event/tresure.png" />
+          <div class="hint">보물박스마다 다른 URL을 직접 입력해 저장할 수 있습니다.</div>
+        </div>
+        <div>
+          <label>파워 (메타)</label>
+          <input type="number" id="tr_power" value="100"/>
+        </div>
       </div>
-      <div>
-        <label for="tr_pass">관리 비밀번호</label>
-        <input type="password" id="tr_pass" placeholder="숫자/문자" required />
+
+      <div class="row">
+        <div>
+          <label>점수 보상</label>
+          <input type="number" id="tr_score" min="0" value="100" />
+        </div>
+        <div>
+          <label>애니메이션 ID (정보용)</label>
+          <input type="number" id="tr_animId" placeholder="501" value="501"/>
+          <div class="hint">지금은 ID만 저장하고, 나중에 런타임에서 ID→스프라이트를 매칭합니다.</div>
+        </div>
       </div>
-    </div>
 
-    <button type="submit">보물박스 등록/수정</button>
-    <pre id="tr_out" class="muted" style="margin-top:8px">-</pre>
-  </form>
-</div>
+      <!-- 아이템 선택/추가 -->
+      <div class="subtle">
+        <strong>아이템 보상</strong>
+        <div class="row">
+          <div>
+            <label>아이템 ID</label>
+            <input id="tr_item_id" placeholder="red_potion" value="red_potion"/>
+          </div>
+          <div>
+            <label>수량</label>
+            <input id="tr_item_qty" type="number" min="1" value="1" />
+          </div>
+        </div>
+        <button type="button" id="tr_add_item">아이템 추가</button>
+        <div class="hint">아래 목록은 저장 시 함께 지급됩니다.</div>
+        <textarea id="tr_items" placeholder="id|name|qty&#10;red_potion|빨간약|1"></textarea>
+      </div>
 
+      <div class="row">
+        <div>
+          <label for="tr_docId">수정용 문서ID (선택)</label>
+          <input type="text" id="tr_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
+        </div>
+        <div>
+          <label for="tr_pass">관리 비밀번호</label>
+          <input type="password" id="tr_pass" placeholder="숫자/문자" required />
+        </div>
+      </div>
 
-  <!-- Libs -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+      <button type="submit">보물박스 등록/수정</button>
+      <pre id="tr_out" class="muted" style="margin-top:8px">-</pre>
+    </form>
+  </div>
+
+  <!-- 앱 스크립트 -->
   <script type="module" src="./js/admin.js"></script>
 </body>
 </html>

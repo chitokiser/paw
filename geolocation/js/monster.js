@@ -109,10 +109,29 @@ export class MonsterGuard {
     return tiles.slice(0, 10);
   }
 
+  /** 적대 대상 여부 판단 (보물/비전투는 false) */
+  _isHostile(d){
+    // 명시 플래그 우선
+    if (d.isHostile === false) return false;
+    // 보물박스는 절대 공격하지 않음
+    if (d.type === 'treasure') return false;
+    // 공격력/피해가 0 이하라면 비전투
+    const atk = Number(d.attack);
+    if (Number.isFinite(atk) && atk <= 0) return false;
+    const dmg = Number(d.damage);
+    if (Number.isFinite(dmg) && dmg <= 0) return false;
+    // canAttack 명시적 차단
+    if (d.canAttack === false) return false;
+    return true;
+  }
+
   /** 공통 스킵 판정: DB/RT 공통 */
   _shouldSkip(id, d, now){
     // 필수 좌표
     if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) return true;
+
+    // 비전투 대상 즉시 스킵
+    if (!this._isHostile(d)) return true;
 
     // 로컬 처치 가드: 승리 직후/쿨다운 동안 완전 무시
     if (this.isKilled(id)) return true;
@@ -145,7 +164,6 @@ export class MonsterGuard {
 
     if (this._rt?.getVisibleMonsters) {
       // RT 경로: 화면에 보이는 마커 집합을 그대로 사용 (DB 추가 읽기 없음)
-      // 기대 형태: [{ id, data: {...} }, ...] 혹은 map-like → 배열로 정규화
       const arr = this._rt.getVisibleMonsters();
       if (Array.isArray(arr)) {
         mons = arr.map(x => ({ id: x.id, data: x.data || x }));
@@ -191,7 +209,11 @@ export class MonsterGuard {
       if (this._shouldSkip(id, d, now)) continue;
 
       const range  = Number(d.range || this.rangeDefault);
-      const damage = Math.max(1, Number(d.damage || this.damageDefault));
+
+      // ⚠️ damage를 강제로 1 이상으로 만들지 말고 실제 값/기본값을 그대로 사용
+      const baseDamage = Number.isFinite(Number(d.damage)) ? Number(d.damage) : this.damageDefault;
+      if (baseDamage <= 0) continue; // 안전장치: 0 이하면 공격하지 않음
+
       const cdMs   = Math.max(200, Number(d.cooldownMs || this.fireCooldownMs));
 
       const nextAt = this._cool.get(id) || 0;
@@ -204,7 +226,7 @@ export class MonsterGuard {
           // 타격!
           this._cool.set(id, now + cdMs);
           try {
-            this.onUserHit(damage, { id, lat: d.lat, lon: d.lon, range, damage, cooldownMs: cdMs });
+            this.onUserHit(baseDamage, { id, lat: d.lat, lon: d.lon, range, damage: baseDamage, cooldownMs: cdMs });
           } catch (e) {
             // onUserHit 에러가 나더라도 쿨다운은 유지
             console.warn('[MonsterGuard] onUserHit error', e);

@@ -230,3 +230,163 @@ export function attachHPBar(marker, maxHits){
   };
   return { set };
 }
+
+
+/* ===== Sprite Animation (Treasure 등) ===== */
+function ensureSpriteCSS(){
+  if (document.getElementById('spritefx-css')) return;
+  const css = `
+  .sprite-anim{
+    position:absolute; left:50%; top:50%;
+    transform: translate(-50%, -50%);
+    image-rendering: pixelated; /* 레트로 시트일 때 계단현상 자연스럽게 */
+    pointer-events:none;
+    will-change: background-position;
+  }
+  .sprite-anim.wrap{
+    position:relative; left:0; top:0; transform:none;
+  }`;
+  const s = document.createElement('style');
+  s.id = 'spritefx-css';
+  s.textContent = css;
+  document.head.appendChild(s);
+}
+function preloadImage(url){
+  return new Promise((res, rej)=>{
+    const img = new Image();
+    img.onload = ()=>res(img);
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+
+function createSpriteElem({ url, frameW, frameH, scale=1 }){
+  const el = document.createElement('div');
+  el.className = 'sprite-anim';
+  el.style.width = `${Math.round(frameW*scale)}px`;
+  el.style.height = `${Math.round(frameH*scale)}px`;
+  el.style.backgroundImage = `url("${url}")`;
+  el.style.backgroundRepeat = 'no-repeat';
+  el.style.backgroundPosition = '0px 0px';
+  return el;
+}
+
+/**
+ * 지도 위 좌표에 스프라이트 시트 애니메이션을 한 번/반복 재생합니다.
+ * - anim: { url, frameW, frameH, frames, once=true|false, fps=8 }
+ * - opts: { zIndexOffset=18000, scale=1, anchorCenter=true }
+ * 반환: { stop() }
+ */
+export async function playSpriteOnMap(map, lat, lon, anim, opts = {}){
+  ensureSpriteCSS();
+  const {
+    url, frameW, frameH, frames,
+    once = true, fps = 8
+  } = anim || {};
+  const { zIndexOffset=18000, scale=1, anchorCenter=true } = opts;
+
+  if (!url || !frameW || !frameH || !frames){
+    console.warn('[sprite] invalid anim payload', anim);
+    return { stop:()=>{} };
+  }
+  try{ await preloadImage(url); }catch(e){ console.warn('[sprite] preload fail', e); }
+
+  const el = createSpriteElem({ url, frameW, frameH, scale });
+  const icon = L.divIcon({
+    className:'',
+    html: el,
+    iconSize: [frameW*scale, frameH*scale],
+    iconAnchor: anchorCenter ? [frameW*scale/2, frameH*scale/2] : [0,0]
+  });
+  const mk = L.marker([lat, lon], { icon, interactive:false, zIndexOffset }).addTo(map);
+
+  let frame = 0;
+  let stopped = false;
+  const period = 1000/Math.max(1,fps);
+
+  const tick = ()=>{
+    if (stopped) return;
+    const x = -(frame*frameW*scale);
+    el.style.backgroundPosition = `${x}px 0px`;
+    frame++;
+    if (frame >= frames){
+      if (once){
+        stop();
+        try{ map.removeLayer(mk); }catch{}
+        return;
+      }
+      frame = 0;
+    }
+    timer = setTimeout(tick, period);
+  };
+
+  let timer = setTimeout(tick, period);
+
+  function stop(){
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timer);
+    try{ map.removeLayer(mk); }catch{}
+  }
+  return { stop };
+}
+
+/**
+ * 이미 존재하는 Leaflet 마커의 DOM(.mon-wrap)에 애니메이션 노드를 붙여 재생
+ * - marker: L.Marker (getElement()로 루트 DOM 접근)
+ * - anim: { url, frameW, frameH, frames, once=true|false, fps=8 }
+ * - opts: { scale=1, classNameExtra='' }
+ * 반환: { stop(), element }
+ */
+export async function attachSpriteToMarker(marker, anim, opts = {}){
+  ensureSpriteCSS();
+  const root = marker?.getElement();
+  if (!root) return { stop:()=>{}, element:null };
+
+  const wrap = root.querySelector('.mon-wrap') || root; // .mon-wrap 없으면 루트에
+  const {
+    url, frameW, frameH, frames,
+    once = true, fps = 8
+  } = anim || {};
+  const { scale=1, classNameExtra='' } = opts;
+
+  if (!url || !frameW || !frameH || !frames){
+    console.warn('[sprite] invalid anim for marker', anim);
+    return { stop:()=>{}, element:null };
+  }
+  try{ await preloadImage(url); }catch(e){ console.warn('[sprite] preload fail', e); }
+
+  const el = createSpriteElem({ url, frameW, frameH, scale });
+  el.classList.add('wrap');
+  if (classNameExtra) el.classList.add(classNameExtra);
+  wrap.appendChild(el);
+
+  let frame = 0;
+  let stopped = false;
+  const period = 1000/Math.max(1,fps);
+
+  const tick = ()=>{
+    if (stopped) return;
+    const x = -(frame*frameW*scale);
+    el.style.backgroundPosition = `${x}px 0px`;
+    frame++;
+    if (frame >= frames){
+      if (once){
+        stop();
+        return;
+      }
+      frame = 0;
+    }
+    timer = setTimeout(tick, period);
+  };
+
+  let timer = setTimeout(tick, period);
+
+  function stop(){
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timer);
+    try{ el.remove(); }catch{}
+  }
+  return { stop, element: el };
+}

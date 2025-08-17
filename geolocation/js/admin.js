@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
 /* ====== 설정 ====== */
-// TODO: 반드시 실제 배포 전에 안전하게 교체/환경변수화 하세요.
+// TODO: 실제 배포 전 환경변수/서버사이드로 안전하게!
 const ADMIN_PASS = "1234"; // 데모용
 const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
@@ -22,6 +22,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db  = getFirestore(app);
+export { db };
 
 /* ====== 지도 ====== */
 const map = L.map("map", { maxZoom: 22 }).setView([21.0285, 105.8542], 16);
@@ -55,13 +56,13 @@ function setLatLon(lat, lon) {
   const ct = document.getElementById("coordText");
   if (ct) ct.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 
-  // 기존: 몬스터/타워 좌표
+  // 몬스터/타워 좌표
   setInputValue("m_lat", lat);
   setInputValue("m_lon", lon);
   setInputValue("t_lat", lat);
   setInputValue("t_lon", lon);
 
-  // 추가: 보물박스 좌표
+  // 보물박스 좌표
   setInputValue("tr_lat", lat);
   setInputValue("tr_lon", lon);
 }
@@ -97,10 +98,7 @@ function checkPass(inputId) {
 function toast(msg) { alert(msg); }
 
 /* ====== 아이템/드랍 파서 ====== */
-/** 텍스트 → 배열 파싱 (JSON 배열 또는 라인/CSV)
- *  - JSON: [{"id":"potion_small","name":"Small Potion","qty":2,"rarity":"common"}]
- *  - 라인/CSV: id|name|qty|rarity  또는  id,qty
- */
+/** 텍스트 → 배열 파싱 (JSON 배열 또는 라인/CSV) */
 function parseItemArray(text) {
   const t = (text || "").trim();
   if (!t) return [];
@@ -167,7 +165,7 @@ function sanitizeLoot(arr){
     .filter(it=>!!it.id);
 }
 
-/** 첫 번째 아이템 ‘빨간약’ 보장 */
+/** 첫 번째 아이템 ‘빨간약’ 보장 (몬스터 전용) */
 function ensureFirstIsRedPotion(items){
   const RED = { id:'red_potion', name:'빨간약', qty:1, rarity:'common' };
   const arr = Array.isArray(items) ? [...items] : [];
@@ -188,7 +186,7 @@ const ITEM_CATALOG = [
   { id:'mystic_orb',   name:'Mystic Orb',    rarity:'rare' },
 ];
 
-/* ====== 폼 UI에 드롭다운 섹션 주입 ====== */
+/* ====== 폼 UI에 드롭다운 섹션 주입 (몬스터) ====== */
 const monsterForm = document.getElementById("monsterForm");
 if (monsterForm) {
   // items textarea 보장
@@ -327,7 +325,7 @@ if (monsterForm) {
 
 /* ====== 몬스터 등록/수정 ====== */
 if (monsterForm) {
-  // 몬스터 ID 입력 시 이미지 URL 자동 변경 (예: 20 → .../20.png)
+  // 몬스터 ID 입력 시 이미지 URL 자동 변경
   const midInput = document.getElementById('mid');
   const monImg   = document.getElementById('imageURL');
   if (midInput && monImg) {
@@ -352,6 +350,7 @@ if (monsterForm) {
     const range = valNum("m_range", null, 10);
     const damage = valNum("m_damage", null, 1);
     const cooldownMs = valNum("m_cooldown", null, 200);
+    const animId = valNum("m_animId", null); // HTML에 m_animId 있으면 저장
 
     const itemsText = valStr("m_items", "");
     const lootText  = valStr("m_loot", "");
@@ -360,9 +359,8 @@ if (monsterForm) {
 
     let items = parseItemArray(itemsText);
     let lootTable = parseLootTable(lootText);
-    items = ensureFirstIsRedPotion(items); // 첫 아이템 빨간약 보장
+    items = ensureFirstIsRedPotion(items);
 
-    // ✅ 타일 필드 필수
     const tile = tileFromLatLon(lat, lon);
 
     const payload = {
@@ -374,6 +372,7 @@ if (monsterForm) {
       ...(range ? { range } : {}),
       ...(damage ? { damage } : {}),
       ...(cooldownMs ? { cooldownMs } : {}),
+      ...(animId ? { animId } : {}),
       items,
       lootTable,
       updatedAt: serverTimestamp()
@@ -398,7 +397,6 @@ if (monsterForm) {
     }
   });
 }
-
 
 /* ====== 망루 등록/수정 ====== */
 const towerForm = document.getElementById("towerForm");
@@ -433,10 +431,11 @@ if (towerForm) {
   });
 }
 
-/* ====== 보물박스 등록/수정 ======
+/* ====== 보물박스 등록/수정 (treasures 컬렉션) ======
  * HTML 요구 id:
- *  - tr_lat, tr_lon, tr_img(readonly), tr_power(readonly), tr_score, tr_items, tr_docId, tr_pass
- *  - tr_add_item (선택: 아이템 라인 누적 버튼)
+ *  - tr_lat, tr_lon, tr_img, tr_power, tr_score, tr_items, tr_docId, tr_pass
+ *  - (선택) tr_add_item, tr_item_id, tr_item_qty
+ *  - (선택) tr_animId  ← 숫자 애니메이션 ID
  */
 function parseTreasureItems(text){
   const t = (text||'').trim();
@@ -473,6 +472,10 @@ function parseTreasureItems(text){
 
 const treasureForm = document.getElementById('treasureForm');
 if (treasureForm){
+  // 수정 가능 보장
+  const imgEl = document.getElementById('tr_img');   if (imgEl) imgEl.readOnly = false;
+  const powEl = document.getElementById('tr_power'); if (powEl) powEl.readOnly = false;
+
   treasureForm.addEventListener('submit', async (e)=>{
     e.preventDefault();
     try{
@@ -482,40 +485,47 @@ if (treasureForm){
       const lon = valNum('tr_lon');
       if (lat == null || lon == null){ toast('지도를 클릭해 좌표를 선택하세요.'); return; }
 
-      const score = valNum('tr_score', 0, 0);
-      const items = parseTreasureItems(valStr('tr_items',''));
+      const imageURL = valStr('tr_img', 'https://puppi.netlify.app/images/event/tresure.png');
+      const score    = valNum('tr_score', 0, 0);
+      const items    = parseTreasureItems(valStr('tr_items',''));
+      const power    = valNum('tr_power', 100, 1);    // ← 파워 저장
+      const animId   = valNum('tr_animId', null);     // ← 애니 ID(선택)
 
-    const payload = {
-  type: 'treasure',        // ← 중요: 게임에서 구분할 수 있게
-  alive: true,             // ← 게임이 alive==true만 볼 수 있음
-  dead: false,             // ← 위와 짝
-  lat, lon, tile: tileFromLatLon(lat, lon),
-  imageURL: 'https://puppi.netlify.app/images/event/tresure.png',
-  power: 800,
-  attack: 0,
-  rewards: { score, items },
-  animation: {
-    url: 'https://puppi.netlify.app/images/event/tresure800x200.png',
-    frameW: 200, frameH: 200, frames: 4, once: true
-  },
-  createdAt: serverTimestamp(),
-  updatedAt: serverTimestamp()
-};
+      const base = {
+        type: 'treasure',
+        alive: true,
+        dead: false,
+        lat, lon, tile: tileFromLatLon(lat, lon),
+        imageURL,
+        size: 44,
+        rewards: { score, items },
+        power,
+        ...(animId ? { animId } : {}),
+        updatedAt: serverTimestamp()
+      };
 
-   // (기존) treasures 컬렉션 → (변경) monsters 컬렉션 + type: 'treasure'
-const docId = valStr('tr_docId','');
-if (docId){
-  await setDoc(doc(db, 'monsters', docId), payload, { merge:true });
-  toast(`보물박스 업데이트 완료 (doc: ${docId})`);
-}else{
-  const newId = `TR-${payload.tile}-${Date.now().toString(36)}`;
-  await setDoc(doc(db, 'monsters', newId), payload, { merge:true });
-  setInputValue('tr_docId', newId);
-  toast(`보물박스 등록 완료 (doc: ${newId})`);
-}
-      const out = document.getElementById('tr_out'); if (out) out.textContent = JSON.stringify(payload, null, 2);
+      const docId = valStr('tr_docId','').trim();
+      if (docId){
+        // 수정: hitsLeft는 그대로 두고 메타만 갱신
+        await setDoc(doc(db, 'treasures', docId), base, { merge:true });
+        toast(`보물박스 업데이트 완료 (doc: ${docId})`);
+      }else{
+        // 신규: hitsLeft = power 로 초기화
+        const newId = `TR-${base.tile}-${Date.now().toString(36)}`;
+        await setDoc(doc(db, 'treasures', newId), {
+          ...base,
+          hitsLeft: power,
+          createdAt: serverTimestamp()
+        }, { merge:true });
+        setInputValue('tr_docId', newId);
+        toast(`보물박스 등록 완료 (doc: ${newId})`);
+      }
+
+      const out = document.getElementById('tr_out');
+      if (out) out.textContent = JSON.stringify(base, null, 2);
+
     }catch(err){
-      console.warn(err);
+      console.warn('[admin] treasure submit error', err);
       toast('보물박스 등록/수정 중 오류가 발생했습니다.');
       const out = document.getElementById('tr_out'); if (out) out.textContent = String(err);
     }
@@ -528,7 +538,11 @@ if (docId){
     await new Promise(res=>{
       if (!navigator.geolocation){ res(); return; }
       navigator.geolocation.getCurrentPosition(
-        p=>{ setLatLon(p.coords.latitude, p.coords.longitude); map.setView([p.coords.latitude, p.coords.longitude], 18); res(); },
+        p=>{
+          setLatLon(p.coords.latitude, p.coords.longitude);
+          map.setView([p.coords.latitude, p.coords.longitude], 18);
+          res();
+        },
         ()=>res(), { enableHighAccuracy:true, timeout:6000 }
       );
     });
