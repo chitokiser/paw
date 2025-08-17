@@ -7,172 +7,264 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:18px}
-    h2{margin:0 0 10px}
-    #map{height:420px;margin-bottom:12px;border-radius:10px;overflow:hidden}
+    :root{ --side-w: 420px; }
+    *{ box-sizing: border-box; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;color:#111827;background:#fff}
+
+    /* 상단 헤더 */
+    header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #e5e7eb}
+    header h2{margin:0;font-size:18px}
+
+    /* 좌우 레이아웃 */
+    .layout{display:grid;grid-template-columns: 1fr var(--side-w); height: calc(100vh - 56px);}
+    #map{height:100%; width:100%}
+
+    /* 오른쪽 패널 */
+    .side{border-left:1px solid #e5e7eb; padding:14px; overflow:auto; height:100%}
+    .muted{color:#6b7280;font-size:12px}
+    .card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:14px}
     .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    @media (max-width:720px){.row{grid-template-columns:1fr}}
+    @media (max-width:900px){
+      .layout{grid-template-columns:1fr}
+      .side{border-left:none;border-top:1px solid #e5e7eb}
+      :root{ --side-w: 100% }
+      .row{grid-template-columns:1fr}
+    }
     label{font-size:12px;color:#555}
     input,button,textarea{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0}
     textarea{min-height:92px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
     button{cursor:pointer;background:#111827;color:#fff;font-weight:700}
     .hint{font-size:12px;color:#6b7280;margin-top:-4px;white-space:pre-line}
-    .card{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-top:14px}
-    .muted{color:#6b7280;font-size:12px}
     .subtle{background:#f8fafc;border:1px dashed #e5e7eb;border-radius:10px;padding:10px}
     .examples{display:grid;gap:6px;margin-top:6px}
     .examples code{display:block;background:#0b1020;color:#d1e7ff;padding:8px;border-radius:8px;overflow:auto}
   </style>
 </head>
 <body>
-  <h2>GeoHunt 관리자 페이지</h2>
+  <header>
+    <h2>GeoHunt 관리자 페이지</h2>
+  </header>
 
-  <div id="map"></div>
-  <div>선택 좌표: <span id="coordText">-</span></div>
-  <div class="muted">지도를 클릭하면 lat/lon이 자동 입력됩니다.</div>
+  <div class="layout">
+    <!-- 왼쪽: 지도 -->
+    <div id="map"></div>
 
-  <!-- 몬스터 등록/수정 -->
-  <div class="card">
-    <h3>몬스터 등록/수정</h3>
-    <form id="monsterForm" autocomplete="off">
-      <div class="row">
-        <div>
-          <label for="m_lat">위도 (lat)</label>
-          <input type="number" step="any" id="m_lat" required />
-        </div>
-        <div>
-          <label for="m_lon">경도 (lon)</label>
-          <input type="number" step="any" id="m_lon" required />
-        </div>
-      </div>
+    <!-- 오른쪽: 입력 패널 -->
+    <aside class="side">
+      <div>선택 좌표: <span id="coordText">-</span></div>
+      <div class="muted">지도를 클릭하면 lat/lon이 자동 입력됩니다.</div>
 
-      <div class="row">
-        <div>
-          <label for="imageURL">몬스터 이미지 URL</label>
-          <!-- ✅ placeholder가 아니라 실제 기본값으로 입력 -->
-          <input type="url" id="imageURL" value="https://puppi.netlify.app/images/mon/1.png" required />
-          <div class="hint">이미지를 바꾸려면 위 값을 원하는 URL로 변경하세요.</div>
-        </div>
-        <div>
-          <label for="power">몬스터 파워 (필수)</label>
-          <!-- ✅ 기본값 10 -->
-          <input type="number" id="power" min="1" value="10" required />
-          <div class="hint">보상=파워, 제한시간=(파워/4)초, 필요타격=파워회</div>
-        </div>
-      </div>
+      <!-- 몬스터 등록/수정 -->
+      <div class="card">
+        <h3>몬스터 등록/수정</h3>
+        <form id="monsterForm" autocomplete="off">
+          <div class="row">
+            <div>
+              <label for="m_lat">위도 (lat)</label>
+              <input type="number" step="any" id="m_lat" required />
+            </div>
+            <div>
+              <label for="m_lon">경도 (lon)</label>
+              <input type="number" step="any" id="m_lon" required />
+            </div>
+          </div>
 
-      <div class="row">
-        <div>
-          <label for="mid">몬스터 ID (mid)</label>
-          <input type="number" id="mid" placeholder="예: 101" required />
-        </div>
-        <div>
-          <label for="size">아이콘 크기(px) (선택)</label>
-          <!-- ✅ 기본값 44 -->
-          <input type="number" id="size" min="24" value="44" />
-          <div class="hint">지도 위 아이콘 픽셀 크기. 비우면 96px</div>
-        </div>
-      </div>
+          <div class="row">
+            <div>
+              <label for="imageURL">몬스터 이미지 URL</label>
+              <input type="url" id="imageURL" value="https://puppi.netlify.app/images/mon/1.png" required />
+              <div class="hint">몬스터 ID 입력 시 자동으로 채워집니다.</div>
+            </div>
+            <div>
+              <label for="power">몬스터 파워 (필수)</label>
+              <input type="number" id="power" min="1" value="10" required />
+              <div class="hint">보상=파워, 제한시간=(파워/4)초, 필요타격=파워회</div>
+            </div>
+          </div>
 
-      <!-- 자동공격용 필드 -->
-      <div class="row">
-        <div>
-          <label for="m_range">사거리(m)</label>
-          <!-- ✅ 기본값 5 -->
-          <input type="number" id="m_range" min="1" value="5" />
-        </div>
-        <div>
-          <label for="m_damage">1회 데미지</label>
-          <input type="number" id="m_damage" min="1" value="1" />
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label for="m_cooldown">쿨다운(ms)</label>
-          <input type="number" id="m_cooldown" min="200" value="1800" />
-        </div>
-        <div>
-          <label for="m_docId">수정용 문서ID (선택)</label>
-          <input type="text" id="m_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
-        </div>
-      </div>
+          <div class="row">
+            <div>
+              <label for="mid">몬스터 ID (mid)</label>
+              <input type="number" id="mid" placeholder="예: 101" required />
+            </div>
+            <div>
+              <label for="size">아이콘 크기(px) (선택)</label>
+              <input type="number" id="size" min="24" value="44" />
+              <div class="hint">지도 위 아이콘 픽셀 크기. 비우면 96px</div>
+            </div>
+          </div>
 
-      <!-- 🔥 드랍 아이템/테이블 입력 -->
-      <div class="subtle">
-        <strong>드랍 아이템 설정</strong>
-        <div class="hint">아래 둘 중 하나 또는 둘 다 입력할 수 있습니다.
+          <div class="row">
+            <div>
+              <label for="m_range">사거리(m)</label>
+              <input type="number" id="m_range" min="1" value="10" />
+            </div>
+            <div>
+              <label for="m_damage">1회 데미지</label>
+              <input type="number" id="m_damage" min="1" value="3" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="m_cooldown">쿨다운(ms)</label>
+              <input type="number" id="m_cooldown" min="200" value="2800" />
+            </div>
+            <div>
+              <label for="m_docId">수정용 문서ID (선택)</label>
+              <input type="text" id="m_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
+            </div>
+          </div>
+
+          <div class="subtle">
+            <strong>드랍 아이템 설정</strong>
+            <div class="hint">아래 둘 중 하나 또는 둘 다 입력할 수 있습니다.
 - <b>items</b>: 고정 전리품(사냥 완료 시 그대로 지급). 첫 번째 아이템은 자동으로 <b>빨간약</b>이 맨 앞에 오도록 보정됩니다.
-- <b>lootTable</b>: 확률 드랍 테이블(비어 있으면 무시). items가 비어 있으면 lootTable을 굴려서 전리품을 확정합니다.</div>
+- <b>lootTable</b>: 확률 드랍(비어 있으면 무시). items가 비어 있으면 lootTable을 굴려서 전리품을 확정합니다.</div>
 
-        <label for="m_items">items (JSON 배열 또는 라인/CSV)</label>
-        <!-- ✅ 기본으로 빨간약 1개를 미리 입력 -->
-        <textarea id="m_items">red_potion|빨간약|1|common</textarea>
+            <label for="m_items">items (JSON 배열 또는 라인/CSV)</label>
+            <textarea id="m_items">red_potion|빨간약|1|common</textarea>
 
-        <label for="m_loot">lootTable (JSON 배열 또는 라인/CSV)</label>
-        <textarea id="m_loot" placeholder="예)
+            <label for="m_loot">lootTable (JSON 배열 또는 라인/CSV)</label>
+            <textarea id="m_loot" placeholder="예)
 mystic_orb|Mystic Orb|rare|0.1|1|1
 또는
 [{ &quot;id&quot;:&quot;mystic_orb&quot;, &quot;name&quot;:&quot;Mystic Orb&quot;, &quot;rarity&quot;:&quot;rare&quot;, &quot;chance&quot;:0.1, &quot;min&quot;:1, &quot;max&quot;:1 }]"></textarea>
 
-        <div class="examples">
-          <div class="hint"><b>라인/CSV 규칙</b>
+            <div class="examples">
+              <div class="hint"><b>라인/CSV 규칙</b>
 - items: <code>id|name|qty|rarity</code> 또는 <code>id,qty</code>
 - lootTable: <code>id|name|rarity|chance|min|max</code></div>
-        </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="m_pass">관리 비밀번호</label>
+              <input type="password" id="m_pass" placeholder="숫자/문자" required />
+            </div>
+            <div></div>
+          </div>
+
+          <button type="submit">몬스터 등록/수정</button>
+        </form>
       </div>
 
-      <div class="row">
-        <div>
-          <label for="m_pass">관리 비밀번호</label>
-          <input type="password" id="m_pass" placeholder="숫자/문자" required />
-        </div>
-        <div></div>
-      </div>
+      <!-- 망루 등록/수정 -->
+      <div class="card">
+        <h3>망루 등록/수정</h3>
+        <form id="towerForm" autocomplete="off">
+          <div class="row">
+            <div>
+              <label for="t_lat">위도 (lat)</label>
+              <input type="number" step="any" id="t_lat" required />
+            </div>
+            <div>
+              <label for="t_lon">경도 (lon)</label>
+              <input type="number" step="any" id="t_lon" required />
+            </div>
+          </div>
 
-      <button type="submit">몬스터 등록/수정</button>
-    </form>
+          <div class="row">
+            <div>
+              <label for="t_range">사거리(m)</label>
+              <input type="number" id="t_range" min="1" value="60" required />
+            </div>
+            <div>
+              <label for="t_icon">아이콘 URL (선택)</label>
+              <input type="url" id="t_icon" value="https://puppi.netlify.app/images/mon/tower.png" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="t_docId">수정용 문서ID (선택)</label>
+              <input type="text" id="t_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
+            </div>
+            <div>
+              <label for="t_pass">관리 비밀번호</label>
+              <input type="password" id="t_pass" placeholder="숫자/문자" required />
+            </div>
+          </div>
+
+          <button type="submit">망루 등록/수정</button>
+        </form>
+      </div>
+    </aside>
   </div>
 
-  <!-- 망루 등록/수정 -->
-  <div class="card">
-    <h3>망루 등록/수정</h3>
-    <form id="towerForm" autocomplete="off">
+  <!-- 보물박스 등록 -->
+<div class="card">
+  <h3>보물박스 등록</h3>
+  <form id="treasureForm" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="tr_lat">위도 (lat)</label>
+        <input type="number" step="any" id="tr_lat" required />
+      </div>
+      <div>
+        <label for="tr_lon">경도 (lon)</label>
+        <input type="number" step="any" id="tr_lon" required />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>이미지 URL (고정)</label>
+        <input type="url" id="tr_img" readonly
+               value="https://puppi.netlify.app/images/event/tresure.png" />
+      </div>
+      <div>
+        <label>파워 (고정)</label>
+        <input type="number" id="tr_power" value="800" readonly />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>점수 보상</label>
+        <input type="number" id="tr_score" min="0" value="100" />
+      </div>
+      <div>
+        <label>애니메이션(고정)</label>
+        <input type="text" id="tr_anim" readonly
+               value="https://puppi.netlify.app/images/event/tresure800x200.png (200x200 x4, once)" />
+      </div>
+    </div>
+
+    <!-- 아이템 선택/추가 -->
+    <div class="subtle">
+      <strong>아이템 보상</strong>
       <div class="row">
         <div>
-          <label for="t_lat">위도 (lat)</label>
-          <input type="number" step="any" id="t_lat" required />
+          <label>아이템 ID</label>
+          <input id="tr_item_id" placeholder="red_potion" />
         </div>
         <div>
-          <label for="t_lon">경도 (lon)</label>
-          <input type="number" step="any" id="t_lon" required />
+          <label>수량</label>
+          <input id="tr_item_qty" type="number" min="1" value="1" />
         </div>
       </div>
+      <button type="button" id="tr_add_item">아이템 추가</button>
+      <div class="hint">아래 목록은 저장 시 함께 지급됩니다.</div>
+      <textarea id="tr_items" placeholder="id|name|qty&#10;red_potion|빨간약|1"></textarea>
+    </div>
 
-      <div class="row">
-        <div>
-          <label for="t_range">사거리(m)</label>
-          <input type="number" id="t_range" min="1" value="60" required />
-        </div>
-        <div>
-          <label for="t_icon">아이콘 URL (선택)</label>
-          <input type="url" id="t_icon" value="https://puppi.netlify.app/images/mon/tower.png" />
-        </div>
+    <div class="row">
+      <div>
+        <label for="tr_docId">수정용 문서ID (선택)</label>
+        <input type="text" id="tr_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
       </div>
-
-      <div class="row">
-        <div>
-          <label for="t_docId">수정용 문서ID (선택)</label>
-          <input type="text" id="t_docId" placeholder="기존 문서ID 입력 시 merge 업데이트" />
-        </div>
-        <div>
-          <label for="t_pass">관리 비밀번호</label>
-          <input type="password" id="t_pass" placeholder="숫자/문자" required />
-        </div>
+      <div>
+        <label for="tr_pass">관리 비밀번호</label>
+        <input type="password" id="tr_pass" placeholder="숫자/문자" required />
       </div>
+    </div>
 
-      <button type="submit">망루 등록/수정</button>
-    </form>
-  </div>
+    <button type="submit">보물박스 등록/수정</button>
+    <pre id="tr_out" class="muted" style="margin-top:8px">-</pre>
+  </form>
+</div>
+
 
   <!-- Libs -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>

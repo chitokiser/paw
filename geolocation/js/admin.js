@@ -54,10 +54,16 @@ function setLatLon(lat, lon) {
   }
   const ct = document.getElementById("coordText");
   if (ct) ct.textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+  // 기존: 몬스터/타워 좌표
   setInputValue("m_lat", lat);
   setInputValue("m_lon", lon);
   setInputValue("t_lat", lat);
   setInputValue("t_lon", lon);
+
+  // 추가: 보물박스 좌표
+  setInputValue("tr_lat", lat);
+  setInputValue("tr_lon", lon);
 }
 
 function setInputValue(id, v) {
@@ -66,13 +72,11 @@ function setInputValue(id, v) {
 }
 
 /* ====== 유틸 ====== */
-
 function tileFromLatLon(lat, lon, g = 0.01) {
   const fy = Math.floor(lat / g);
   const fx = Math.floor(lon / g);
   return `${fy}_${fx}`;
 }
-
 function valNum(elId, def = null, min = null) {
   const el = document.getElementById(elId);
   if (!el) return def;
@@ -175,11 +179,9 @@ function ensureFirstIsRedPotion(items){
   return [merged, ...rest];
 }
 
-/* ====== 드롭다운 피커: 카탈로그 ======
- * 필요에 따라 자유롭게 추가/수정
- */
+/* ====== 드롭다운 피커: 카탈로그 ====== */
 const ITEM_CATALOG = [
-  { id:'red_potion',   name:'빨간약',        rarity:'common',  hint:'+에너지 10' }, // 첫 아이템 권장
+  { id:'red_potion',   name:'빨간약',        rarity:'common',  hint:'+에너지 10' },
   { id:'potion_small', name:'Small Potion',  rarity:'common' },
   { id:'potion_mid',   name:'Medium Potion', rarity:'uncommon' },
   { id:'bone_fragment',name:'Bone Fragment', rarity:'common' },
@@ -189,7 +191,7 @@ const ITEM_CATALOG = [
 /* ====== 폼 UI에 드롭다운 섹션 주입 ====== */
 const monsterForm = document.getElementById("monsterForm");
 if (monsterForm) {
-  // 1) items / loot 텍스트에어리어가 없다면 만들어 붙임
+  // items textarea 보장
   let itemsTA = document.getElementById('m_items');
   if (!itemsTA) {
     itemsTA = document.createElement('textarea');
@@ -203,6 +205,7 @@ if (monsterForm) {
     monsterForm.appendChild(wrap);
   }
 
+  // loot textarea 보장
   let lootTA = document.getElementById('m_loot');
   if (!lootTA) {
     lootTA = document.createElement('textarea');
@@ -216,7 +219,7 @@ if (monsterForm) {
     monsterForm.appendChild(wrap);
   }
 
-  // 2) 드롭다운 + 입력 + 추가버튼 UI 만들기
+  // 드롭다운 UI
   const pickerCard = document.createElement('div');
   pickerCard.className = 'card';
   pickerCard.innerHTML = `
@@ -285,7 +288,7 @@ if (monsterForm) {
   `;
   monsterForm.appendChild(pickerCard);
 
-  // 3) 옵션 채우기
+  // 옵션 채우기
   const itemSel = pickerCard.querySelector('#itemSelect');
   const lootSel = pickerCard.querySelector('#lootSelect');
   ITEM_CATALOG.forEach(it=>{
@@ -297,14 +300,13 @@ if (monsterForm) {
     lootSel.appendChild(o2);
   });
 
-  // 4) 추가 버튼 로직
+  // 추가 버튼
   pickerCard.querySelector('#btnAddItem').addEventListener('click', ()=>{
     const id = itemSel.value;
     const def = ITEM_CATALOG.find(x=>x.id===id);
     const qty = Math.max(1, Number(pickerCard.querySelector('#itemQty').value)||1);
     const rarity = String(pickerCard.querySelector('#itemRarity').value||def?.rarity||'common').toLowerCase();
     const name = def?.name || id;
-    // 라인 포맷으로 누적
     const line = `${id}|${name}|${qty}|${rarity}`;
     itemsTA.value = (itemsTA.value.trim() ? itemsTA.value.trim()+'\n' : '') + line;
   });
@@ -325,6 +327,18 @@ if (monsterForm) {
 
 /* ====== 몬스터 등록/수정 ====== */
 if (monsterForm) {
+  // 몬스터 ID 입력 시 이미지 URL 자동 변경 (예: 20 → .../20.png)
+  const midInput = document.getElementById('mid');
+  const monImg   = document.getElementById('imageURL');
+  if (midInput && monImg) {
+    const applyImg = ()=> {
+      const id = String(midInput.value||'').trim();
+      if (!id) return;
+      monImg.value = `https://puppi.netlify.app/images/mon/${encodeURIComponent(id)}.png`;
+    };
+    ['input','change','blur','keyup'].forEach(ev => midInput.addEventListener(ev, applyImg));
+  }
+
   monsterForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!checkPass("m_pass")) { toast("관리 비밀번호가 올바르지 않습니다."); return; }
@@ -352,7 +366,7 @@ if (monsterForm) {
     const tile = tileFromLatLon(lat, lon);
 
     const payload = {
-      lat, lon, tile,          // ← tile 추가
+      lat, lon, tile,
       imageURL,
       power,
       mid,
@@ -368,11 +382,9 @@ if (monsterForm) {
     const docId = valStr("m_docId", "");
     try {
       if (docId) {
-        // 위치가 바뀌면 tile도 갱신되도록 merge
         await setDoc(doc(db, "monsters", docId), payload, { merge: true });
         toast(`몬스터 업데이트 완료 (doc: ${docId})`);
       } else {
-        // ✅ 새 문서는 addDoc으로 생성 (runTransaction 제거)
         const ref = await addDoc(collection(db, "monsters"), {
           ...payload,
           createdAt: serverTimestamp()
@@ -417,6 +429,95 @@ if (towerForm) {
     } catch (err) {
       console.warn(err);
       toast("망루 등록/수정 중 오류가 발생했습니다.");
+    }
+  });
+}
+
+/* ====== 보물박스 등록/수정 ======
+ * HTML 요구 id:
+ *  - tr_lat, tr_lon, tr_img(readonly), tr_power(readonly), tr_score, tr_items, tr_docId, tr_pass
+ *  - tr_add_item (선택: 아이템 라인 누적 버튼)
+ */
+function parseTreasureItems(text){
+  const t = (text||'').trim();
+  if (!t) return [];
+  const lines = t.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const out = [];
+  for (const ln of lines){
+    const raw = ln.includes('|') ? ln.split('|') : ln.split(',');
+    const [id, name, qty] = raw.map(s=>(s||'').trim());
+    if (!id) continue;
+    out.push({ id, name: name || id, qty: Math.max(1, Number(qty||1)) });
+  }
+  return out;
+}
+
+// 아이템 추가 버튼(있을 때만 동작)
+(function bindTreasureAddItem(){
+  const addBtn = document.getElementById('tr_add_item');
+  if (!addBtn) return;
+  addBtn.addEventListener('click', ()=>{
+    const id  = (document.getElementById('tr_item_id')?.value || '').trim();
+    const qty = Math.max(1, Number(document.getElementById('tr_item_qty')?.value || 1));
+    if (!id){ alert('아이템 ID를 입력하세요.'); return; }
+    const name = id;
+    const ta = document.getElementById('tr_items');
+    const line = `${id}|${name}|${qty}`;
+    ta.value = (ta.value.trim() ? ta.value.trim()+'\n' : '') + line;
+    const idEl = document.getElementById('tr_item_id');
+    const qtyEl = document.getElementById('tr_item_qty');
+    if (idEl) idEl.value = '';
+    if (qtyEl) qtyEl.value = '1';
+  });
+})();
+
+const treasureForm = document.getElementById('treasureForm');
+if (treasureForm){
+  treasureForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    try{
+      if (!checkPass('tr_pass')) { toast('관리 비밀번호가 올바르지 않습니다.'); return; }
+
+      const lat = valNum('tr_lat');
+      const lon = valNum('tr_lon');
+      if (lat == null || lon == null){ toast('지도를 클릭해 좌표를 선택하세요.'); return; }
+
+      const score = valNum('tr_score', 0, 0);
+      const items = parseTreasureItems(valStr('tr_items',''));
+
+    const payload = {
+  type: 'treasure',        // ← 중요: 게임에서 구분할 수 있게
+  alive: true,             // ← 게임이 alive==true만 볼 수 있음
+  dead: false,             // ← 위와 짝
+  lat, lon, tile: tileFromLatLon(lat, lon),
+  imageURL: 'https://puppi.netlify.app/images/event/tresure.png',
+  power: 800,
+  attack: 0,
+  rewards: { score, items },
+  animation: {
+    url: 'https://puppi.netlify.app/images/event/tresure800x200.png',
+    frameW: 200, frameH: 200, frames: 4, once: true
+  },
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp()
+};
+
+   // (기존) treasures 컬렉션 → (변경) monsters 컬렉션 + type: 'treasure'
+const docId = valStr('tr_docId','');
+if (docId){
+  await setDoc(doc(db, 'monsters', docId), payload, { merge:true });
+  toast(`보물박스 업데이트 완료 (doc: ${docId})`);
+}else{
+  const newId = `TR-${payload.tile}-${Date.now().toString(36)}`;
+  await setDoc(doc(db, 'monsters', newId), payload, { merge:true });
+  setInputValue('tr_docId', newId);
+  toast(`보물박스 등록 완료 (doc: ${newId})`);
+}
+      const out = document.getElementById('tr_out'); if (out) out.textContent = JSON.stringify(payload, null, 2);
+    }catch(err){
+      console.warn(err);
+      toast('보물박스 등록/수정 중 오류가 발생했습니다.');
+      const out = document.getElementById('tr_out'); if (out) out.textContent = String(err);
     }
   });
 }

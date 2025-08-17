@@ -61,7 +61,7 @@ export function createAttachMonsterBattle({
       power: Number.isFinite(rawData.power) ? Number(rawData.power) : 20,
       hp: Number.isFinite(rawData.hp) ? Number(rawData.hp) : undefined,
       cooldownMs: Number.isFinite(rawData.cooldownMs) ? Number(rawData.cooldownMs) : 2000,
-      approachMaxM:     Number.isFinite(rawData.approachMaxM)     ? Number(rawData.approachMaxM)     : 25,
+      approachMaxM:     Number.isFinite(rawData.approachMaxM)     ? Number(rawData.approachMaxM)     : 10,  //유효 사거리
       meleeRange:       Number.isFinite(rawData.meleeRange)       ? Number(rawData.meleeRange)       : 1.6,
       approachSpeedMps: Number.isFinite(rawData.approachSpeedMps) ? Number(rawData.approachSpeedMps) : 6.2,
       critChance: Number.isFinite(rawData.critChance) ? Number(rawData.critChance) : 0.2,

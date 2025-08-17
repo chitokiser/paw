@@ -1,5 +1,6 @@
 // /js/utils.js — 공용 유틸 (중복 선언/전역 의존 제거)
 
+
 // ===== 기본 상수 =====
 export const DEFAULT_ICON_PX  = 96;
 export const DEFAULT_IMG      = "https://puppi.netlify.app/images/mon/1.png";   // 몬스터 기본
