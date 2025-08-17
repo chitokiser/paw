@@ -281,6 +281,145 @@ mystic_orb|Mystic Orb|rare|0.1|1|1
     </form>
   </div>
 
+<!-- 상점 생성/수정 -->
+<div class="card">
+  <h3>상점 생성/수정</h3>
+  <form id="shopForm" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="shop_lat">위도(lat)</label>
+        <input id="shop_lat" type="number" step="any" required />
+      </div>
+      <div>
+        <label for="shop_lon">경도(lon)</label>
+        <input id="shop_lon" type="number" step="any" required />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="shop_name">상점명</label>
+        <input id="shop_name" value="포션&무기 상점" required />
+      </div>
+      <div>
+        <label for="shop_active">활성</label>
+        <select id="shop_active"><option value="true" selected>활성</option><option value="false">비활성</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="shop_img">상점 이미지 URL</label>
+        <input id="shop_img" type="url" value="https://puppi.netlify.app/images/event/shop.png" />
+      </div>
+      <div>
+        <label for="shop_size">아이콘 크기(px)</label>
+        <input id="shop_size" type="number" value="48" min="24" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="shop_docId">수정용 문서ID(선택)</label>
+        <input id="shop_docId" placeholder="기존 상점 문서ID" />
+      </div>
+      <div>
+        <label for="shop_pass">관리 비밀번호</label>
+        <input id="shop_pass" type="password" required />
+      </div>
+    </div>
+    <button type="submit">상점 저장</button>
+    <div class="hint">저장 후 아래 ‘상점 판매 아이템’ 섹션에서 품목을 추가하세요.</div>
+    <pre id="shop_out" class="muted" style="margin-top:8px">-</pre>
+  </form>
+</div>
+
+<!-- 상점 판매 아이템 추가/수정 -->
+<div class="card">
+  <h3>상점 판매 아이템 추가/수정</h3>
+  <form id="shopItemForm" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="si_shopId">상점 문서ID</label>
+        <input id="si_shopId" placeholder="예: shops의 docId" required />
+        <div class="hint">위 ‘상점 저장’ 후 생성된 ID를 넣으세요.</div>
+      </div>
+      <div>
+        <label for="si_itemDocId">아이템 문서ID(선택)</label>
+        <input id="si_itemDocId" placeholder="기존 아이템 문서ID (없으면 자동)" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="si_itemId">아이템 ID</label>
+        <input id="si_itemId" value="red_potion" required />
+      </div>
+      <div>
+        <label for="si_name">이름</label>
+        <input id="si_name" value="빨간약" required />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="si_icon">아이콘 URL</label>
+        <input id="si_icon" type="url" value="https://puppi.netlify.app/images/items/red_potion.png" />
+      </div>
+      <div>
+        <label for="si_stack">스택 가능</label>
+        <select id="si_stack"><option value="true" selected>가능</option><option value="false">불가</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="si_buy">구매가(GP)</label>
+        <input id="si_buy" type="number" value="50" min="0" />
+      </div>
+      <div>
+        <label for="si_sell">판매가(GP)</label>
+        <input id="si_sell" type="number" value="25" min="0" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="si_stock">재고(비우면 무한)</label>
+        <input id="si_stock" type="number" min="0" placeholder="예: 100" />
+      </div>
+      <div>
+        <label for="si_active">활성</label>
+        <select id="si_active"><option value="true" selected>활성</option><option value="false">비활성</option></select>
+      </div>
+    </div>
+
+    <!-- 무기 속성(선택) -->
+    <div class="subtle">
+      <strong>무기 속성(선택)</strong>
+      <div class="row">
+        <div>
+          <label for="si_baseAtk">기본공격력</label>
+          <input id="si_baseAtk" type="number" value="0" min="0" />
+        </div>
+        <div>
+          <label for="si_extraInit">추가공격력 초기</label>
+          <input id="si_extraInit" type="number" value="0" min="0" />
+        </div>
+      </div>
+      <div class="hint">예) 장검: baseAtk=10 → 크리확률=10%</div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="si_pass">관리 비밀번호</label>
+        <input id="si_pass" type="password" required />
+      </div>
+      <div></div>
+    </div>
+
+    <button type="submit">상점 아이템 저장</button>
+    <div class="row">
+      <button type="button" id="seed_shop_items">기본 2개(빨간약/장검) 넣기</button>
+    </div>
+    <pre id="si_out" class="muted" style="margin-top:8px">-</pre>
+  </form>
+</div>
+
+  
   <!-- 앱 스크립트 -->
   <script type="module" src="./js/admin.js"></script>
 </body>

@@ -65,6 +65,9 @@ function setLatLon(lat, lon) {
   // 보물박스 좌표
   setInputValue("tr_lat", lat);
   setInputValue("tr_lon", lon);
+  //상점좌표
+  setInputValue("shop_lat", lat);
+  setInputValue("shop_lon", lon);
 }
 
 function setInputValue(id, v) {
@@ -528,6 +531,133 @@ if (treasureForm){
       console.warn('[admin] treasure submit error', err);
       toast('보물박스 등록/수정 중 오류가 발생했습니다.');
       const out = document.getElementById('tr_out'); if (out) out.textContent = String(err);
+    }
+  });
+}
+
+/* ===== 상점 저장 (shops) ===== */
+const shopForm = document.getElementById('shopForm');
+if (shopForm){
+  shopForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    try{
+      if (!checkPass('shop_pass')) { toast('관리 비밀번호가 올바르지 않습니다.'); return; }
+      const lat = valNum('shop_lat'); const lon = valNum('shop_lon');
+      if (lat==null || lon==null){ toast('좌표를 지정하세요.'); return; }
+      const name   = valStr('shop_name','상점');
+      const imageURL = valStr('shop_img','https://puppi.netlify.app/images/event/shop.png');
+      const size   = valNum('shop_size', 48, 24);
+      const active = (valStr('shop_active','true')==='true');
+      const tile   = tileFromLatLon(lat, lon);
+      const docId  = valStr('shop_docId','').trim();
+
+      const payload = {
+        type:'shop',
+        name, imageURL, size, active,
+        lat, lon, tile,
+        updatedAt: serverTimestamp()
+      };
+
+      if (docId){
+        await setDoc(doc(db,'shops',docId), payload, { merge:true });
+        toast(`상점 업데이트 완료 (doc: ${docId})`);
+      }else{
+        const newId = `SHOP-${tile}-${Date.now().toString(36)}`;
+        await setDoc(doc(db,'shops', newId), { ...payload, createdAt: serverTimestamp() }, { merge:true });
+        setInputValue('shop_docId', newId);
+        toast(`상점 생성 완료 (doc: ${newId})`);
+      }
+
+      const out = document.getElementById('shop_out');
+      if (out) out.textContent = JSON.stringify(payload, null, 2);
+    }catch(err){
+      console.warn('[admin] shop save error', err);
+      toast('상점 저장 중 오류');
+    }
+  });
+}
+
+/* ===== 상점 아이템 저장 (shops/{shopId}/items) ===== */
+const shopItemForm = document.getElementById('shopItemForm');
+if (shopItemForm){
+  shopItemForm.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    try{
+      if (!checkPass('si_pass')) { toast('관리 비밀번호가 올바르지 않습니다.'); return; }
+      const shopId = valStr('si_shopId','').trim();
+      if (!shopId){ toast('상점 문서ID를 입력하세요.'); return; }
+
+      const itemId   = valStr('si_itemId','').trim().toLowerCase();
+      const name     = valStr('si_name', itemId || 'item');
+      const iconURL  = valStr('si_icon','');
+      const stackable= (valStr('si_stack','true')==='true');
+      const buyPriceGP  = valNum('si_buy', 0, 0);  // 플레이어가 지불(구매가)
+      const sellPriceGP = valNum('si_sell', 0, 0); // 상점이 지불(판매가)
+      const stockRaw = valStr('si_stock','').trim();
+      const stock    = stockRaw ? Math.max(0, Number(stockRaw)) : null; // null=무한
+      const active   = (valStr('si_active','true')==='true');
+      const baseAtk  = valNum('si_baseAtk', 0, 0);
+      const extraInit= valNum('si_extraInit', 0, 0);
+
+      const itemDocId = valStr('si_itemDocId','').trim() || itemId || `item-${Date.now().toString(36)}`;
+
+      const payload = {
+        type:'shopItem',
+        itemId, name, iconURL: iconURL || null,
+        stackable, active,
+        buyPriceGP, sellPriceGP,
+        stock: stock,            // null=무한
+        weapon: (baseAtk>0 || extraInit>0) ? { baseAtk, extraInit } : null,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, `shops/${shopId}/items`, itemDocId), {
+        ...payload,
+        createdAt: serverTimestamp()
+      }, { merge:true });
+
+      toast(`상점 아이템 저장 완료 (shop:${shopId} / item:${itemDocId})`);
+      const out = document.getElementById('si_out');
+      if (out) out.textContent = JSON.stringify({shopId, itemDocId, ...payload}, null, 2);
+    }catch(err){
+      console.warn('[admin] shop item save error', err);
+      toast('상점 아이템 저장 중 오류');
+    }
+  });
+
+  // 기본 두 개(빨간약, 장검) 시드 버튼
+  document.getElementById('seed_shop_items')?.addEventListener('click', async ()=>{
+    try{
+      if (!checkPass('si_pass')) { toast('관리 비밀번호가 올바르지 않습니다.'); return; }
+      const shopId = valStr('si_shopId','').trim(); if (!shopId){ toast('상점 문서ID 먼저 입력'); return; }
+      const batch = [
+        {
+          id: 'red_potion',
+          name: '빨간약',
+          iconURL: 'https://puppi.netlify.app/images/items/red_potion.png',
+          buyPriceGP: 50, sellPriceGP: 25, stackable:true, stock:null, active:true
+        },
+        {
+          id: 'long_sword',
+          name: '장검',
+          iconURL: 'https://puppi.netlify.app/images/items/long_sword.png',
+          buyPriceGP: 500, sellPriceGP: 250, stackable:false, stock:10, active:true,
+          weapon:{ baseAtk:10, extraInit:0 }
+        }
+      ];
+      for (const it of batch){
+        await setDoc(doc(db, `shops/${shopId}/items`, it.id), {
+          type:'shopItem', itemId: it.id, name: it.name,
+          iconURL: it.iconURL, stackable: it.stackable, active: it.active,
+          buyPriceGP: it.buyPriceGP, sellPriceGP: it.sellPriceGP,
+          stock: it.stock, weapon: it.weapon || null,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+        }, { merge:true });
+      }
+      toast('기본 2개(빨간약/장검) 등록 완료');
+    }catch(err){
+      console.warn('[admin] seed items error', err);
+      toast('시드 등록 실패');
     }
   });
 }
