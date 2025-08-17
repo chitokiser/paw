@@ -219,9 +219,10 @@ function _watchTreasuresForViewport() {
 const _shopMarkers = new Map(); // id -> marker
 let _unsubShops = null, _shopTilesKey = '';
 const SHOP_MIN_ZOOM = 16;
+const SHOP_TRADE_RANGE_M = 20; // ← 여기 숫자만 바꾸면 전체 상점 반경 변경
 
-function _shopIcon(size=48, imageURL='https://puppi.netlify.app/images/event/shop.png'){
-  const s = Math.max(24, Number(size)||48);
+function _shopIcon(size=68, imageURL='https://puppi.netlify.app/images/event/shop.png'){
+  const s = Math.max(24, Number(size)||68);
   const html = `<div class="mon-wrap" style="position:relative;width:${s}px;height:${s}px;">
     <img src="${imageURL}" alt="shop" style="width:100%;height:100%;object-fit:contain;pointer-events:none"/>
   </div>`;
