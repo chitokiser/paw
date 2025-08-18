@@ -11,10 +11,11 @@ export class MonsterGuard {
     fireCooldownMs = 1800,
     getUserLatLng = () => [0,0],
     onUserHit = () => {},
-    renderMarkers = false,        // 여기서는 미사용. 항상 false 동작
+    renderMarkers = false,        // 여기서는 미사용. 항상 false
     useTiles = true,
     maxDocs = 80,
-    pollMs = 1200
+    pollMs = 1200,
+    planBMaxDocs = 120           // 타일없는 Plan-B에서 최대 로드 수
   }){
     this.map = map;
     this.db = db;
@@ -26,11 +27,11 @@ export class MonsterGuard {
 
     this.useTiles = !!useTiles;
     this.maxDocs  = Math.max(20, maxDocs|0);
+    this.planBMaxDocs = Math.max(this.maxDocs, planBMaxDocs|0);
     this.pollMs   = Math.max(600, pollMs|0);
 
     this._started = false;
     this._ready   = false;
-    this._resume  = false;
 
     // 로컬 쿨다운(발사 쿨) 맵: id -> nextFireAt(ms)
     this._cool = new Map();
@@ -43,11 +44,22 @@ export class MonsterGuard {
     this._rt = null;
 
     this._pollTid = null;
+
+    // 전역 디버그(선택)
+    if (!window.__monGuard) {
+      window.__monGuard = {
+        start: ()=>this.start(),
+        stop:  ()=>this.stop(),
+        tick:  ()=>this.tickOnce(),
+        kill:  (id,ms)=>this.markKilled(id,ms),
+        cool:  (id,ms)=>this.stopAttacksFrom(id,ms),
+      };
+    }
   }
 
   /* ========== 외부 API ========== */
   setUserReady(v){ this._ready = !!v; }
-  resumeAudio(){ this._resume = true; } // 호환용 (사용 안함)
+  resumeAudio(){ /* 호환용 noop */ }
 
   /** RT 레지스트리 주입 (선택) */
   setSharedRegistry(rtInstance){ this._rt = rtInstance; }
@@ -71,6 +83,9 @@ export class MonsterGuard {
     this._killed.clear();
     this._rt = null;
   }
+
+  /** 한 번만 강제 실행(디버그) */
+  async tickOnce(){ return this._tick(); }
 
   /** 로컬 처치 가드: ms 동안 자동공격 완전 무시 */
   markKilled(id, ms = 60_000){
@@ -109,6 +124,14 @@ export class MonsterGuard {
     return tiles.slice(0, 10);
   }
 
+  _num(v){ const n = Number(v); return Number.isFinite(n) ? n : NaN; }
+  _coerceLatLon(d){
+    const lat = this._num(d.lat);
+    let  lon = this._num(d.lon);
+    if (!Number.isFinite(lon)) lon = this._num(d.lng);
+    return { lat, lon };
+  }
+
   /** 적대 대상 여부 판단 (보물/비전투는 false) */
   _isHostile(d){
     // 명시 플래그 우선
@@ -127,70 +150,110 @@ export class MonsterGuard {
 
   /** 공통 스킵 판정: DB/RT 공통 */
   _shouldSkip(id, d, now){
-    // 필수 좌표
-    if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) return true;
+    // 좌표 필수
+    const {lat, lon} = this._coerceLatLon(d);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return true;
 
-    // 비전투 대상 즉시 스킵
+    // 비전투 대상
     if (!this._isHostile(d)) return true;
 
-    // 로컬 처치 가드: 승리 직후/쿨다운 동안 완전 무시
+    // 로컬 처치 가드
     if (this.isKilled(id)) return true;
 
     // 서버 쿨다운: cooldownUntil 존중
     const cdUntil = Number(d.cooldownUntil || 0);
     if (cdUntil > now) return true;
 
-    // 레거시 alive/dead/respawnAt 호환(보여주는 로직과 동일하게)
+    // legacy alive/dead/respawnAt
     const legacyDead = (d.dead === true) || (d.alive === false);
     const legacyResp = Number(d.respawnAt || 0);
-    const hiddenByLegacy = legacyDead && legacyResp > now;
-    if (hiddenByLegacy) return true;
+    if (legacyDead && legacyResp > now) return true;
 
     return false;
   }
 
-  // ── 핵심 루프: 뷰포트 내 몬스터 가져와 사거리/쿨다운 판정
+  _bboxFromMap(marginM=0){
+    const b = this.map.getBounds();
+    if (!b) return null;
+    const sw=b.getSouthWest(), ne=b.getNorthEast();
+    if (!marginM) return { minLat:sw.lat, maxLat:ne.lat, minLon:sw.lng, maxLon:ne.lng };
+    // 간단한 확장: 위도/경도 각각 marginM만큼(1도≈111km)
+    const d = marginM / 111000;
+    return { minLat:sw.lat-d, maxLat:ne.lat+d, minLon:sw.lng-d, maxLon:ne.lng+d };
+  }
+
+  _inBox(lat, lon, box){
+    return lat>=box.minLat && lat<=box.maxLat && lon>=box.minLon && lon<=box.maxLon;
+  }
+
+  async _fetchCandidatesByTiles(now){
+    const tiles = this._tilesFromBounds(this.map.getBounds());
+    if (!tiles.length) return [];
+    const qRef = query(
+      collection(this.db,'monsters'),
+      where('tile','in', tiles),
+      limit(this.maxDocs)
+    );
+    const out = [];
+    const snap = await getDocs(qRef);
+    snap.forEach(ds=>{
+      const d = ds.data() || {};
+      const id = ds.id;
+      if (this._shouldSkip(id, d, now)) return;
+      out.push({ id, data: d });
+    });
+    return out;
+  }
+
+  async _fetchCandidatesPlanB(now){
+    // 타일 필드 없거나 쿼리 실패/빈 결과일 때: 일부만 로드하여 클라이언트 BBOX 필터
+    const box = this._bboxFromMap(150); // 150m 여유
+    if (!box) return [];
+    const out = [];
+    const snap = await getDocs(query(collection(this.db,'monsters'), limit(this.planBMaxDocs)));
+    snap.forEach(ds=>{
+      const d0 = ds.data() || {};
+      const id = ds.id;
+      if (this._shouldSkip(id, d0, now)) return;
+      const {lat, lon} = this._coerceLatLon(d0);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      if (!this._inBox(lat, lon, box)) return;
+      out.push({ id, data: { ...d0, lat, lon } });
+    });
+    return out;
+  }
+
+  // ── 핵심 루프: 후보 가져와 사거리/쿨다운 판정
   async _tick(){
     if (!this._ready || !this.map) return;
 
-    // 1) 후보 몬스터 목록 가져오기
-    let mons = [];
     const now = Date.now();
-
     // 로컬 처치 가드 청소
     for (const [id, until] of this._killed) {
       if (until <= now) this._killed.delete(id);
     }
 
+    // 1) 후보 몬스터 목록
+    let mons = [];
     if (this._rt?.getVisibleMonsters) {
-      // RT 경로: 화면에 보이는 마커 집합을 그대로 사용 (DB 추가 읽기 없음)
+      // RT 경로: 화면에 보이는 마커 집합 (DB 추가 읽기 없음)
       const arr = this._rt.getVisibleMonsters();
-      if (Array.isArray(arr)) {
-        mons = arr.map(x => ({ id: x.id, data: x.data || x }));
-      } else if (arr && typeof arr === 'object') {
-        mons = Object.entries(arr).map(([id, data]) => ({ id, data }));
-      }
-    } else {
-      // (백업) 타일 기반 Firestore 읽기 — RT가 없을 때만
-      if (!this.db || !this.useTiles) return;
-      const tiles = this._tilesFromBounds(this.map.getBounds());
-      if (!tiles.length) return;
+      if (Array.isArray(arr)) mons = arr.map(x => ({ id: x.id, data: x.data || x }));
+      else if (arr && typeof arr === 'object') mons = Object.entries(arr).map(([id, data]) => ({ id, data }));
+    } else if (this.db) {
       try {
-        const qRef = query(
-          collection(this.db,'monsters'),
-          where('tile','in', tiles),
-          limit(this.maxDocs)
-        );
-        const snap = await getDocs(qRef);
-        snap.forEach(ds=>{
-          const d = ds.data() || {};
-          const id = ds.id;
-          if (this._shouldSkip(id, d, now)) return;
-          mons.push({ id, data: d });
-        });
+        if (this.useTiles) {
+          mons = await this._fetchCandidatesByTiles(now);
+          if (!mons.length) {
+            // 타일 쿼리 결과가 없으면 Plan-B 시도
+            mons = await this._fetchCandidatesPlanB(now);
+          }
+        } else {
+          mons = await this._fetchCandidatesPlanB(now);
+        }
       } catch (e) {
-        console.warn('[MonsterGuard] Firestore fallback query failed', e);
-        return;
+        console.warn('[MonsterGuard] query error, trying plan-B', e);
+        try { mons = await this._fetchCandidatesPlanB(now); } catch{}
       }
     }
 
@@ -205,14 +268,15 @@ export class MonsterGuard {
     for (const m of mons){
       const id = String(m.id);
       const d  = m.data || {};
+      const {lat, lon} = this._coerceLatLon(d);
 
       if (this._shouldSkip(id, d, now)) continue;
 
       const range  = Number(d.range || this.rangeDefault);
 
-      // ⚠️ damage를 강제로 1 이상으로 만들지 말고 실제 값/기본값을 그대로 사용
+      // 실제 값/기본값 사용. 0 이하면 공격하지 않음
       const baseDamage = Number.isFinite(Number(d.damage)) ? Number(d.damage) : this.damageDefault;
-      if (baseDamage <= 0) continue; // 안전장치: 0 이하면 공격하지 않음
+      if (baseDamage <= 0) continue;
 
       const cdMs   = Math.max(200, Number(d.cooldownMs || this.fireCooldownMs));
 
@@ -220,13 +284,13 @@ export class MonsterGuard {
       if (now < nextAt) continue; // 로컬 발사 쿨다운 중
 
       try{
-        const mLL = L.latLng(d.lat, d.lon);
+        const mLL = L.latLng(lat, lon);
         const dist = this.map.distance(uLL, mLL);
         if (dist <= range){
           // 타격!
           this._cool.set(id, now + cdMs);
           try {
-            this.onUserHit(baseDamage, { id, lat: d.lat, lon: d.lon, range, damage: baseDamage, cooldownMs: cdMs });
+            this.onUserHit(baseDamage, { id, lat, lon, range, damage: baseDamage, cooldownMs: cdMs, dist });
           } catch (e) {
             // onUserHit 에러가 나더라도 쿨다운은 유지
             console.warn('[MonsterGuard] onUserHit error', e);

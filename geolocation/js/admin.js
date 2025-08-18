@@ -28,7 +28,7 @@ export { db };
 const map = L.map("map", { maxZoom: 22 }).setView([21.0285, 105.8542], 16);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
 
-// Geocoder
+// Geocoder (leaflet-control-geocoder 플러그인 필요)
 const geocoder = L.Control.geocoder({ defaultMarkGeocode: false })
   .on("markgeocode", function(e) {
     const center = e.geocode.center;
@@ -65,7 +65,7 @@ function setLatLon(lat, lon) {
   // 보물박스 좌표
   setInputValue("tr_lat", lat);
   setInputValue("tr_lon", lon);
-  //상점좌표
+  // 상점 좌표
   setInputValue("shop_lat", lat);
   setInputValue("shop_lon", lon);
 }
@@ -434,11 +434,11 @@ if (towerForm) {
   });
 }
 
-/* ====== 보물박스 등록/수정 (treasures 컬렉션) ======
+/* ====== 보물박스 등록/수정 (monsters 컬렉션, type:'treasure') ======
  * HTML 요구 id:
- *  - tr_lat, tr_lon, tr_img, tr_power, tr_score, tr_items, tr_docId, tr_pass
- *  - (선택) tr_add_item, tr_item_id, tr_item_qty
- *  - (선택) tr_animId  ← 숫자 애니메이션 ID
+ *  - tr_lat, tr_lon, tr_img, tr_power, tr_items, tr_loot, tr_cooldown, tr_docId, tr_pass
+ *  - (선택) tr_add_item, tr_item_id, tr_item_qty, tr_animId
+ *  Note: 보물 박스도 몬스터와 동일 스키마(items|lootTable|cooldownMs) 사용
  */
 function parseTreasureItems(text){
   const t = (text||'').trim();
@@ -475,9 +475,9 @@ function parseTreasureItems(text){
 
 const treasureForm = document.getElementById('treasureForm');
 if (treasureForm){
-  // 수정 가능 보장
-  const imgEl = document.getElementById('tr_img');   if (imgEl) imgEl.readOnly = false;
-  const powEl = document.getElementById('tr_power'); if (powEl) powEl.readOnly = false;
+  // 입력 필드 수정 가능 보장
+  document.getElementById('tr_img')?.removeAttribute('readonly');
+  document.getElementById('tr_power')?.removeAttribute('readonly');
 
   treasureForm.addEventListener('submit', async (e)=>{
     e.preventDefault();
@@ -488,40 +488,39 @@ if (treasureForm){
       const lon = valNum('tr_lon');
       if (lat == null || lon == null){ toast('지도를 클릭해 좌표를 선택하세요.'); return; }
 
-      const imageURL = valStr('tr_img', 'https://puppi.netlify.app/images/event/tresure.png');
-      const score    = valNum('tr_score', 0, 0);
-      const items    = parseTreasureItems(valStr('tr_items',''));
-      const power    = valNum('tr_power', 100, 1);    // ← 파워 저장
-      const animId   = valNum('tr_animId', null);     // ← 애니 ID(선택)
+      const imageURL   = valStr('tr_img', 'https://puppi.netlify.app/images/event/treasure.png');
+      let items        = parseTreasureItems(valStr('tr_items',''));
+           items  = ensureFirstIsRedPotion(items); // 🔴 보물도 빨간약 보장
+      const lootTable  = parseLootTable(valStr('tr_loot',''));
+      const power      = valNum('tr_power', 20, 1);
+      const cooldownMs = valNum('tr_cooldown', 2000, 0);
+      const animId     = valNum('tr_animId', null);
 
       const base = {
         type: 'treasure',
-        alive: true,
-        dead: false,
         lat, lon, tile: tileFromLatLon(lat, lon),
         imageURL,
         size: 44,
-        rewards: { score, items },
         power,
+        cooldownMs,
+        items,
+        ...(lootTable && lootTable.length ? { lootTable } : {}),
         ...(animId ? { animId } : {}),
         updatedAt: serverTimestamp()
       };
 
       const docId = valStr('tr_docId','').trim();
       if (docId){
-        // 수정: hitsLeft는 그대로 두고 메타만 갱신
-        await setDoc(doc(db, 'treasures', docId), base, { merge:true });
-        toast(`보물박스 업데이트 완료 (doc: ${docId})`);
+        await setDoc(doc(db, 'monsters', docId), base, { merge:true });
+        toast(`보물박스 업데이트 완료 (monsters/${docId})`);
       }else{
-        // 신규: hitsLeft = power 로 초기화
         const newId = `TR-${base.tile}-${Date.now().toString(36)}`;
-        await setDoc(doc(db, 'treasures', newId), {
+        await setDoc(doc(db, 'monsters', newId), {
           ...base,
-          hitsLeft: power,
           createdAt: serverTimestamp()
         }, { merge:true });
         setInputValue('tr_docId', newId);
-        toast(`보물박스 등록 완료 (doc: ${newId})`);
+        toast(`보물박스 등록 완료 (monsters/${newId})`);
       }
 
       const out = document.getElementById('tr_out');
@@ -591,8 +590,8 @@ if (shopItemForm){
       const name     = valStr('si_name', itemId || 'item');
       const iconURL  = valStr('si_icon','');
       const stackable= (valStr('si_stack','true')==='true');
-      const buyPriceGP  = valNum('si_buy', 0, 0);  // 플레이어가 지불(구매가)
-      const sellPriceGP = valNum('si_sell', 0, 0); // 상점이 지불(판매가)
+      const buyPriceGP  = valNum('si_buy', 0, 0);
+      const sellPriceGP = valNum('si_sell', 0, 0);
       const stockRaw = valStr('si_stock','').trim();
       const stock    = stockRaw ? Math.max(0, Number(stockRaw)) : null; // null=무한
       const active   = (valStr('si_active','true')==='true');
