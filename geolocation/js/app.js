@@ -12,7 +12,7 @@ import {
 import { TowerGuard } from "./tower.js";
 import { Score } from "./score.js";
 import { MonsterGuard } from "./monster.js";
-import { ensureImpactCSS, spawnImpactAt, shakeMap, attachHPBar } from "./fx.js";
+import { ensureImpactCSS, spawnImpactAt, shakeMap, attachHPBar,ensureMonsterAniCSS, playMonsterHitSprite } from "./fx.js";
 import { swingSwordAt, attackOnceToward } from './playerFx.js';
 import DogCompanion from './dogCompanion.js';
 
@@ -229,6 +229,12 @@ async function main(){
     onUserHit: (damage, mon) => {
       flashPlayer();
       Score.deductGP(damage, mon.lat, mon.lon);
+      // 1회 재생
+    playMonsterHitSprite(map, pos, mid, {
+      durationMs: 420,  // 필요시 조절
+      scale: 1,         // 필요시 0.8~1.3 등
+      basePath: '/images/ani/' // \images\ani\ → 웹경로는 /images/ani/
+    });
       try {
         const { lat: uLat, lng: uLng } = playerMarker.getLatLng();
         spawnImpactAt(map, uLat, uLng);

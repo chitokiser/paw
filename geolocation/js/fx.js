@@ -390,3 +390,62 @@ export async function attachSpriteToMarker(marker, anim, opts = {}){
   }
   return { stop, element: el };
 }
+
+// fx.js (하단에 추가)
+// 4프레임 스프라이트(가로 4컷) 1회 재생용
+
+let _aniCSSInjected = false;
+export function ensureMonsterAniCSS(){
+  if (_aniCSSInjected) return;
+  _aniCSSInjected = true;
+  const css = `
+  .ani-sheet{
+    position:absolute; left:50%; top:50%;
+    width:200px; height:200px; pointer-events:none;
+    transform: translate(-50%, -50%) scale(var(--ani-scale, 1));
+    background-repeat:no-repeat; background-position:0 0;
+    background-size:800px 200px; /* 200x200 x 4프레임 = 800x200 */
+    animation: ani4 var(--ani-dur, 420ms) steps(4) 1 both;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+  @keyframes ani4 {
+    from { background-position-x:    0px; }
+    to   { background-position-x: -600px; } /* 200px * (4-1) */
+  }
+  .ani-wrap{ position:relative; width:0; height:0; }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
+/**
+ * 플레이어(또는 지정 위치)에 mid 스프라이트 1회 재생
+ * @param {L.Map} map
+ * @param {[number, number]} latlng  [lat, lng]
+ * @param {string|number} mid        예: 12 → /images/ani/12.png
+ * @param {{durationMs?:number, scale?:number, basePath?:string}} [opt]
+ */
+export function playMonsterHitSprite(map, latlng, mid, opt={}){
+  ensureMonsterAniCSS();
+  const { durationMs=420, scale=1, basePath='/images/ani/' } = opt;
+  const url = `${basePath}${mid}.png`; // 윈도우 경로 표기는 웹에선 '/' 사용
+  const html =
+    `<div class="ani-wrap">
+       <div class="ani-sheet" style="--ani-dur:${durationMs}ms;--ani-scale:${scale};background-image:url('${url}')"></div>
+     </div>`;
+  const icon = L.divIcon({
+    className: 'ani-marker',
+    html,
+    iconSize: [0,0],
+    iconAnchor: [0,0]
+  });
+  const mk = L.marker(L.latLng(latlng[0], latlng[1]), { icon, interactive:false });
+  mk.addTo(map);
+
+  // 애니 끝나면 제거
+  setTimeout(() => {
+    try { map.removeLayer(mk); } catch {}
+  }, durationMs + 50);
+}
