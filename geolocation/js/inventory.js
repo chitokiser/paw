@@ -100,11 +100,14 @@ export class Inventory {
       if (!it?.id) continue;
       const id = String(it.id);
       const prev = merged[id] || { name: it.name || id, qty: 0, rarity: it.rarity };
-      merged[id] = {
-        name: prev.name || it.name || id,
-        qty: Number(prev.qty || 0) + Number(it.qty || 1),
-        rarity: prev.rarity || it.rarity
-      };
+        merged[id] = {
+       ...prev,
+       ...it,
+       id, // 보정
+      name: prev.name || it.name || id,
+       qty: Number(prev.qty || 0) + Number(it.qty || 1),
+       rarity: prev.rarity || it.rarity
+     };
     }
     this.items = merged;
 

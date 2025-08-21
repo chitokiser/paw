@@ -224,7 +224,7 @@ export const Score = {
     this.updateEnergyUI();
 
     try { _state.playFail(); } catch {}
-    _state.toast(`-${points} GP (망루)`);
+    _state.toast(`-${points} HP(damage)`);
 
     this._checkAndMaybeDie();
   },

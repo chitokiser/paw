@@ -15,7 +15,8 @@ export class MonsterGuard {
     useTiles = true,
     maxDocs = 80,
     pollMs = 1200,
-    planBMaxDocs = 120           // 타일없는 Plan-B에서 최대 로드 수
+    planBMaxDocs = 120,           // 타일없는 Plan-B에서 최대 로드 수
+    staleMs = 4000                // 후보 최신성 완충(특히 RT 미사용 시)
   }){
     this.map = map;
     this.db = db;
@@ -29,19 +30,23 @@ export class MonsterGuard {
     this.maxDocs  = Math.max(20, maxDocs|0);
     this.planBMaxDocs = Math.max(this.maxDocs, planBMaxDocs|0);
     this.pollMs   = Math.max(600, pollMs|0);
+    this.staleMs  = Math.max(this.pollMs * 2, staleMs|0);
 
     this._started = false;
     this._ready   = false;
 
-    // 로컬 쿨다운(발사 쿨) 맵: id -> nextFireAt(ms)
+    // 로컬 발사 쿨다운: id -> nextFireAt(ms)
     this._cool = new Map();
 
     // 로컬 처치 가드: id -> untilTs(ms)  (승리 시 markKilled로 즉시 무시)
     this._killed = new Map();
 
     // RT(RealTimeMonsters) 공유 레지스트리 (선택)
-    // 기대 인터페이스: rt.getVisibleMonsters() → Array<{id, data}>
+    // 기대 인터페이스: rt.getVisibleMonsters() → Array<{id, data}> 또는 { [id]: data }
     this._rt = null;
+
+    // (DB 경로일 때) 최근 관측 시각
+    this._lastSeenAt = new Map(); // id -> ts(ms)
 
     this._pollTid = null;
 
@@ -64,6 +69,9 @@ export class MonsterGuard {
   /** RT 레지스트리 주입 (선택) */
   setSharedRegistry(rtInstance){ this._rt = rtInstance; }
 
+  /** 외부에서 로컬 처치셋을 참고할 수 있도록 getter 공개 */
+  get killedLocal(){ return this._killed; }
+
   /** 시작/정지/파기 */
   start(){
     if (this._started) return;
@@ -81,18 +89,18 @@ export class MonsterGuard {
     this.stop();
     this._cool.clear();
     this._killed.clear();
+    this._lastSeenAt.clear();
     this._rt = null;
   }
 
   /** 한 번만 강제 실행(디버그) */
   async tickOnce(){ return this._tick(); }
 
-  /** 로컬 처치 가드: ms 동안 자동공격 완전 무시 */
+  /** 로컬 처치 가드: ms 동안 자동공격 완전 무시 (+발사 쿨도 동일 기간) */
   markKilled(id, ms = 60_000){
     const k = String(id);
     const until = Date.now() + Math.max(1000, ms|0);
     this._killed.set(k, until);
-    // 같은 기간 동안 발사 쿨도 밀어두면 중복 타격 더 안전
     this._cool.set(k, until);
   }
   /** 로컬 처치 가드 확인 */
@@ -106,14 +114,8 @@ export class MonsterGuard {
     this._cool.set(String(id), until);
   }
 
-  /* ========== 내부 ========== */
-
-  // ── 현재 뷰의 타일 키 계산 (monstersRT의 타일 전략과 일치)
+  /* ========== 내부 유틸 ========== */
   _tileSizeDeg(){ return 0.01; }
-  _tileOf(lat, lon, g=this._tileSizeDeg()){
-    const fy = Math.floor(lat/g), fx = Math.floor(lon/g);
-    return `${fy}_${fx}`;
-  }
   _tilesFromBounds(bounds, g=this._tileSizeDeg()){
     const sw=bounds.getSouthWest(), ne=bounds.getNorthEast();
     const y0=Math.floor(sw.lat/g), y1=Math.floor(ne.lat/g);
@@ -148,9 +150,8 @@ export class MonsterGuard {
     return true;
   }
 
-  /** 공통 스킵 판정: DB/RT 공통 */
+  /** 공통 스킵 판정: RT/DB 공통 */
   _shouldSkip(id, d, now){
-    // 좌표 필수
     const {lat, lon} = this._coerceLatLon(d);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return true;
 
@@ -163,6 +164,9 @@ export class MonsterGuard {
     // 서버 쿨다운: cooldownUntil 존중
     const cdUntil = Number(d.cooldownUntil || 0);
     if (cdUntil > now) return true;
+
+    // hitsLeft(남은 HP/히트수) 0 이하면 제외
+    if (Number.isFinite(Number(d.hitsLeft)) && Number(d.hitsLeft) <= 0) return true;
 
     // legacy alive/dead/respawnAt
     const legacyDead = (d.dead === true) || (d.alive === false);
@@ -177,7 +181,7 @@ export class MonsterGuard {
     if (!b) return null;
     const sw=b.getSouthWest(), ne=b.getNorthEast();
     if (!marginM) return { minLat:sw.lat, maxLat:ne.lat, minLon:sw.lng, maxLon:ne.lng };
-    // 간단한 확장: 위도/경도 각각 marginM만큼(1도≈111km)
+    // 간단한 확장(1도≈111km)
     const d = marginM / 111000;
     return { minLat:sw.lat-d, maxLat:ne.lat+d, minLon:sw.lng-d, maxLon:ne.lng+d };
   }
@@ -201,6 +205,7 @@ export class MonsterGuard {
       const id = ds.id;
       if (this._shouldSkip(id, d, now)) return;
       out.push({ id, data: d });
+      this._lastSeenAt.set(String(id), now);
     });
     return out;
   }
@@ -219,8 +224,15 @@ export class MonsterGuard {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
       if (!this._inBox(lat, lon, box)) return;
       out.push({ id, data: { ...d0, lat, lon } });
+      this._lastSeenAt.set(String(id), now);
     });
     return out;
+  }
+
+  /** id가 최근 일정 시간 관측되지 않았다면 스킵(특히 DB 경로에서 중요) */
+  _isStale(id, now){
+    const seen = this._lastSeenAt.get(String(id)) || 0;
+    return seen === 0 ? false : (now - seen > this.staleMs);
   }
 
   // ── 핵심 루프: 후보 가져와 사거리/쿨다운 판정
@@ -236,10 +248,11 @@ export class MonsterGuard {
     // 1) 후보 몬스터 목록
     let mons = [];
     if (this._rt?.getVisibleMonsters) {
-      // RT 경로: 화면에 보이는 마커 집합 (DB 추가 읽기 없음)
+      // ✅ RT 경로: 화면에 보이는 마커 집합만 사용 (DB 추가 읽기 없음)
       const arr = this._rt.getVisibleMonsters();
       if (Array.isArray(arr)) mons = arr.map(x => ({ id: x.id, data: x.data || x }));
       else if (arr && typeof arr === 'object') mons = Object.entries(arr).map(([id, data]) => ({ id, data }));
+      // RT가 소스일 때는 DB 최신성 체크 대신 RT 가시성에 전적으로 따름
     } else if (this.db) {
       try {
         if (this.useTiles) {
@@ -272,6 +285,9 @@ export class MonsterGuard {
 
       if (this._shouldSkip(id, d, now)) continue;
 
+      // DB 경로일 때: 오래 관측 안 된 후보는 방어적으로 스킵
+      if (!this._rt && this._isStale(id, now)) continue;
+
       const range  = Number(d.range || this.rangeDefault);
 
       // 실제 값/기본값 사용. 0 이하면 공격하지 않음
@@ -290,6 +306,7 @@ export class MonsterGuard {
           // 타격!
           this._cool.set(id, now + cdMs);
           try {
+            // onUserHit(damage, meta)
             this.onUserHit(baseDamage, { id, lat, lon, range, damage: baseDamage, cooldownMs: cdMs, dist });
           } catch (e) {
             // onUserHit 에러가 나더라도 쿨다운은 유지

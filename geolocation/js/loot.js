@@ -111,9 +111,31 @@ export const WEAPONS = {
     critMul: 1.50,
     rarity: RARITY.UNCOMMON,
   },
-
-  // 필요 시 더 추가...
 };
+
+/* -----------------------------
+ * ITEM DEFS (소모품 등)
+ * ----------------------------- */
+export const ITEM_DEFS = {
+  red_potion: {
+    id: 'red_potion',
+    name: '빨간약',
+    kind: 'consumable',
+    buyable: true,         // 상점 구매 허용
+    desc: '+10 에너지 회복',
+  },
+  lightning_summon: {
+    id: 'lightning_summon',
+    name: '벼락소환',
+    kind: 'consumable',
+    buyable: true,         // 상점 구매 허용
+    desc: '현재 전투 대상에게 벼락(데미지 1000)',
+  },
+};
+
+// 아이템 헬퍼
+export function getItemDef(id){ return ITEM_DEFS[id] || null; }
+export function isConsumableId(id){ return !!(ITEM_DEFS[id] && ITEM_DEFS[id].kind === 'consumable'); }
 
 // 무기 여부 유틸 (아이템 id가 WEAPONS에 있는지)
 export function isWeaponId(id) {
@@ -148,7 +170,7 @@ export function getWeaponData(id) {
 }
 
 /* -----------------------------
- * COMMON ITEM HELPERS (선택)
+ * COMMON ITEM HELPERS
  * ----------------------------- */
 /**
  * sanitizeItems
@@ -183,25 +205,28 @@ export function mergeStacks(baseArr = [], addArr = []) {
 }
 
 /* -----------------------------
- * DEFAULT LOOT PRESETS (선택)
+ * DEFAULT LOOT PRESETS
  * ----------------------------- */
 // 간단한 기본 드랍 테이블 샘플
 export const DEFAULT_MONSTER_LOOT = [
-  { id: 'potion_small',  name:'Small Potion', rarity: RARITY.COMMON, chance: 0.5, min: 1, max: 2 },
-  { id: 'bone_fragment', name:'Bone Fragment', rarity: RARITY.COMMON, chance: 0.75, min: 1, max: 4 },
-  // 가끔 무기 파편/낮은 확률의 무기도 가능
+  { id: 'red_potion',        name:'빨간약',         rarity: RARITY.COMMON,   chance: 0.15,  min: 1, max: 2 },
+  { id: 'bone_fragment',     name:'Bone Fragment',   rarity: RARITY.COMMON,   chance: 0.50,  min: 2, max: 5 },
+  { id: 'lightning_summon',  name:'벼락소환',       rarity: RARITY.RARE,     chance: 0.01,  min: 1, max: 1 },
+  // 낮은 확률 무기 드랍 예시
   // { id: 'longsword_iron', name:'장검(철)', rarity: RARITY.UNCOMMON, chance: 0.03, min: 1, max: 1 },
 ];
 
 /* -----------------------------
  * EXPORT DEFAULT (옵션)
  * ----------------------------- */
-// 필요 시 하나로 가져오고 싶은 경우
 export default {
   RARITY,
   RARITY_WEIGHT,
   rollDrops,
   WEAPONS,
+  ITEM_DEFS,
+  getItemDef,
+  isConsumableId,
   isWeaponId,
   setWeaponOverride,
   getWeaponData,

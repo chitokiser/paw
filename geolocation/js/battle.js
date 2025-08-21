@@ -1,137 +1,160 @@
 // /geolocation/js/battle.js
-// Refactored: minimal DB writes (no alive/dead toggles), robust FX fallback,
-// safe cooldown/loot transfer, and compact readable structure.
+import { getEquippedWeapon } from './equipment.js';
+export let getCurrentBattleTarget = () => null;   // { getLatLng:()=>LatLng, hit:(dmg,opts)=>Promise<void> } | null
+export function _setCurrentBattleTarget(fn){ getCurrentBattleTarget = fn; }
 
-/**
- * Factory to create an attachMonsterBattle(marker, id, data) binder
- * that wires click-to-fight interactions for a given monster marker.
- *
- * Expectations (injected):
- * - db: Firestore instance
- * - map: Leaflet map
- * - playerMarker: Leaflet marker (player)
- * - dog: DogCompanion (optional)
- * - Score: points/energy handler (awardGP, saveToChainMock, etc)
- * - toast: (msg:string)=>void
- * - ensureAudio, isInRange, distanceToM, setFacingByLatLng
- * - swingSwordAt, attackOnceToward
- * - spawnImpactAt, spawnExplosionAt (optional), shakeMap, playAttackImpact, playFail, playDeath
- * - attachHPBar, getChallengeDurationMs
- * - transferMonsterInventory: (db, { monsterId, guestId }) => Promise<loot[]>
- * - getGuestId: () => string
- * - monstersGuard: optional guard with markKilled(monId, ttlMs), stopAttacksFrom(monId)
- * - setHUD: optional HUD updater
- */
+// fx.js 유틸 (있으면 사용, 없으면 주입 폴백 사용)
+import {
+  spawnImpactAt as fxSpawnImpactAt,
+  shakeMap as fxShakeMap,
+  spawnCritLabelAt,spawnLightningAt,
+  flashCritRingOnMarker
+} from './fx.js';
+
+// audio.js 사운드 (주입이 없을 때 폴백으로 사용)
+import { playAttackImpact as importedPlayAttackImpact } from './audio.js';
+
 export function createAttachMonsterBattle({
   db, map, playerMarker, dog, Score, toast,
-  ensureAudio, isInRange, distanceToM, setFacingByLatLng,
-  swingSwordAt, attackOnceToward, spawnImpactAt, spawnExplosionAt, shakeMap, playAttackImpact, playFail, playDeath,
-  attachHPBar, getChallengeDurationMs, transferMonsterInventory, getGuestId,
-  monstersGuard, setHUD
-}){
-  // ───────────────────────────── helpers ─────────────────────────────
-  const FACING_THRESHOLD_PX = 8; // hysteresis to avoid jitter
+  ensureAudio, setFacingByLatLng, attackOnceToward,
 
-  const getFacingDirLR = (map, playerMarker, targetLL, thresholdPx = FACING_THRESHOLD_PX) => {
+  // 주입되는 것들: 있으면 주입 우선
+  spawnImpactAt: injSpawnImpactAt,
+  shakeMap: injShakeMap,
+  playAttackImpact, playFail, playDeath,
+
+  attachHPBar, getChallengeDurationMs, transferMonsterInventory, getGuestId,
+  monstersGuard, setHUD,
+
+  // 외부에서 스프라이트 어태치 함수를 넘길 수 있음
+  attachSpriteToMarker: injAttachSpriteToMarker
+}) {
+
+  // 폴백 구성: 주입 → import 기본
+  const _spawnImpactAt = injSpawnImpactAt || fxSpawnImpactAt;
+  const _shakeMap      = injShakeMap      || fxShakeMap;
+  const _playAttackImpact = playAttackImpact || importedPlayAttackImpact;
+  const _attachSpriteToMarker = injAttachSpriteToMarker || null;
+
+  const FACING_THRESH_PX = 8;
+
+  const faceTowards = (targetLL) => {
     const p1 = map.latLngToLayerPoint(playerMarker.getLatLng());
     const p2 = map.latLngToLayerPoint(targetLL);
     const dx = p2.x - p1.x;
-    if (dx >  thresholdPx) return 'right';
-    if (dx < -thresholdPx) return 'left';
-    return null; // keep
-  };
-
-  const faceTowards = (map, playerMarker, targetLL) => {
-    const dir = getFacingDirLR(map, playerMarker, targetLL);
+    const dir = dx > FACING_THRESH_PX ? 'right' : (dx < -FACING_THRESH_PX ? 'left' : null);
     if (dir) { try { setFacingByLatLng(map, playerMarker, targetLL, dir); } catch {} }
-    return dir;
   };
 
-  /** Safe hit FX: uses explosion if available else simple impact */
-  const showHitFX = (lat, lon, { crit=false } = {}) => {
+  // ── 크리티컬/일반 히트 FX 묶음
+  const showHitFX = (marker, lat, lon, { crit = false } = {}) => {
     try {
-      if (typeof spawnExplosionAt === 'function') {
-        spawnExplosionAt(map, lat, lon, { size: crit ? 140 : 110, hue: crit ? 48 : 20, crit });
+      if (crit && typeof spawnExplosionAt === 'function') {
+        // 크리티컬: 더 큰 폭발 + 황금톤
+        spawnExplosionAt(map, lat, lon, { size: 140, hue: 48, crit: true });
       } else {
-        spawnImpactAt(map, lat, lon);
+        _spawnImpactAt(map, lat, lon);
       }
-    } catch (e) {
-      console.warn('[battle] hit FX failed, fallback to impact', e);
-      try { spawnImpactAt(map, lat, lon); } catch {}
+    } catch {
+      // 최후 폴백
+      try { _spawnImpactAt(map, lat, lon); } catch {}
     }
+
+    // 크리 시각 피드백(존재하면 사용)
+    if (crit) {
+      try { spawnCritLabelAt?.(map, lat, lon, { text: 'CRIT!', ms: 700 }); } catch {}
+      try { flashCritRingOnMarker?.(marker, { ms: 500 }); } catch {}
+    }
+
+    try { _shakeMap(); } catch {}
+
+    // 사운드: 정책에 맞게 critical 플래그 전달
+    try {
+      _playAttackImpact({
+        intensity: crit ? 1.6 : 1.15,
+        includeWhoosh: crit,
+        critical: crit
+      });
+    } catch {}
   };
 
-  /** Normalize args: (marker,id,data) | ({marker,id,data}) */
-  const normalizeArgs = (...args) => {
-    if (args.length === 3) return { marker: args[0], id: args[1], data: args[2] || {} };
-    if (args.length === 1 && args[0] && typeof args[0] === 'object') {
-      const o = args[0];
-      return { marker: o.marker, id: o.id, data: o.data || o.mon || o.meta || {} };
+  // 마커 DOM에서 실제 표시 크기 기준으로 스프라이트 스케일 추정
+  function _getSheetURLAndScale(marker, mid, frameW = 200, frameH = 200) {
+    const root = marker?.getElement();
+    let url = '', scale = 1;
+
+    if (root) {
+      const el = root.querySelector('.ani-first') || root.querySelector('.mon-wrap') || root;
+      if (el) {
+        const cs = window.getComputedStyle(el);
+        const bg = cs.backgroundImage || '';
+        const m  = bg.match(/url\(["']?(.+?)["']?\)/i);
+        if (m) url = m[1];
+
+        const rect = el.getBoundingClientRect();
+        const shownW = rect.width  || (marker?.options?.icon?.options?.iconSize?.[0] || frameW);
+        const shownH = rect.height || (marker?.options?.icon?.options?.iconSize?.[1] || frameH);
+        const sx = shownW / frameW, sy = shownH / frameH;
+        scale = Math.max(0.01, Math.min(sx, sy));
+      }
     }
-    return { marker: args?.[0], id: args?.[1], data: args?.[2] || {} };
-  };
+    if (!url && mid != null) {
+      url = `http://127.0.0.1:5550/images/ani/${encodeURIComponent(mid)}.png`;
+    }
+    return { url, scale };
+  }
 
-  // ─────────────────────── binder: attachMonsterBattle ───────────────────────
-  function attachMonsterBattle(...rawArgs){
-    const { marker, id: monsterId, data: rawData } = normalizeArgs(...rawArgs);
-    if (!marker || !monsterId) { console.warn('[battle] invalid args'); return; }
+  function attachMonsterBattle(marker, monsterId, raw = {}) {
+    if (!marker || !monsterId) return;
 
-    // parsed monster data with defaults
     const data = {
-      lat: rawData.lat, lon: rawData.lon,
-      power: Number.isFinite(rawData.power) ? Number(rawData.power) : 20,
-      hp: Number.isFinite(rawData.hp) ? Number(rawData.hp) : undefined,
-      cooldownMs: Number.isFinite(rawData.cooldownMs) ? Number(rawData.cooldownMs) : 2000,
-      approachMaxM:     Number.isFinite(rawData.approachMaxM)     ? Number(rawData.approachMaxM)     : 10,
-      meleeRange:       Number.isFinite(rawData.meleeRange)       ? Number(rawData.meleeRange)       : 1.6,
-      approachSpeedMps: Number.isFinite(rawData.approachSpeedMps) ? Number(rawData.approachSpeedMps) : 6.2,
-      critChance:       Number.isFinite(rawData.critChance)       ? Number(rawData.critChance)       : 0.2,
+      lat: raw.lat, lon: raw.lon,
+      mid: raw.mid ?? raw.mId ?? raw.animId ?? null,
+      power: Number.isFinite(raw.power) ? +raw.power : 20,
+      hp: Number.isFinite(raw.hp) ? +raw.hp : undefined,
+      cooldownMs: Number.isFinite(raw.cooldownMs) ? +raw.cooldownMs : 2000,
+      approachMaxM: Number.isFinite(raw.approachMaxM) ? +raw.approachMaxM : 10,
+      meleeRange: Number.isFinite(raw.meleeRange) ? +raw.meleeRange : 1.6,
+      approachSpeedMps: Number.isFinite(raw.approachSpeedMps) ? +raw.approachSpeedMps : 6.2,
+      // 기본 크리티컬 30% (장비가 추가 크확을 더할 수 있음)
+      critChance: Number.isFinite(raw.critChance) ? +raw.critChance : 0.3
     };
 
-    // HP bar & initial HUD
+    // HP/UI
     let hpLeft = Math.max(1, Number(data.hp ?? data.power));
     let hpUI = { set: () => {} };
     setTimeout(() => {
-      try { hpUI = attachHPBar(marker, hpLeft) || { set: ()=>{} }; } catch {}
-      try { hpUI.set(hpLeft); } catch {}
-      try {
-        setHUD?.({ timeLeft: '-', hitsLeft: hpLeft, earn: data.power, chain: Score.getChainTotal() });
-      } catch {}
+      try { hpUI = attachHPBar(marker, hpLeft) || { set: () => {} }; hpUI.set(hpLeft); } catch {}
+      try { setHUD?.({ timeLeft: '-', hitsLeft: hpLeft, earn: data.power, chain: Score.getChainTotal() }); } catch {}
     }, 0);
 
-    // time-attack HUD
+    // 타임어택 HUD
     let chal = null; // { remain, deadline, timer }
-    const stop = () => {
+    const stopHUD = () => {
       if (chal?.timer) clearInterval(chal.timer);
       chal = null;
       try { setHUD?.({ timeLeft: '-', hitsLeft: '-', earn: data.power, chain: Score.getChainTotal() }); } catch {}
     };
-    const hud = () => {
+    const tickHUD = () => {
       if (!chal) return;
       const left = Math.max(0, chal.deadline - Date.now());
-      try { setHUD?.({ timeLeft: (left/1000).toFixed(1)+'s', hitsLeft: chal.remain, earn: data.power }); } catch {}
+      try { setHUD?.({ timeLeft: (left / 1000).toFixed(1) + 's', hitsLeft: chal.remain, earn: data.power }); } catch {}
     };
 
-    // mark death locally (no DB writes): disable interaction & auto-attacks
+    // 로컬 사망 처리
     const setDead = () => {
-      try { marker.options.interactive = false; } catch {}
-      try { marker.off('click'); } catch {}
-      try { marker._pf_dead = true; } catch {}
+      try { marker.options.interactive = false; marker.off('click'); marker._pf_dead = true; } catch {}
+      try { monstersGuard?.stopAttacksFrom?.(monsterId); } catch {}
       try {
-        const ttl = Number(data.cooldownMs || 60_000);
+        const ttl = Number(data.cooldownMs || 60000);
         monstersGuard?.markKilled?.(monsterId, ttl);
       } catch {}
-      try { monstersGuard?.stopAttacksFrom?.(monsterId); } catch {}
     };
 
-    // victory flow: score → local cooldown → loot transfer (single DB txn) → remove
     const win = async () => {
-      stop();
-      setDead(); // first of all, prevent any further hits
-
+      stopHUD(); setDead();
       try { playDeath(); } catch {}
 
-      // GP & mock chain save
       try {
         const distM = Math.round(Score.getStats().totalDistanceM);
         await Score.awardGP(data.power, data.lat, data.lon, distM);
@@ -140,18 +163,13 @@ export function createAttachMonsterBattle({
         setHUD?.({ chain: tx.total });
       } catch (e) { console.warn('[battle] score/chain fail', e); }
 
-      // local cooldown timestamp (no DB)
-      try { localStorage.setItem('mon_cd:'+monsterId, String(Date.now() + data.cooldownMs)); } catch {}
+      try { localStorage.setItem('mon_cd:' + monsterId, String(Date.now() + data.cooldownMs)); } catch {}
 
-      // loot transfer (only DB transaction in this flow)
       try {
-        // ✅ guestId 안전 확보 (getGuestId → Score.getGuestId → localStorage → 'guest')
         const gid =
           (typeof getGuestId === 'function' && getGuestId()) ||
           (typeof Score?.getGuestId === 'function' && Score.getGuestId()) ||
-          localStorage.getItem('guestId') ||
-          'guest';
-
+          localStorage.getItem('guestId') || 'guest';
         const moved = await transferMonsterInventory(db, { monsterId, guestId: gid });
         toast(moved?.length
           ? `+${data.power} GP & 전리품: ${moved.map(it => `${it.name || it.id} x${it.qty || 1}`).join(', ')}`
@@ -161,86 +179,149 @@ export function createAttachMonsterBattle({
         toast('전리품 이전 실패. 잠시 후 다시 시도해 주세요.');
       }
 
-      // remove marker after short delay for FX
       setTimeout(() => { try { map.removeLayer(marker); } catch {} }, 900);
     };
 
-    const fail = () => { stop(); try { playFail(); } catch {}; toast('실패… 다시!'); };
+    const fail = () => { stopHUD(); try { playFail(); } catch {}; toast('실패… 다시!'); };
 
-    // click-to-fight binding
+    // 클릭 전투
     marker.options.interactive = true;
     marker.on('click', async () => {
-      if (marker._pf_dead) return; // ignore
+      if (marker._pf_dead) return;
       try { ensureAudio(); } catch {}
       if (attachMonsterBattle._busy) return;
       attachMonsterBattle._busy = true;
 
       try {
+        // --- 무기 스펙 적용 ---
+        const w = getEquippedWeapon();
+        const wpAtk   = Math.max(0, Number(w?.baseAtk || 0));     // 기본 공격력(+힛 수)
+        const wpCritA = Math.max(0, Number(w?.extraCrit || 0));   // 추가 크확(0~)
+        const CRIT_MULTI = 2.0;
+
+        // 접근/대시
         const uLL = playerMarker.getLatLng();
         const mLL = marker.getLatLng();
-
-        const approachMaxM = data.approachMaxM;
-        const meleeRangeM  = data.meleeRange;
-        const softRangeM   = Math.max(meleeRangeM + 1.2, 3.0);
-        const speedMps     = data.approachSpeedMps;
-
         const dist0 = map.distance(uLL, mLL);
-        if (dist0 > approachMaxM) {
+
+        if (dist0 > data.approachMaxM) {
           try { playFail(); } catch {}
-          toast(`먼저 가까이 가세요 (현재 ${Math.round(dist0)}m / 필요 ${approachMaxM}m)`);
+          toast(`먼저 가까이 가세요 (현재 ${Math.round(dist0)}m / 필요 ${data.approachMaxM}m)`);
           return;
         }
 
-        // approach: dynamic dash (timeout / soft-range)
-        if (dist0 > meleeRangeM) {
+        if (dist0 > data.meleeRange) {
           await dashToMeleeDynamic({
             map, playerMarker,
             getTargetLatLng: () => marker.getLatLng(),
-            speedMps, meleeRangeM, softRangeM, timeoutMs: 2200,
+            speedMps: data.approachSpeedMps,
+            meleeRangeM: data.meleeRange,
+            softRangeM: Math.max(data.meleeRange + 1.2, 3.0),
+            timeoutMs: 2200,
             onStep: (lat, lng) => { try { dog?.update?.(lat, lng); } catch {} },
             shouldStop: () => marker._pf_dead === true
           });
         }
         if (marker._pf_dead) return;
 
-        // facing & attack FX
+        // 공격 연출 + 판정
         const nowLL = marker.getLatLng();
-        const curLL = playerMarker.getLatLng();
-        faceTowards(map, playerMarker, nowLL);
-        try { dog?.setFacingByTarget?.(curLL.lat, curLL.lng, nowLL.lat, nowLL.lng); } catch {}
+        faceTowards(nowLL);
 
-        try {
-          await attackOnceToward(map, playerMarker, nowLL.lat, nowLL.lng);
-          if (marker._pf_dead) return;
-          const isCrit = Math.random() < data.critChance;
-          showHitFX(nowLL.lat, nowLL.lng, { crit: isCrit });
-          shakeMap();
-          playAttackImpact({ intensity: isCrit ? 1.6 : 1.15, includeWhoosh: isCrit });
-          dog?.playBark?.();
-        } catch (e) { console.warn('[battle] attack fx error', e); }
+        await attackOnceToward(map, playerMarker, nowLL.lat, nowLL.lng);
+        if (marker._pf_dead) return;
 
-        // start/maintain time-attack window
+        // 크리/데미지 계산
+        const critChance = Math.min(0.95, Math.max(0, (data.critChance || 0) + wpCritA));
+        const isCrit = Math.random() < critChance;
+        let damage = Math.max(1, 1 + wpAtk); // 맨손=1, 장검=1+baseAtk
+        if (isCrit) damage = Math.ceil(damage * CRIT_MULTI);
+
+        // 시각/청각 연출(크리 강조 포함)
+        showHitFX(marker, nowLL.lat, nowLL.lng, { crit: isCrit });
+        try { dog?.playBark?.(); } catch {}
+
+        // 마커-위 4컷 히트 스프라이트
+        if (_attachSpriteToMarker && data.mid != null) {
+          try {
+            const { url, scale } = _getSheetURLAndScale(marker, data.mid, 200, 200);
+            _attachSpriteToMarker(
+              marker,
+              { url, frameW: 200, frameH: 200, frames: 4, once: true, fps: 12 },
+              { scale, classNameExtra: 'mon-hit-anim' }
+            );
+          } catch (e) { console.warn('[battle] attachSpriteToMarker failed', e); }
+        }
+
+           // === 외부에서 이 몬스터에 피해를 가할 수 있는 컨트롤러 ===
+    const ctrl = {
+      id: monsterId,
+      marker,
+      getLatLng: () => marker.getLatLng(),
+      isDead: () => !!marker._pf_dead,
+      /** 외부 히트: amount만큼 피해. opts: { lightning?:boolean } */
+    async hit(amount = 1, opts = {}) {
+  if (marker._pf_dead) return;
+  const nowLL = marker.getLatLng();
+
+  try {
+    if (opts.lightning && typeof spawnLightningAt === 'function') {
+      spawnLightningAt(map, nowLL.lat, nowLL.lng, { flashScreen:true, shake:true });
+    } else {
+      showHitFX(marker, nowLL.lat, nowLL.lng, { crit: !!opts.crit }); // ✅ marker 인자 추가
+    }
+    _shakeMap(); // ✅ 래퍼 사용
+    _playAttackImpact({ intensity: opts.lightning ? 1.8 : 1.2, includeWhoosh:false });
+  } catch {}
+
+        // HUD/HP 처리
+        const dmg = Math.max(1, Math.floor(amount));
+        hpLeft = Math.max(0, hpLeft - dmg);
+        if (chal){
+          chal.remain = Math.max(0, chal.remain - dmg);
+          hud();
+        }
+        try { hpUI.set(hpLeft); } catch {}
+
+        if (hpLeft <= 0) { await win(); }
+      }
+    };
+    // 글로벌로 "현재/마지막" 전투 타겟 컨트롤 보관
+    try {
+      marker._pf_ctrl = ctrl;
+      window.__battleCtrlById = window.__battleCtrlById || new Map();
+      window.__battleCtrlById.set(monsterId, ctrl);
+      window.__activeBattleCtrl = ctrl;
+     // getCurrentBattleTarget()가 항상 최신 ctrl을 반환하도록 연결
+      try { _setCurrentBattleTarget(() => window.__activeBattleCtrl || null); } catch {}
+    } catch {}
+
+
+        // 타임어택 HUD 시작(없으면)
         if (!chal) {
           const ms = getChallengeDurationMs(data.power);
           chal = {
-            remain: Math.max(1, data.power),
+            remain: Math.max(1, hpLeft), // 실제 HP 기준
             deadline: Date.now() + ms,
             timer: setInterval(() => {
               if (!chal) return;
               if (marker._pf_dead) { fail(); return; }
-              if (Date.now() >= chal.deadline) fail(); else hud();
+              if (Date.now() >= chal.deadline) fail(); else tickHUD();
             }, 80)
           };
-          hud();
+          tickHUD();
         }
         if (Date.now() >= chal.deadline) return fail();
 
-        // apply damage (1 hit = 1 hp)
-        hpLeft = Math.max(0, hpLeft - 1);
-        chal.remain = Math.max(0, chal.remain - 1);
+        // HP 감소(무기/크리 반영)
+        hpLeft = Math.max(0, hpLeft - damage);
+        chal.remain = Math.max(0, chal.remain - damage);
         try { hpUI.set(hpLeft); } catch {}
-        if (hpLeft <= 0) await win(); else hud();
 
+        if (hpLeft <= 0) await win(); else tickHUD();
+
+      } catch (e) {
+        console.warn('[battle] attack flow error', e);
       } finally {
         attachMonsterBattle._busy = false;
         window.__pf_dashing = false;
@@ -254,21 +335,17 @@ export function createAttachMonsterBattle({
   return attachMonsterBattle;
 }
 
-/* ────────────────────────────────────────────────────────────────
-   Flexible dash: follows moving target; stops on timeout/soft-range
-   onStep: (lat, lng) => void
-   shouldStop: () => boolean (if true, ends immediately)
-   ──────────────────────────────────────────────────────────────── */
+/* 유연한 대시 */
 function dashToMeleeDynamic({
   map, playerMarker,
   getTargetLatLng,
   speedMps = 6.2,
   meleeRangeM = 1.6,
-  softRangeM  = 3.0,
-  timeoutMs   = 2000,
-  onStep      = null,
-  shouldStop  = null
-}){
+  softRangeM = 3.0,
+  timeoutMs = 2000,
+  onStep = null,
+  shouldStop = null
+}) {
   return new Promise((resolve) => {
     window.__pf_dashing = true;
     let start = performance.now();
@@ -279,7 +356,7 @@ function dashToMeleeDynamic({
     const tick = (now) => {
       if (typeof shouldStop === 'function' && shouldStop()) return done();
 
-      const dt = Math.max(0.016, (now - last) / 1000); last = now;
+      const dt  = Math.max(0.016, (now - last) / 1000); last = now;
       const cur = playerMarker.getLatLng();
       const tgt = getTargetLatLng();
       const dist = map.distance(cur, tgt);
@@ -289,11 +366,8 @@ function dashToMeleeDynamic({
 
       if (dist <= softRangeM) {
         if (dist >= lastDist - 0.05) {
-          notCloserFrames++;
-          if (notCloserFrames >= 6) return done(); // ≈100ms stagnation near target
-        } else {
-          notCloserFrames = 0;
-        }
+          if (++notCloserFrames >= 6) return done();
+        } else { notCloserFrames = 0; }
       }
 
       const step = speedMps * dt;
@@ -311,5 +385,7 @@ function dashToMeleeDynamic({
     requestAnimationFrame(tick);
   });
 }
+
+
 
 export default createAttachMonsterBattle;

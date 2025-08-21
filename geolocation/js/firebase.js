@@ -1,8 +1,9 @@
 // /geolocation/js/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-import { getFirestore }   from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { getAuth, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-// ▶ Firebase 프로젝트 키 (실서비스)
+// ★ 실제 프로젝트 설정
 const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
   authDomain: "puppi-d67a1.firebaseapp.com",
@@ -13,6 +14,9 @@ const firebaseConfig = {
   measurementId: "G-9TZ81RW0PL"
 };
 
-export const app = initializeApp(firebaseConfig);
 
-export const db  = getFirestore(app);
+export const app  = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db   = getFirestore(app);
+await setPersistence(auth, browserLocalPersistence);
+

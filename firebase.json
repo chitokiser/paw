@@ -1,25 +1,29 @@
 {
   "emulators": {
+    "auth": {
+      "port": 9099,
+      "host": "0.0.0.0"
+    },
     "firestore": {
-      "port": 8080
+      "port": 8080,
+      "host": "0.0.0.0"
+    },
+    "hosting": {
+      "port": 5000,
+      "host": "0.0.0.0"
     },
     "ui": {
       "enabled": true,
-      "port": 4000
-    },
-    "dataconnect": {
-      "dataDir": "dataconnect/.dataconnect/pgliteData",
-      "port": 9399
-    },
-    "singleProjectMode": true
+      "port": 4000,
+      "host": "0.0.0.0"
+    }
   },
-  "dataconnect": {
-    "source": "dataconnect"
-  },
-  "firestore": {
-    "database": "(default)",
-    "location": "asia-east1",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
   }
 }

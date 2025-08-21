@@ -24,6 +24,12 @@ function _shopIcon(size=68, imageURL='https://puppi.netlify.app/images/event/sho
   return L.divIcon({ className:'', html, iconSize:[s,s], iconAnchor:[s/2,s/2] });
 }
 
+function _getBuyPrice(it){
+  // buyPriceGP가 없을 때 대비한 폴백
+  const b = Number(it.buyPriceGP ?? it.priceGP ?? it.sellPriceGP ?? 0);
+  return Math.max(0, b|0);
+}
+
 /* ---------------- 상점 모달 ---------------- */
 function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
   let wrap = document.getElementById('shopModal'); if (wrap) wrap.remove();
@@ -64,16 +70,18 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
       row.appendChild(img);
 
       const meta = document.createElement('div');
+      const price = _getBuyPrice(it);
       meta.innerHTML = `<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
         <div style="font-size:12px;color:#6b7280">
-        ${it.weapon? `ATK ${it.weapon.baseAtk} · crit ${it.weapon.crit||0}% · +ATK ${it.weapon.extraInit||0}` : (it.stackable? '소모품':'장비')}
-        ${typeof it.stock==='number' ? ` · 재고 ${it.stock}` : ' · 재고 무한'}
+          ${it.weapon? `ATK ${it.weapon.baseAtk} · +CRIT ${(it.weapon.crit??0)}% · +ATK ${(it.weapon.extraInit??0)}` : (it.stackable? '소모품':'장비')}
+          ${typeof it.stock==='number' ? ` · 재고 ${it.stock}` : ' · 재고 무한'}
         </div>`;
       row.appendChild(meta);
 
-      // 🔽 수량 선택 드롭다운
+      // 수량 선택
       const qtySelect = document.createElement('select');
-      for (let q=1; q<=10; q++){
+      const maxQty = 10;
+      for (let q=1; q<=maxQty; q++){
         const opt = document.createElement('option');
         opt.value = q; opt.textContent = `${q}개`;
         qtySelect.appendChild(opt);
@@ -81,13 +89,13 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
       row.appendChild(qtySelect);
 
       const buyBtn = document.createElement('button');
-      buyBtn.textContent = `${it.buyPriceGP||0} GP`;
+      buyBtn.textContent = `${price} GP`;
       Object.assign(buyBtn.style,{background:'#111827',color:'#fff',border:'1px solid #e5e7eb',padding:'8px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'800'});
       buyBtn.addEventListener('click', async ()=>{
         buyBtn.disabled=true;
         try{
           const qty = parseInt(qtySelect.value)||1;
-          await onBuy(it, qty);
+          await onBuy(it, qty, price);
           wrap.remove();
         } finally{ buyBtn.disabled=false; }
       });
@@ -100,7 +108,7 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
   /* --- 판매탭 --- */
   function renderSell(){
     body.innerHTML='';
-    const sellables = items.filter(x=> (x.sellPriceGP||0)>0);
+    const sellables = items.filter(x=> Number(x.sellPriceGP||0)>0);
     const invRows = [];
     for (const it of sellables){
       const key = it.itemId || it.id;
@@ -119,10 +127,9 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
 
       const meta = document.createElement('div');
       meta.innerHTML = `<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
-        <div style="font-size:12px;color:#6b7280">보유수량 ${qty} · 판매가 ${it.sellPriceGP} GP</div>`;
+        <div style="font-size:12px;color:#6b7280">보유수량 ${qty} · 판매가 ${it.sellPriceGP|0} GP</div>`;
       row.appendChild(meta);
 
-      // 🔽 판매 수량 선택(보유 수량까지)
       const qtySelect = document.createElement('select');
       for (let q=1; q<=qty; q++){
         const opt = document.createElement('option');
@@ -172,12 +179,12 @@ export class Shops {
     this.MIN_ZOOM = 16; this.TRADE_RANGE_M = 20;
     this.invSnapshot = {};
 
-    // 인벤 스냅샷 실시간 반영
+    // 인벤 스냅샷 자동 유지
     try{
-      const orig = this.inv.onChange;
+      const origOnChange = this.inv.onChange;
       this.inv.onChange = (items)=>{
         this._buildInvSnapshot(items);
-        try{ orig?.(items);}catch{}
+        try{ origOnChange?.(items);}catch{}
       };
     }catch{}
   }
@@ -188,9 +195,7 @@ export class Shops {
       const src =
         itemsMaybe ??
         this.inv?.items ??
-        this.inv?.list ??
         (typeof this.inv?.getAll === 'function' ? this.inv.getAll() : undefined) ??
-        (typeof this.inv?.getItems === 'function' ? this.inv.getItems() : undefined) ??
         [];
       if (Array.isArray(src)) {
         src.forEach(it=>{ if (it?.id) snap[it.id] = (snap[it.id]||0) + (Number(it.qty)||0); });
@@ -218,27 +223,80 @@ export class Shops {
     }catch{ return true; }
   }
 
-  async _buy(shop, item, qty=1){
-    if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
-    if (typeof item.stock==='number'){
-      const ref = doc(this.db, `shops/${shop.id}/items`, item.id);
-      await runTransaction(this.db, async (tx)=>{
-        const s = await tx.get(ref); if (!s.exists()) throw new Error('gone');
-        const d = s.data(); if (d.active===false) throw new Error('inactive');
-        const cur = Number(d.stock||0); if (cur<qty) throw new Error('soldout');
-        tx.update(ref, { stock: cur-qty, updatedAt: serverTimestamp() });
-      });
-    }
-    const guestId = this._getGuestId();
-    try {
-      await this.transferMonsterInventory(this.db, guestId, [{
-        id: item.itemId||item.id, name:item.name, qty, rarity:item.weapon?'rare':(item.rarity||'common')
-      }]);
-      await this.inv.addItems([{ id:item.itemId||item.id, name:item.name, qty, rarity:item.weapon?'rare':(item.rarity||'common')}]);
-      this._buildInvSnapshot(); // 즉시 반영
-    } catch(e){ console.warn('[shop] grant fail', e); this.toast?.('구매 처리 오류'); throw e; }
-    this.toast?.('구매 완료!');
+ // 기존 _buy(...) 전체를 아래로 교체
+// 기존 _buy(...) 전체를 아래 구현으로 교체
+async _buy(shop, item, qty = 1){
+  // 0) 거리 체크
+  if (!this._inTradeRange(shop)) {
+    this.toast?.('거래 가능 거리 밖입니다.');
+    throw new Error('out_of_range');
   }
+
+  const ref = doc(this.db, `shops/${shop.id}/items`, item.id);
+  let unitPrice = 0;
+
+  // 1) 트랜잭션: 활성/재고/가격을 "서버 기준"으로 검증
+  await runTransaction(this.db, async (tx) => {
+    const s = await tx.get(ref);
+    if (!s.exists()) throw new Error('gone');
+
+    const d = s.data() || {};
+    if (d.active === false) throw new Error('inactive');
+
+    // 가격은 서버값 우선 (없으면 0)
+    unitPrice = Number(d.buyPriceGP ?? d.priceGP ?? 0) || 0;
+
+    // ✅ 재고정책: stock 이 "숫자"일 때만 재고 관리 / null 또는 미존재는 무제한
+    const managesStock = typeof d.stock === 'number';
+    if (managesStock) {
+      const cur = Number(d.stock);
+      if (!Number.isFinite(cur)) throw new Error('stock_invalid');
+      if (cur < qty) throw new Error('soldout');
+      tx.update(ref, { stock: cur - qty, updatedAt: serverTimestamp() });
+    } else {
+      // 무제한 판매: 흔적만 남김(옵션)
+      tx.update(ref, { updatedAt: serverTimestamp() });
+    }
+  });
+
+  // 2) GP 차감
+  const pay = Math.max(0, unitPrice * qty);
+  try {
+    const pos = this.playerMarker?.getLatLng?.() || { lat: shop.lat, lng: shop.lon };
+    if (pay > 0) {
+      if (typeof this.Score?.deductGP === 'function') {
+        await this.Score.deductGP(pay, pos.lat, pos.lng);
+      } else if (typeof this.Score?.addGP === 'function') {
+        await this.Score.addGP(-pay, pos.lat, pos.lng);
+      }
+    }
+  } catch (e) {
+    console.warn('[shop] GP deduct fail', e);
+    this.toast?.('GP 차감 실패');
+    throw e; // (운영 시에는 재고 롤백 고려)
+  }
+
+  // 3) 인벤 지급 (무기 스펙/타입 보존)
+  try {
+    await this.inv.addItems([{
+      id: item.itemId || item.id,
+      name: item.name,
+      qty,
+      rarity: item.weapon ? 'rare' : (item.rarity || 'common'),
+      weapon: item.weapon || null,
+      type: item.type || 'shopItem'
+    }]);
+    this._buildInvSnapshot();
+  } catch (e) {
+    console.warn('[shop] inventory add fail', e);
+    this.toast?.('인벤토리 지급 실패');
+    throw e;
+  }
+
+  this.toast?.('구매 완료!');
+}
+
+
 
   async _sell(shop, item, qty=1){
     if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
@@ -255,23 +313,22 @@ export class Shops {
 
     // GP 지급
     const reward = Math.max(0, Number(item.sellPriceGP||0))*qty;
-    const pos = this.playerMarker?.getLatLng?.() || {lat:0,lng:0};
+    const pos = this.playerMarker?.getLatLng?.() || {lat:shop.lat,lng:shop.lon};
     try {
       if (typeof this.Score?.addGP==='function') await this.Score.addGP(reward,pos.lat,pos.lng);
       else if (typeof this.Score?.awardGP==='function') await this.Score.awardGP(reward,pos.lat,pos.lng,0);
       else this.toast?.(`+${reward} GP`);
     } catch(e){ console.warn('[shop] addGP fail', e); this.toast?.(`GP 지급 실패(로그 확인).`); }
 
-    this._buildInvSnapshot(); // 즉시 반영
+    this._buildInvSnapshot();
     this.toast?.('판매 완료!');
   }
 
   async _open(shop){
-    // 모달 열기 전에 인벤 스냅샷을 반드시 최신화
     const freshSnap = this._buildInvSnapshot();
     this._loadItems(shop.id).then(items=>{
       _openShopModalUI(shop, items, {
-        onBuy:(it,qty)=>this._buy(shop,it,qty),
+        onBuy:(it,qty,price)=>this._buy(shop,it,qty,price),
         onSell:(it,q)=>this._sell(shop,it,q),
         invSnapshot:freshSnap
       });

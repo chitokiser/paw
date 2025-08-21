@@ -1,6 +1,15 @@
-// /js/fx.js
+// /geolocation/js/fx.js
+// mid(숫자) 기반 4컷(800x200) 정책 + 공통 FX 유틸 (Leaflet 기반)
 
-/* 임팩트 FX + 몬스터 HP바 CSS 주입 */
+/* ========================= 전역(기본 로컬 경로) ========================= */
+let ANI_BASE = 'http://127.0.0.1:5550/images/ani/';
+export function setAniBase(url){
+  if (!url) return;
+  ANI_BASE = String(url).replace(/\/+$/,'') + '/';
+}
+
+/* ================== 임팩트 FX + HP Bar CSS (공통) ================== */
+/* ⚠️ 벼락 CSS는 여기에서 제거 —> 전용 ensureLightningCSS 로 분리 */
 export function ensureImpactCSS() {
   if (document.getElementById('impactfx-css')) return;
   const css = `
@@ -31,126 +40,12 @@ export function ensureImpactCSS() {
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
     pointer-events:none; overflow:hidden;
   }
-  .mon-hp-fill{
-    height:100%; width:100%;
-    background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
-    transition: width .18s ease;
-  }
-  .mon-hp-text{
-    position:absolute; left:0; right:0; top:-16px;
-    font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6);
-    pointer-events:none;
-  }
-
-  /* ===== Emoji FX (호환용) ===== */
-  .emojifx{
-    font-size: 36px;
-    animation: popUp .8s ease-out forwards;
-  }
-  @keyframes popUp{
-    0%{ transform:translateY(0) scale(0.2); opacity:0; }
-    40%{ transform:translateY(-20px) scale(1.2); opacity:1; }
-    100%{ transform:translateY(-40px) scale(1); opacity:0; }
-  }
-
-  .crit-ring{
-    position:absolute;inset:0;border-radius:50%;
-    border:3px solid gold;
-    box-shadow:0 0 20px gold;
-    animation:critRing .5s ease-out forwards;
-  }
-  @keyframes critRing{
-    0%{ transform:scale(0.2); opacity:1; }
-    100%{ transform:scale(2.2); opacity:0; }
-  }
-
-  /* ===== Explosion FX (user → monster) ===== */
-  .boomfx{
-    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    pointer-events:none; width:var(--boom-size,120px); height:var(--boom-size,120px);
-    z-index:20000;
-  }
-  .boom-core{
-    position:absolute; inset:0; border-radius:50%;
-    background:
-      radial-gradient(circle at 50% 50%,
-        rgba(255,255,255,.95) 0%,
-        rgba(255,255,255,.75) 22%,
-        rgba(255,200,120,.25) 40%,
-        rgba(255,150,0,0) 60%);
-    filter: blur(1px);
-    animation: boomCore .22s ease-out forwards;
-  }
-  @keyframes boomCore{
-    0%{ transform:scale(.3); opacity:0; }
-    60%{ opacity:1; }
-    100%{ transform:scale(1.35); opacity:0; }
-  }
-
-  .boom-ring{
-    position:absolute; inset:0; border-radius:50%;
-    border:2px solid hsl(var(--boom-hue,20) 90% 60% / .95);
-    box-shadow:0 0 24px hsl(var(--boom-hue,20) 90% 55% / .8);
-    animation: boomRing .38s ease-out forwards;
-  }
-  @keyframes boomRing{
-    0%{ transform:scale(.25); opacity:1; }
-    100%{ transform:scale(1.8); opacity:0; }
-  }
-
-  .boom-rays>i{
-    position:absolute; left:50%; top:50%; width:3px; height:26px; transform-origin:50% 0%;
-    background:linear-gradient(hsl(var(--boom-hue,20) 90% 70%), transparent);
-    filter: drop-shadow(0 2px 6px hsl(var(--boom-hue,20) 90% 70% / .8));
-    opacity:.95; animation: boomRay .34s ease-out forwards;
-  }
-  @keyframes boomRay{
-    0%{ transform:rotate(var(--deg)) translate(-50%,-50%) scaleY(.3); }
-    100%{ transform:rotate(var(--deg)) translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scaleY(1); opacity:0; }
-  }
-
-  .boom-sparks>em{
-    position:absolute; left:50%; top:50%; width:6px; height:6px; border-radius:50%;
-    background:#fff; box-shadow:0 0 10px #fff; animation: boomSpark .5s ease-out forwards;
-  }
-  @keyframes boomSpark{
-    0%{ transform:translate(-50%,-50%) scale(.6); opacity:1; }
-    100%{ transform:translate(var(--sx), var(--sy)) scale(.2); opacity:0; }
-  }
-
-  .boom-heat{
-    position:absolute; inset:0; border-radius:50%;
-    background: radial-gradient(closest-side, rgba(255,255,255,.35), rgba(255,255,255,0));
-    mix-blend-mode: screen; animation: boomHeat .4s ease-out forwards;
-  }
-  @keyframes boomHeat{
-    0%{ transform:scale(.6); opacity:.8; }
-    100%{ transform:scale(1.6); opacity:0; }
-  }
-
-  /* 크리티컬 강조 */
-  .boomfx.crit{ --boom-size:140px; --boom-hue:48; }   /* gold 계열 */
+  .mon-hp-fill{height:100%; width:100%; background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444); transition: width .18s ease;}
+  .mon-hp-text{position:absolute; left:0; right:0; top:-16px; font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6); pointer-events:none;}
   `;
-  const s = document.createElement('style');
-  s.id = 'impactfx-css';
-  s.textContent = css;
-  document.head.appendChild(s);
+  const s = document.createElement('style'); s.id = 'impactfx-css'; s.textContent = css; document.head.appendChild(s);
 }
 
-/* (호환) 이모지 FX — 필요 시 여전히 사용 가능 */
-export function spawnEmojiAt(map, lat, lon, emoji="💥") {
-  const html = `<div class="emojifx">${emoji}</div>`;
-  const icon = L.divIcon({
-    className: '',
-    html,
-    iconSize: [48, 48],
-    iconAnchor: [24, 24]
-  });
-  const fx = L.marker([lat, lon], { icon, interactive:false, zIndexOffset:20000 }).addTo(map);
-  setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, 800);
-}
-
-/* 적에게 꽂히는 기본 임팩트 FX (화이트 스파클) */
 export function spawnImpactAt(map, lat, lon) {
   const angles = [0,45,90,135,180,225,270,315];
   const radius = 16;
@@ -164,54 +59,16 @@ export function spawnImpactAt(map, lat, lon) {
   setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, 380);
 }
 
-/* 새 폭발 이펙트 (user → monster) */
-export function spawnExplosionAt(map, lat, lon, { size=120, hue=20, crit=false } = {}){
-  const angles = [0,30,60,90,120,150,180,210,240,270,300,330];
-  const radius = size * 0.16;
-  const rays = angles.map(a=>{
-    const rad = a*Math.PI/180;
-    const dx = (Math.cos(rad)*radius).toFixed(1) + 'px';
-    const dy = (Math.sin(rad)*radius).toFixed(1) + 'px';
-    return `<i style="--deg:${a}deg; --dx:${dx}; --dy:${dy};"></i>`;
-  }).join('');
-
-  // 작은 스파크(파편) 랜덤
-  let sparks = '';
-  for (let i=0;i<10;i++){
-    const sx = (Math.random()*80 - 40).toFixed(0) + 'px';
-    const sy = (Math.random()*80 - 40).toFixed(0) + 'px';
-    sparks += `<em style="--sx:${sx}; --sy:${sy};"></em>`;
-  }
-
-  const cls = crit ? 'boomfx crit' : 'boomfx';
-  const html = `
-    <div class="${cls}" style="--boom-size:${size}px; --boom-hue:${hue}">
-      <div class="boom-heat"></div>
-      <div class="boom-core"></div>
-      <div class="boom-ring"></div>
-      <div class="boom-rays">${rays}</div>
-      <div class="boom-sparks">${sparks}</div>
-    </div>
-  `;
-  const icon = L.divIcon({ className:'', html, iconSize:[size,size], iconAnchor:[size/2,size/2] });
-  const fx = L.marker([lat, lon], { icon, interactive:false, zIndexOffset:20000 }).addTo(map);
-  setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, crit ? 700 : 520);
-}
-
-/* 아주 약한 화면 흔들림 */
 export function shakeMap(containerId = 'map') {
   const c = document.getElementById(containerId); if (!c) return;
   c.classList.remove('shake-map'); void c.offsetWidth; c.classList.add('shake-map');
   setTimeout(()=>c.classList.remove('shake-map'), 140);
 }
 
-/* 몬스터 HP 바 부착 */
+/* =========================== HP Bar 부착 =========================== */
 export function attachHPBar(marker, maxHits){
-  const root = marker.getElement();
-  if (!root) return { set:()=>{} };
-  const wrap = root.querySelector('.mon-wrap');
-  if (!wrap) return { set:()=>{} };
-
+  const root = marker.getElement(); if (!root) return { set:()=>{} };
+  const wrap = root.querySelector('.mon-wrap') || root;
   let bar = wrap.querySelector('.mon-hp');
   if (!bar){
     bar = document.createElement('div');
@@ -221,7 +78,6 @@ export function attachHPBar(marker, maxHits){
   }
   const fill = bar.querySelector('.mon-hp-fill');
   const text = bar.querySelector('.mon-hp-text');
-
   const set = (left)=>{
     const safeLeft = Math.max(0, Math.min(left, maxHits));
     const p = maxHits ? (safeLeft / maxHits) * 100 : 0;
@@ -231,221 +87,213 @@ export function attachHPBar(marker, maxHits){
   return { set };
 }
 
-
-/* ===== Sprite Animation (Treasure 등) ===== */
+/* ======================= (일반) 스프라이트 유틸 ======================= */
 function ensureSpriteCSS(){
   if (document.getElementById('spritefx-css')) return;
   const css = `
   .sprite-anim{
     position:absolute; left:50%; top:50%;
-    transform: translate(-50%, -50%);
-    image-rendering: pixelated; /* 레트로 시트일 때 계단현상 자연스럽게 */
+    transform: translate(-50%, -50%) scale(var(--spr-scale, 1));
+    transform-origin: 50% 50%;
+    image-rendering: pixelated;
     pointer-events:none;
     will-change: background-position;
-  }
-  .sprite-anim.wrap{
-    position:relative; left:0; top:0; transform:none;
   }`;
-  const s = document.createElement('style');
-  s.id = 'spritefx-css';
-  s.textContent = css;
+  const s = document.createElement('style'); s.id = 'spritefx-css'; s.textContent = css;
   document.head.appendChild(s);
 }
-function preloadImage(url){
-  return new Promise((res, rej)=>{
-    const img = new Image();
-    img.onload = ()=>res(img);
-    img.onerror = rej;
-    img.src = url;
-  });
-}
-
-function createSpriteElem({ url, frameW, frameH, scale=1 }){
+function createSpriteElem({ url, frameW, frameH, scale = 1, frames = 4 }){
   const el = document.createElement('div');
   el.className = 'sprite-anim';
-  el.style.width = `${Math.round(frameW*scale)}px`;
-  el.style.height = `${Math.round(frameH*scale)}px`;
-  el.style.backgroundImage = `url("${url}")`;
+  el.style.width  = `${frameW}px`;
+  el.style.height = `${frameH}px`;
+  el.style.backgroundImage  = `url("${url}")`;
   el.style.backgroundRepeat = 'no-repeat';
   el.style.backgroundPosition = '0px 0px';
+  el.style.setProperty('--spr-scale', String(scale));
   return el;
 }
-
-/**
- * 지도 위 좌표에 스프라이트 시트 애니메이션을 한 번/반복 재생합니다.
- * - anim: { url, frameW, frameH, frames, once=true|false, fps=8 }
- * - opts: { zIndexOffset=18000, scale=1, anchorCenter=true }
- * 반환: { stop() }
- */
-export async function playSpriteOnMap(map, lat, lon, anim, opts = {}){
-  ensureSpriteCSS();
-  const {
-    url, frameW, frameH, frames,
-    once = true, fps = 8
-  } = anim || {};
-  const { zIndexOffset=18000, scale=1, anchorCenter=true } = opts;
-
-  if (!url || !frameW || !frameH || !frames){
-    console.warn('[sprite] invalid anim payload', anim);
-    return { stop:()=>{} };
-  }
-  try{ await preloadImage(url); }catch(e){ console.warn('[sprite] preload fail', e); }
-
-  const el = createSpriteElem({ url, frameW, frameH, scale });
-  const icon = L.divIcon({
-    className:'',
-    html: el,
-    iconSize: [frameW*scale, frameH*scale],
-    iconAnchor: anchorCenter ? [frameW*scale/2, frameH*scale/2] : [0,0]
-  });
-  const mk = L.marker([lat, lon], { icon, interactive:false, zIndexOffset }).addTo(map);
-
-  let frame = 0;
-  let stopped = false;
-  const period = 1000/Math.max(1,fps);
-
-  const tick = ()=>{
-    if (stopped) return;
-    const x = -(frame*frameW*scale);
-    el.style.backgroundPosition = `${x}px 0px`;
-    frame++;
-    if (frame >= frames){
-      if (once){
-        stop();
-        try{ map.removeLayer(mk); }catch{}
-        return;
-      }
-      frame = 0;
-    }
-    timer = setTimeout(tick, period);
-  };
-
-  let timer = setTimeout(tick, period);
-
-  function stop(){
-    if (stopped) return;
-    stopped = true;
-    clearTimeout(timer);
-    try{ map.removeLayer(mk); }catch{}
-  }
-  return { stop };
-}
-
-/**
- * 이미 존재하는 Leaflet 마커의 DOM(.mon-wrap)에 애니메이션 노드를 붙여 재생
- * - marker: L.Marker (getElement()로 루트 DOM 접근)
- * - anim: { url, frameW, frameH, frames, once=true|false, fps=8 }
- * - opts: { scale=1, classNameExtra='' }
- * 반환: { stop(), element }
- */
-export async function attachSpriteToMarker(marker, anim, opts = {}){
+export async function attachSpriteToMarker(marker, anim = {}, opts = {}){
   ensureSpriteCSS();
   const root = marker?.getElement();
   if (!root) return { stop:()=>{}, element:null };
+  const wrap = root.querySelector('.mon-wrap') || root;
 
-  const wrap = root.querySelector('.mon-wrap') || root; // .mon-wrap 없으면 루트에
   const {
-    url, frameW, frameH, frames,
-    once = true, fps = 8
-  } = anim || {};
-  const { scale=1, classNameExtra='' } = opts;
+    url, frames = 4, frameW = 200, frameH = 200,
+    once = true, fps  = 12
+  } = anim;
 
-  if (!url || !frameW || !frameH || !frames){
-    console.warn('[sprite] invalid anim for marker', anim);
-    return { stop:()=>{}, element:null };
+  let { scale } = opts;
+  const { classNameExtra = '' } = opts;
+  if (!url || !frames) return { stop:()=>{}, element:null };
+
+  if (scale == null) {
+    const iconSize = marker?.options?.icon?.options?.iconSize || [frameW, frameH];
+    const targetW  = Number(iconSize[0]) || frameW;
+    scale = targetW / frameW;
   }
-  try{ await preloadImage(url); }catch(e){ console.warn('[sprite] preload fail', e); }
 
-  const el = createSpriteElem({ url, frameW, frameH, scale });
-  el.classList.add('wrap');
+  const cs = window.getComputedStyle(wrap);
+  if (cs.position === 'static') wrap.style.position = 'relative';
+
+  const el = createSpriteElem({ url, frameW, frameH, scale, frames });
   if (classNameExtra) el.classList.add(classNameExtra);
   wrap.appendChild(el);
 
-  let frame = 0;
-  let stopped = false;
-  const period = 1000/Math.max(1,fps);
-
+  let frame = 0, stopped = false, timer = null;
+  const period = 1000 / Math.max(1, fps);
   const tick = ()=>{
     if (stopped) return;
-    const x = -(frame*frameW*scale);
-    el.style.backgroundPosition = `${x}px 0px`;
+    el.style.backgroundPosition = `${-(frame * frameW)}px 0px`;
     frame++;
     if (frame >= frames){
-      if (once){
-        stop();
-        return;
-      }
+      if (once){ stop(); return; }
       frame = 0;
     }
     timer = setTimeout(tick, period);
   };
-
-  let timer = setTimeout(tick, period);
-
-  function stop(){
-    if (stopped) return;
-    stopped = true;
-    clearTimeout(timer);
-    try{ el.remove(); }catch{}
-  }
+  timer = setTimeout(tick, period);
+  function stop(){ if (stopped) return; stopped = true; clearTimeout(timer); try{ el.remove(); }catch{} }
   return { stop, element: el };
 }
 
-// fx.js (하단에 추가)
-// 4프레임 스프라이트(가로 4컷) 1회 재생용
-
+/* ============== 4컷 mid 전용(Idle/Hit) - CSS/유틸 ============== */
 let _aniCSSInjected = false;
 export function ensureMonsterAniCSS(){
-  if (_aniCSSInjected) return;
-  _aniCSSInjected = true;
+  if (_aniCSSInjected) return; _aniCSSInjected = true;
   const css = `
   .ani-sheet{
     position:absolute; left:50%; top:50%;
     width:200px; height:200px; pointer-events:none;
     transform: translate(-50%, -50%) scale(var(--ani-scale, 1));
     background-repeat:no-repeat; background-position:0 0;
-    background-size:800px 200px; /* 200x200 x 4프레임 = 800x200 */
+    background-size:800px 200px;
     animation: ani4 var(--ani-dur, 420ms) steps(4) 1 both;
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
+    image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;
   }
-  @keyframes ani4 {
-    from { background-position-x:    0px; }
-    to   { background-position-x: -600px; } /* 200px * (4-1) */
-  }
-  .ani-wrap{ position:relative; width:0; height:0; }
-  `;
+  @keyframes ani4 { from { background-position-x:0px; } to { background-position-x:-600px; } }
+  .ani-wrap{ position:relative; width:0; height:0; }`;
   const style = document.createElement('style');
-  style.textContent = css;
-  document.head.appendChild(style);
+  style.textContent = css; document.head.appendChild(style);
 }
 
-/**
- * 플레이어(또는 지정 위치)에 mid 스프라이트 1회 재생
- * @param {L.Map} map
- * @param {[number, number]} latlng  [lat, lng]
- * @param {string|number} mid        예: 12 → /images/ani/12.png
- * @param {{durationMs?:number, scale?:number, basePath?:string}} [opt]
- */
 export function playMonsterHitSprite(map, latlng, mid, opt={}){
   ensureMonsterAniCSS();
-  const { durationMs=420, scale=1, basePath='/images/ani/' } = opt;
-  const url = `${basePath}${mid}.png`; // 윈도우 경로 표기는 웹에선 '/' 사용
-  const html =
-    `<div class="ani-wrap">
-       <div class="ani-sheet" style="--ani-dur:${durationMs}ms;--ani-scale:${scale};background-image:url('${url}')"></div>
-     </div>`;
-  const icon = L.divIcon({
-    className: 'ani-marker',
-    html,
-    iconSize: [0,0],
-    iconAnchor: [0,0]
-  });
-  const mk = L.marker(L.latLng(latlng[0], latlng[1]), { icon, interactive:false });
-  mk.addTo(map);
+  const { durationMs=420, scale=1, basePath } = opt;
+  const url = `${(basePath || ANI_BASE)}${encodeURIComponent(mid)}.png`;
+  const html = `<div class="ani-wrap"><div class="ani-sheet" style="--ani-dur:${durationMs}ms;--ani-scale:${scale};background-image:url('${url}')"></div></div>`;
+  const icon = L.divIcon({ className: 'ani-marker', html, iconSize: [0,0], iconAnchor: [0,0] });
+  const mk = L.marker(L.latLng(latlng[0], latlng[1]), { icon, interactive:false, zIndexOffset:22000 }).addTo(map);
+  setTimeout(() => { try { map.removeLayer(mk); } catch {} }, durationMs + 60);
+}
 
-  // 애니 끝나면 제거
-  setTimeout(() => {
-    try { map.removeLayer(mk); } catch {}
-  }, durationMs + 50);
+export function makeAniFirstFrameIcon(mid, {
+  size, frames = 4, frameW = 200, frameH = 200, basePath
+} = {}) {
+  const isAbsolute = String(mid).startsWith('http://') || String(mid).startsWith('https://');
+  const url = isAbsolute ? String(mid) : `${(basePath || ANI_BASE)}${encodeURIComponent(mid)}.png`;
+
+  const w = Math.max(16, Number(size) || 96);
+  const aspect = frameH / frameW;
+  const h = Math.round(w * aspect);
+
+  const bgW = w * frames;
+  const bgH = h;
+
+  const html = `
+    <div class="ani-first" style="
+      width:${w}px;height:${h}px;
+      background:url('${url}') 0 0 / ${bgW}px ${bgH}px no-repeat;
+      image-rendering:pixelated; pointer-events:none;
+    "></div>`;
+  return L.divIcon({ className: 'ani-first-icon', html, iconSize: [w, h], iconAnchor: [w/2, h] });
+}
+
+/* ===== Critical 표시/링 ===== */
+export function spawnCritLabelAt(map, lat, lon){
+  const html = `<div class="emojifx" style="font-weight:900; font-size:32px; color:#ffd700; text-shadow:0 2px 8px rgba(0,0,0,.45)">CRITICAL!</div>`;
+  const icon = L.divIcon({ className:'', html, iconSize:[120, 50], iconAnchor:[60, 30] });
+  const fx = L.marker([lat, lon], { icon, interactive:false, zIndexOffset:22000 }).addTo(map);
+  setTimeout(()=>{ try{ map.removeLayer(fx); }catch{} }, 800);
+}
+export function flashCritRingOnMarker(marker){
+  try{
+    const root = marker.getElement();
+    const wrap = root?.querySelector('.mon-wrap') || root;
+    if (!wrap) return;
+    const ring = document.createElement('div');
+    ring.className = 'crit-ring';
+    wrap.appendChild(ring);
+    setTimeout(()=>{ try{ ring.remove(); }catch{} }, 500);
+  }catch{}
+}
+
+/* ===== Lightning FX (단일 소스) ===== */
+let _lightningCSSInjected = false;
+export function ensureLightningCSS(){
+  if (_lightningCSSInjected) return;
+  const css = `
+  .lightning-wrap{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:140px; height:160px; pointer-events:none; z-index:22000;
+  }
+  .lightning-bolt{
+    position:absolute; left:50%; top:0; width:6px; height:90%;
+    transform: translateX(-50%) skewX(-8deg);
+    background:
+      linear-gradient(#fff, rgba(255,255,255,.9) 10%, rgba(140,200,255,.7) 40%, rgba(120,180,255,.0));
+    box-shadow: 0 0 18px rgba(140,200,255,.95), 0 0 36px rgba(120,180,255,.8) inset;
+    filter: drop-shadow(0 0 8px rgba(140,200,255,.9));
+    clip-path: polygon(48% 0%, 54% 0%, 60% 20%, 52% 20%, 66% 45%, 56% 45%, 70% 70%, 50% 70%, 58% 100%, 46% 100%, 40% 80%, 48% 80%, 34% 55%, 44% 55%, 30% 30%, 40% 30%);
+    animation: boltFlash .18s ease-out forwards;
+  }
+  .lightning-branch{
+    position:absolute; top:25%; left:50%; width:4px; height:40%;
+    background: linear-gradient(#fff, rgba(140,200,255,.0));
+    filter: drop-shadow(0 0 8px rgba(140,200,255,.9));
+    transform-origin: top center;
+    animation: boltFlash .22s ease-out forwards;
+  }
+  .lightning-branch.b1{ transform: translateX(-50%) rotate(-35deg); }
+  .lightning-branch.b2{ transform: translateX(-50%) rotate(28deg); top:38%; height:34%; }
+  .impact-ring{
+    position:absolute; left:50%; bottom:8px; width:120px; height:120px; transform:translateX(-50%);
+    border-radius:50%; border:3px solid rgba(140,200,255,.95);
+    box-shadow:0 0 24px rgba(140,200,255,.8);
+    animation: ringOut .35s ease-out forwards;
+  }
+  .screen-flash{
+    position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:2147483646; pointer-events:none;
+    animation: screenFlash .12s ease-out forwards;
+  }
+  @keyframes boltFlash{ 0%{opacity:0; filter:brightness(1.6)} 20%{opacity:1} 100%{opacity:.0; filter:brightness(1)} }
+  @keyframes ringOut{ 0%{transform:translateX(-50%) scale(.2); opacity:1} 100%{transform:translateX(-50%) scale(1.6); opacity:0} }
+  @keyframes screenFlash{ 0%{opacity:.85} 100%{opacity:0} }
+  `;
+  const s=document.createElement('style'); s.id='lightningfx-css'; s.textContent=css; document.head.appendChild(s);
+  _lightningCSSInjected = true;
+}
+
+/** 목표 좌표에 벼락 이펙트(정확히 꽂힘) */
+export function spawnLightningAt(map, lat, lon, {flashScreen=true, shake=true} = {}){
+  ensureLightningCSS();
+  const html = `
+    <div class="lightning-wrap">
+      <div class="lightning-bolt"></div>
+      <div class="lightning-branch b1"></div>
+      <div class="lightning-branch b2"></div>
+      <div class="impact-ring"></div>
+    </div>`;
+  const icon = L.divIcon({ className:'', html, iconSize:[140,160], iconAnchor:[70,150] });
+  const mk = L.marker([lat, lon], { icon, interactive:false, zIndexOffset: 22000 }).addTo(map);
+  setTimeout(()=>{ try{ map.removeLayer(mk); }catch{} }, 380);
+
+  if (flashScreen){
+    const flash = document.createElement('div');
+    flash.className = 'screen-flash';
+    document.body.appendChild(flash);
+    setTimeout(()=>{ try{ flash.remove(); }catch{} }, 160);
+  }
+  if (shake){ try{ shakeMap(); } catch{} }
 }

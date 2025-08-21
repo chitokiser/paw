@@ -2,16 +2,15 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="generator" content="Hugo 0.88.1">
-    <link rel="shortcut icon" href="../images/logo.png" />
   <title>GeoHunt – Play</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="shortcut icon" href="../images/logo.png" />
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <!-- UI -->
   <link rel="stylesheet" href="./css/map.css" />
   <style>
-    html,body,#map{height:100%;width:100%}
+    html,body,#map {height:100%;width:100%}
     .bottom-controls {
       position: fixed;
       bottom: 10px;
@@ -36,17 +35,12 @@
   <div id="map"></div>
 
 
+  <!-- Leaflet 먼저 -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- 앱 코드 -->
+ <script type="module" src="/geolocation/js/app.js"></script>
+
 
   
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-  <script type="module" src="./js/app.js"></script>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-  <script>
-    document.getElementById('homeBtn').addEventListener('click', () => {
-      window.location.href = '/geolocation/geohome.html';
-    });
-  </script>
 </body>
 </html>
