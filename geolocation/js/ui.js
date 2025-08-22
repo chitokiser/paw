@@ -1,9 +1,5 @@
-// /js/ui.js
 /* =================================================================
  * HUD & 코너 UI (안정판)
- *  - HUD 항목: 레벨 / 공격력 / 방어력 / 경험치바 / HP / 레벨업 버튼 / 블록체인 포인트
- *  - 에너지 관련 전부 제거
- *  - 널가드/중복주입/숫자 변환 방어
  * ================================================================= */
 export function injectCSS(){
   if (document.getElementById('ui-base-css')) return;
@@ -34,9 +30,12 @@ export function injectCSS(){
     position:fixed;
     right: calc(env(safe-area-inset-right, 0px) + 12px);
     top:   calc(env(safe-area-inset-top,   0px) + 12px);
-    background:rgba(17,24,39,.92); color:#fff; padding:10px 12px;
+    background:rgba(17,24,39,.72); /* ← 더 투명하게 */
+    color:#fff; padding:10px 12px;
     border-radius:12px; z-index:10040; min-width:220px;
-    box-shadow:0 10px 30px rgba(0,0,0,.28); backdrop-filter: blur(6px);
+    box-shadow:0 10px 30px rgba(0,0,0,.22);
+    backdrop-filter: blur(8px); /* ← 블러 약간 강화 */
+    -webkit-backdrop-filter: blur(8px);
     font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
   }
   #hud .row{display:flex; justify-content:space-between; align-items:center; gap:8px; margin:4px 0;}
@@ -131,9 +130,9 @@ export function ensureHUD(){
 
     <div class="row" style="margin-top:6px">
       <span class="label">HP</span>
-      <span id="hudHPText" class="val">0 / 0</span>
+      <span id="hudHPText" class="val hud-hp-text">0 / 0</span>
     </div>
-    <div class="bar"><i id="hudHPFill"></i></div>
+    <div class="bar"><i id="hudHPFill" class="hud-hp-fill"></i></div>
 
     <button id="btnLevelUp" disabled>레벨업</button>
 

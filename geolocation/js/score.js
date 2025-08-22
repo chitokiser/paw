@@ -1,225 +1,140 @@
-// /geolocation/js/score.js — 유저 점수/HP/사망/체인 관리 (HP 전용)
-
+import { auth, db } from './firebase.js';
 import {
-  getDoc, setDoc, updateDoc, serverTimestamp, doc
+  doc, getDoc, setDoc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-/* ---------------- 내부 상태 ---------------- */
-const _state = {
-  db: null,
-  getGuestId: null,
-  toast: (msg)=>console.log('[toast]', msg),
-  playFail: ()=>{},
-  // 기본값은 서버 문서로 덮어씌워짐
-  stats: { hp: 1000, attack: 1, defense: 10, level: 1, exp: 0, nextLevelExp: 20000, chainPoint: 0 },
-  isDead: false,
-  onChainChanged: null,
-  _chainCache: Number(localStorage.getItem('chainTotal') || 0),
-  weaponAttack: 0, // 무기 공격력 (HUD 가산)
-};
+export const Score = (() => {
+  let _hud = null, _toast = (m)=>console.log('[toast]', m), _playFail = ()=>{};
+  let _stats = { uid:null, level:1, hp:1000, exp:0, attack:1, defense:10, distanceM:0 };
 
-/* ---------------- 스타일 & 오버레이 ---------------- */
-function _injectCSS(){
-  if (document.getElementById('score-css')) return;
-  const css = `
-  #deathOverlay{
-    position:fixed; inset:0; z-index:3000; background:rgba(0,0,0,.8);
-    color:#fff; display:none; align-items:center; justify-content:center; text-align:center;
-    padding:24px; font-weight:800;
+  function _getMaxHP(){
+    const lv = Math.max(1, Number(_stats.level||1));
+    const explicit = Number(_stats.maxHp);
+    return Number.isFinite(explicit) && explicit > 0 ? explicit : lv * 1000;
   }
-  #deathOverlay .inner{max-width:520px}
-  #deathOverlay .title{font-size:28px;margin-bottom:8px}
-  #deathOverlay .desc{opacity:.9;margin-bottom:16px}
-  #deathOverlay button{
-    background:#ef4444; color:#fff; font-weight:800; border:none; border-radius:12px;
-    padding:12px 16px; cursor:pointer;
-  }`;
-  const s = document.createElement('style');
-  s.id = 'score-css';
-  s.textContent = css;
-  document.head.appendChild(s);
-}
-function _ensureDeathOverlay(){
-  if (document.getElementById('deathOverlay')) return;
-  const html = `
-  <div id="deathOverlay"><div class="inner">
-    <div class="title">💀 사망</div>
-    <div class="desc">HP가 0이 되었습니다. 블록체인 누적 점수가 리셋됩니다.</div>
-    <button id="btnRespawn">부활하고 계속하기</button>
-  </div></div>`;
-  document.body.insertAdjacentHTML('beforeend', html);
-}
 
-/* ---------------- 공개 API ---------------- */
-export const Score = {
-  /** 초기화 */
-  async init({ db, getGuestId, toast, playFail }){
-    _state.db = db;
-    _state.getGuestId = getGuestId;
-    if (toast) _state.toast = toast;
-    if (playFail) _state.playFail = playFail;
+  function _updateHPDom(){
+    const hp  = Math.max(0, Number(_stats.hp||0));
+    const max = _getMaxHP();
+    const pct = Math.max(0, Math.min(100, (hp/max)*100));
 
-    _injectCSS();
-    _ensureDeathOverlay();
+    const fill =
+      document.querySelector('.hud-hp-fill') ||
+      document.getElementById('hudHPFill') ||
+      document.querySelector('#hud .bar .fill');
 
-    await this.ensureUserDoc();
+    const text =
+      document.querySelector('.hud-hp-text') ||
+      document.getElementById('hudHPText') ||
+      document.querySelector('#hud .hp-text');
 
-    _state.onChainChanged = (val)=>{ try { window.setHUD?.({ chain: val }); } catch {} };
-    _state.onChainChanged?.(this.getChainTotal());
+    if (fill) fill.style.width = `${pct}%`;
+    if (text) text.textContent = `${hp} / ${max}`;
+  }
 
-    this._pushHUD();
-    this.wireRespawn();
-  },
-
-  /** 게스트ID 공유 */
-  getGuestId(){ return _state.getGuestId?.(); },
-
-  /** 유저 문서 보장/동기화 */
-  async ensureUserDoc(){
-    const uid = _state.getGuestId();
-    await setDoc(doc(_state.db, 'users', uid), { updatedAt: serverTimestamp() }, { merge: true });
-    const snap = await getDoc(doc(_state.db, 'users', uid));
-    if (snap.exists()){
-      Object.assign(_state.stats, snap.data());
-    }
-    // nextLevelExp 없으면 규칙으로 세팅
-    if (!Number.isFinite(_state.stats.nextLevelExp)) {
-      _state.stats.nextLevelExp = (_state.stats.level + 1) * 20000;
-    }
-    return { ..._state.stats };
-  },
-
-  /** 현재 상태 */
-  getStats(){ return { ..._state.stats }; },
-
-  /** HP 차감 (몬스터/함정 등) */
-  async deductHP(points){
-    const dmg = Math.max(0, Number(points)||0);
-    if (dmg <= 0) return;
-
-    _state.stats.hp = Math.max(0, (_state.stats.hp||0) - dmg);
-
+  function _syncHUD(){
     try{
-      const uid = _state.getGuestId();
-      await updateDoc(doc(_state.db, 'users', uid), { hp: _state.stats.hp, updatedAt: serverTimestamp() });
-    }catch(e){ console.warn('[Score] deductHP fail', e); }
-
-    _state.toast(`-${dmg} HP`);
-    this._pushHUD();
-    this._checkAndMaybeDie();
-  },
-
-  /** HP 회복 */
-  async healHP(points){
-    const heal = Math.max(0, Number(points)||0);
-    if (heal <= 0) return;
-
-    _state.stats.hp = (_state.stats.hp||0) + heal;
-
-    try{
-      const uid = _state.getGuestId();
-      await updateDoc(doc(_state.db, 'users', uid), { hp: _state.stats.hp, updatedAt: serverTimestamp() });
-    }catch(e){ console.warn('[Score] healHP fail', e); }
-
-    _state.toast(`+${heal} HP`);
-    this._pushHUD();
-  },
-
-  /** 무기 공격력(장검 등) 반영: HUD에 즉시 표시됨 */
-  setWeaponAttack(v){
-    _state.weaponAttack = Math.max(0, Number(v)||0);
-    this._pushHUD();
-  },
-
-  /* ------------ 블록체인 포인트(체인) ------------ */
-  getChainTotal(){ return _state._chainCache; },
-  setChainTotal(v){
-    _state._chainCache = Number(v) || 0;
-    try { localStorage.setItem('chainTotal', String(_state._chainCache)); } catch {}
-    _state.onChainChanged?.(_state._chainCache);
-  },
-
-  /* ------------ HUD 동기화 ------------ */
-  _pushHUD(){
-    const lvl = Number(_state.stats.level)||1;
-    const hp  = Math.max(0, Number(_state.stats.hp)||0);
-    const hpMax = Math.max(hp, lvl*1000); // 규칙: 레벨*1000
-    const attackShown = lvl + (_state.weaponAttack||0);
-
-    try{
-      window.setHUD?.({
-        level: lvl,
-        attack: attackShown,
-        defense: Number(_state.stats.defense)||0,
-        exp: Number(_state.stats.exp)||0,
-        hp, hpMax,
-        chain: this.getChainTotal()
+      const hpMax = _getMaxHP();
+      const hpPct = Math.max(0, Math.min(100, (_stats.hp/hpMax)*100));
+      _hud?.set?.({
+        level:_stats.level, hp:_stats.hp, hpMax, hpPct,
+        exp:_stats.exp, attack:_stats.attack, defense:_stats.defense, distanceM:_stats.distanceM
       });
-    }catch(e){ console.warn('[Score] pushHUD err', e); }
-  },
+    }catch{}
+    _updateHPDom();
+  }
 
-  /** 레벨업 (버튼은 ui.js → window.__hudLevelUp 로 연결) */
-  async levelUp(){
-    const before = Number(_state.stats.level)||1;
-    _state.stats.level = before + 1;
-    _state.stats.nextLevelExp = (_state.stats.level + 1) * 20000;
-    // HP는 레벨 기준으로 갱신(가득 채움)
-    _state.stats.hp = _state.stats.level * 1000;
-
-    try{
-      const uid = _state.getGuestId();
-      await updateDoc(doc(_state.db, 'users', uid), {
-        level:_state.stats.level,
-        hp:_state.stats.hp,
-        nextLevelExp:_state.stats.nextLevelExp,
-        updatedAt: serverTimestamp()
-      });
-    }catch(e){ console.warn('[Score] levelUp fail', e); }
-
-    _state.toast('레벨 업!');
-    this._pushHUD();
-  },
-
-  /* ------------ 사망/부활 ------------ */
-  _refillHP(){
-    const lvl = Number(_state.stats.level)||1;
-    _state.stats.hp = lvl * 1000;
-    const uid = _state.getGuestId?.();
-    if (uid){
-      updateDoc(doc(_state.db, 'users', uid), { hp: _state.stats.hp, updatedAt: serverTimestamp() }).catch(()=>{});
+  async function _save(partial){
+    const uid = auth.currentUser?.uid; if (!uid) return;
+    try{ await updateDoc(doc(db,'users',uid), { ...partial, updatedAt: serverTimestamp() }); }
+    catch{
+      try{ await setDoc(doc(db,'users',uid), { ...partial, uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true }); }
+      catch(e2){ console.warn('[Score] save fail', e2); }
     }
-  },
+  }
 
-  async _killPlayer(){
-    if (_state.isDead) return;
-    _state.isDead = true;
-    try { _state.playFail(); } catch {}
-    // 체인 누적 리셋
-    this.setChainTotal(0);
-
+  async function _loadProfile(){
+    const uid = auth.currentUser?.uid; if (!uid) return; _stats.uid = uid;
     try{
-      const uid = _state.getGuestId();
-      await updateDoc(doc(_state.db, 'users', uid), { hp:0, updatedAt: serverTimestamp() });
-    }catch(e){ console.warn('[Score] death reset fail', e); }
+      const ref = doc(db,'users',uid); const ss = await getDoc(ref);
+      if (ss.exists()){
+        const p = ss.data() || {};
+        _stats.level     = Number(p.level ?? 1);
+        _stats.hp        = Number(p.hp ?? (_stats.level*1000));
+        _stats.exp       = Number(p.exp ?? 0);
+        _stats.attack    = Number(p.attack ?? _stats.level);
+        _stats.defense   = Number(p.defense ?? 10);
+        _stats.distanceM = Number(p.distanceM ?? 0);
+        if (Number.isFinite(p.maxHp)) _stats.maxHp = Number(p.maxHp);
+      }else{
+        await setDoc(ref, { uid, level:1, hp:1000, exp:0, attack:1, defense:10, distanceM:0,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
+      }
+    }catch(e){ console.warn('[Score] load profile fail', e); }
+  }
 
-    const ov = document.getElementById('deathOverlay');
-    if (ov) ov.style.display = 'flex';
-  },
+  return {
+    async init({ toast, playFail } = {}) {
+      if (typeof toast === 'function') _toast = toast;
+      if (typeof playFail === 'function') _playFail = playFail;
+      await _loadProfile();
+      _syncHUD();
+    },
+    attachToHUD(hud){ _hud = hud; _syncHUD(); },
+    getStats(){ return _stats; },
 
-  _checkAndMaybeDie(){ if ((_state.stats.hp||0) <= 0) this._killPlayer(); },
+    async setHP(next){
+      const maxHP = _getMaxHP();
+      _stats.hp = Math.max(0, Math.min(Number(next||0), maxHP));
+      _syncHUD();
+      await _save({ hp:_stats.hp });
+    },
 
-  wireRespawn(){
-    const btn = document.getElementById('btnRespawn');
-    const ov  = document.getElementById('deathOverlay');
-    if (!btn || !ov) return;
-    btn.addEventListener('click', ()=>{
-      this._refillHP();
-      this._pushHUD();
-      _state.isDead = false;
-      ov.style.display = 'none';
-      _state.toast('부활했습니다!');
-    });
-  },
-};
+    async deductHP(amount = 1){
+      const dmg = Math.max(1, Math.floor(amount));
+      const after = Math.max(0, Number(_stats.hp||0) - dmg);
+      await this.setHP(after);
+
+      if (_stats.hp <= 0){
+        try{ _playFail?.(); }catch{}
+        _toast?.('기절했습니다. (HP 0)');
+        const respawnHP = _getMaxHP();
+        await this.setHP(respawnHP);
+        _toast?.(`HP가 ${respawnHP}로 회복되었습니다.`);
+      }
+    },
+
+    updateHPUI(){ _syncHUD(); },
+    updateEnergyUI(){},
+
+    async addExp(amount = 0){
+      const add = Math.max(0, Math.floor(amount));
+      _stats.exp = Number(_stats.exp||0) + add;
+
+      let leveled = false;
+      while (true){
+        const need = (_stats.level + 1) * 20000;
+        if (_stats.exp >= need){
+          _stats.level += 1;
+          _stats.attack = _stats.level;
+          _stats.hp     = _getMaxHP();
+          leveled = true;
+        } else break;
+      }
+
+      _syncHUD();
+      await _save({ exp:_stats.exp, level:_stats.level, attack:_stats.attack, hp:_stats.hp });
+      if (add > 0) _toast?.(`EXP +${add}${leveled ? ' (레벨업!)' : ''}`);
+    },
+
+    getChainTotal(){ return Number(localStorage.getItem('chain_total') || 0); },
+    setChainTotal(v){ localStorage.setItem('chain_total', String(Math.max(0, Math.floor(v||0)))); },
+    async saveToChainMock(delta = 0){
+      const tot = this.getChainTotal() + Math.max(0, Math.floor(delta));
+      this.setChainTotal(tot);
+      return { total: tot };
+    }
+  };
+})();
 
 export default Score;

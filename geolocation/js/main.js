@@ -33,7 +33,7 @@ import { Shops } from './shops.js';
 injectCSS();
 ensureImpactCSS();
 ensureMonsterAniCSS();
-setAniBase('https://puppi.netlify.app/images/ani/'); // 로컬 시트
+setAniBase('https://puppi.netlify.app/images/ani/'); // ✅ 프로덕션 시트
 
 /* ------------------------- 전역 ------------------------- */
 let map, playerMarker;
@@ -62,7 +62,7 @@ export async function main() {
       };
     }
 
-    // ✅ HUD에 즉시 반영(체인 포인트는 Score에서 계산하므로 그대로 두고, 나머지 표시는 HUD에)
+    // HUD 즉시 반영
     setHUD({
       level: profile.level ?? 1,
       hp: profile.hp ?? 1000,
@@ -72,7 +72,7 @@ export async function main() {
       distanceM: profile.distanceM ?? 0
     });
 
-    // (선택) 실시간으로 문서 변경시 HUD 자동 갱신
+    // 실시간 문서 변경 시 HUD 자동 갱신
     onSnapshot(ref, (ss) => {
       const p = ss.data?.() || {};
       setHUD({
@@ -87,19 +87,20 @@ export async function main() {
   } catch (e) {
     console.warn('[profile load] failed:', e);
   }
- // main.js 일부 (초반 초기화 주변)
-try {
-  await Score.init({ db, getGuestId, toast, playFail });
-  Score.attachToHUD(ensureHUD());
-  setHUD({ chain: Score.getChainTotal() });
-  Score.updateEnergyUI();
-  Score.wireRespawn?.();
-} catch(e){ console.warn('[Score.init] fail', e); }
 
-const guestId = getGuestId();
-const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
-try { await inv.load({ autoListen:true }); }
-catch(e){ console.warn('[Inventory.load] fail', e); }
+  // Score/HUD/인벤 세팅
+  try {
+    await Score.init({ db, getGuestId, toast, playFail });
+    Score.attachToHUD(ensureHUD());
+    setHUD({ chain: Score.getChainTotal() });
+    Score.updateEnergyUI?.();
+    Score.wireRespawn?.();
+  } catch(e){ console.warn('[Score.init] fail', e); }
+
+  const guestId = getGuestId();
+  const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
+  try { await inv.load({ autoListen:true }); }
+  catch(e){ console.warn('[Inventory.load] fail', e); }
 
   const invUI = new InventoryUI({
     inventory: inv,
@@ -107,28 +108,22 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     onUseItem: async (id) => {
       if (id === 'red_potion') {
         try {
-          // 🔹 유저 현재 HP 가져오기
-    const stats = Score.getStats?.() || {};
-    const curHP = Number(stats.hp ?? 0);
-    const maxHP = Number(stats.level ? stats.level * 1000 : 1000); // 레벨 × 1000
-     const newHP = Math.min(maxHP, curHP + 10);
-       // 저장 메소드가 구현되어 있다면 호출
-    if (typeof Score.setHP === 'function') {
-      await Score.setHP(newHP);
-    } else {
-      // Score 내부 stats 객체 업데이트 (fallback)
-      if (Score.getStats) {
-        Score.getStats().hp = newHP;
+          // 🔹 HP +10 (최대: 레벨×1000)
+          const stats = Score.getStats?.() || {};
+          const curHP = Number(stats.hp ?? 0);
+          const maxHP = Number(stats.level ? stats.level * 1000 : 1000);
+          const newHP = Math.min(maxHP, curHP + 10);
+          if (typeof Score.setHP === 'function') {
+            await Score.setHP(newHP);
+          } else if (Score.getStats) {
+            Score.getStats().hp = newHP;
+          }
+          Score.updateHPUI?.();
+          toast?.('빨간약 사용! (+10 HP)');
+        } catch (e) {
+          console.warn('[use red_potion] hp add failed', e);
+        }
       }
-    }
-
-    // UI 업데이트
-    Score.updateHPUI?.();
-    toast?.('빨간약 사용! (+10 HP)');
-  } catch (e) {
-    console.warn('[use red_potion] hp add failed', e);
-  }
-}
 
       // ⚡ 벼락 소환
       if (id === 'lightning_summon' || id === 'lightning_talisman' || id === '벼락소환') {
@@ -158,8 +153,6 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     },
     onDropItem: async (id) => { await inv.dropItem(id, 1); },
   });
-
-
 
   try { invUI.mount(); }
   catch (e) { console.error('[InventoryUI] mount failed:', e); }
@@ -216,7 +209,6 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     dogUrl: '../images/user/dog.png', dogSize: 26, offsetM: 0.5,
     barkUrl: '../sounds/puppybark.mp3', barkVolume: 0.9
   });
-
 
   // 클릭 방향 바라보기 (유저/개)
   map.on('click', (e) => {
@@ -280,8 +272,6 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     }
   });
   towers.setUserReady(true);
-
-  
 
   /* ===== Monsters (auto) ===== */
   const monstersGuard = new MonsterGuard({
@@ -347,7 +337,6 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
 
   // ⚡ 퀵 사용(데스크탑=L키 / 모바일=플로팅 버튼)
   setupLightningQuickUse({ map, inv, toast });
-
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -445,4 +434,3 @@ function setupLightningQuickUse({ map, inv, toast }) {
   } catch {}
   refreshBadge();
 }
-

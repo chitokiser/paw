@@ -127,6 +127,12 @@ export function createAttachMonsterBattle({
         const ttl = Number(data.cooldownMs || 60000);
         monstersGuard?.markKilled?.(monsterId, ttl);
       } catch {}
+      // ▶ 로컬 재노출 차단 (RT/타일쿼리 사이 구간까지 커버)
+      try {
+        const ttl = Number(data.cooldownMs || 60000);
+        const until = Date.now() + ttl;
+        localStorage.setItem('mon_cd:' + monsterId, String(until));
+      } catch {}
       clearAsActiveTargetIfNeeded();
       try { marker.getElement()?.querySelector?.('.hpbar, .hp-bar, .hp')?.remove?.(); } catch {}
     };
@@ -135,15 +141,25 @@ export function createAttachMonsterBattle({
       setDead();
       try { playDeath?.(); } catch {}
 
-      // ✅ 정책: 승리 시 EXP/체인 포인트(모의)만 가산. GP/에너지 없음.
+      // ✅ 정책: 승리 시 EXP 가산 (구현 유무에 따른 안전 폴백 포함)
       try {
-        // addExp가 있으면 사용(권장), 없으면 exp 필드 직접 갱신용 훅만 호출하도록 두기
+        const gain = Math.max(1, Math.floor(data.power || 1));
         if (typeof Score?.addExp === 'function') {
-          await Score.addExp(data.power);
+          await Score.addExp(gain);
+        } else if (typeof Score?.awardExp === 'function') {
+          await Score.awardExp(gain);
+        } else if (typeof Score?.incExpLocal === 'function') {
+          Score.incExpLocal(gain);
+        } else if (typeof setHUD === 'function' && typeof Score?.getStats === 'function') {
+          const s = Score.getStats() || {};
+          s.exp = (Number(s.exp||0) + gain);
+          setHUD({ exp: s.exp });
         }
-      } catch (e) { console.warn('[battle] addExp fail', e); }
+      } catch (e) {
+        console.warn('[battle] addExp fail', e);
+      }
 
-      // 체인 포인트(모의 누적 유지) — 구현 유무에 따른 안전 가산
+      // 체인 포인트(모의 누적 유지)
       try {
         if (typeof Score?.saveToChainMock === 'function') {
           const tx = await Score.saveToChainMock(data.power);
@@ -280,8 +296,8 @@ export function createAttachMonsterBattle({
               if (typeof Score?.deductHP === 'function') {
                 Score.deductHP(dmg);
               } else if (typeof Score?.deductGP === 'function') {
-                // 레거시 호환(기존 모듈이 deductGP만 부를 수 있어 폴백)
-                Score.deductHP(dmg);
+                // 레거시 호환: GP 차감이 체력 개념으로 쓰이던 구버전 지원
+                Score.deductGP(dmg);
               }
             } catch(e){ console.warn('[battle] hitPlayer fail', e); }
           }

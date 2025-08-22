@@ -42,7 +42,6 @@ export class MonsterGuard {
     this._killed = new Map();
 
     // RT(RealTimeMonsters) 공유 레지스트리 (선택)
-    // 기대 인터페이스: rt.getVisibleMonsters() → Array<{id, data}> 또는 { [id]: data }
     this._rt = null;
 
     // (DB 경로일 때) 최근 관측 시각
@@ -102,11 +101,16 @@ export class MonsterGuard {
     const until = Date.now() + Math.max(1000, ms|0);
     this._killed.set(k, until);
     this._cool.set(k, until);
+    // 로컬 재노출 차단(렌더러와 공유)
+    try { localStorage.setItem('mon_cd:' + k, String(until)); } catch {}
   }
   /** 로컬 처치 가드 확인 */
   isKilled(id){
     const until = this._killed.get(String(id));
-    return until != null && until > Date.now();
+    if (until != null && until > Date.now()) return true;
+    // 렌더러와 동일한 로컬 쿨다운 확인(보수적으로 한 번 더)
+    const u2 = Number(localStorage.getItem('mon_cd:' + String(id)) || 0);
+    return Date.now() < u2;
   }
   /** (옵션) 특정 몬스터의 공격을 당분간 끊고 싶을 때 */
   stopAttacksFrom(id, ms = 30_000){
