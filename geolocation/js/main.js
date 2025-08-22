@@ -207,36 +207,7 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     dogUrl: '../images/user/dog.png', dogSize: 26, offsetM: 0.5,
     barkUrl: '../sounds/puppybark.mp3', barkVolume: 0.9
   });
-   // ===== 로그아웃 버튼 =====
-   try {
-    let btn = document.getElementById('logout-btn');
-    if (!btn) {
-      btn = document.createElement('button');
-      btn.id = 'logout-btn';
-      btn.textContent = '로그아웃';
-      Object.assign(btn.style, {
-        position: 'fixed',
-        top: '12px',
-        right: '12px',
-        padding: '6px 12px',
-        borderRadius: '6px',
-        border: 'none',
-        background: '#dc2626',
-        color: '#fff',
-        fontSize: '14px',
-        fontWeight: '600',
-        cursor: 'pointer',
-        zIndex: 2147483647
-      });
-      document.body.appendChild(btn);
-    }
-    btn.onclick = async () => {
-      try { await logout(); }
-      catch (e) { console.warn('Logout failed', e); }
-    };
-  } catch (err) {
-    console.warn('[logout button] init error', err);
-  }
+
 
   // 클릭 방향 바라보기 (유저/개)
   map.on('click', (e) => {

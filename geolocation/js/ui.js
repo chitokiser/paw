@@ -1,12 +1,18 @@
 // /js/ui.js
+/* =================================================================
+ * HUD & 코너 UI (안정판)
+ *  - HUD 항목: 레벨 / 공격력 / 방어력 / 경험치바 / HP / 레벨업 버튼 / 블록체인 포인트
+ *  - 에너지 관련 전부 제거
+ *  - 널가드/중복주입/숫자 변환 방어
+ * ================================================================= */
 export function injectCSS(){
-  // 중복 주입 방지
   if (document.getElementById('ui-base-css')) return;
 
   const css = `
   .mon-wrap{position:relative;}
   .mon-img{ width:100%; height:100%; display:block; object-fit:contain;
-    image-rendering:crisp-edges; image-rendering:pixelated; transition:filter .15s ease, opacity .6s ease, transform .6s ease;}
+    image-rendering:crisp-edges; image-rendering:pixelated;
+    transition:filter .15s ease, opacity .6s ease, transform .6s ease;}
   .mon-hit{animation:hitflash .12s steps(1) 2;}
   @keyframes hitflash{50%{filter:brightness(2.2) contrast(1.3) saturate(1.4)}}
   .mon-death{animation:spinout .9s ease forwards;}
@@ -17,34 +23,53 @@ export function injectCSS(){
   .leaflet-marker-icon.player-hit{ animation: playerflash .22s steps(1) 2; }
   @keyframes playerflash{ 50%{ filter: brightness(2.2) contrast(1.5) } }
 
-  #eventToast{ position:fixed; top:12px; left:50%; transform:translateX(-50%);
-    background:#111827; color:#fff; padding:8px 12px; border-radius:999px; display:none; z-index:10050; font-weight:600 }
+  #eventToast{
+    position:fixed; top:12px; left:50%; transform:translateX(-50%);
+    background:#111827; color:#fff; padding:8px 12px; border-radius:999px;
+    display:none; z-index:10050; font-weight:600
+  }
 
-  /* === HUD: 우상단 고정 + 세이프에어리어 대응 === */
-  .hud{ position:fixed; right: calc(env(safe-area-inset-right, 0px) + 12px);
-    top: calc(env(safe-area-inset-top, 0px) + 12px);
+  /* === HUD: 우상단 고정 === */
+  #hud{
+    position:fixed;
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    top:   calc(env(safe-area-inset-top,   0px) + 12px);
     background:rgba(17,24,39,.92); color:#fff; padding:10px 12px;
-    border-radius:12px; z-index:10040; min-width:200px;
-    font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; box-shadow:0 6px 20px rgba(0,0,0,.25) }
-  .hud .row{display:flex; justify-content:space-between; gap:8px; margin:4px 0;}
-  .hud .mono{font-variant-numeric:tabular-nums;}
-  .hud .ok{color:#86efac}
-  .hud .warn{color:#facc15}
+    border-radius:12px; z-index:10040; min-width:220px;
+    box-shadow:0 10px 30px rgba(0,0,0,.28); backdrop-filter: blur(6px);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+  }
+  #hud .row{display:flex; justify-content:space-between; align-items:center; gap:8px; margin:4px 0;}
+  #hud .label{opacity:.85; font-size:12px;}
+  #hud .val{font-weight:800; font-variant-numeric:tabular-nums;}
 
-  #startGate{ position:fixed; inset:0; width:100%; height:100%;
-    background:#111827; color:#fff; font-size:20px; font-weight:700; display:flex; align-items:center; justify-content:center;
-    z-index:2000; border:none; cursor:pointer; }
+  .bar{ height:10px; background:#111827; border-radius:999px; overflow:hidden;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+  .bar>i{ display:block; height:100%; width:0%;
+          background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
+          transition: width .25s ease; }
+  .bar.exp>i{ background: linear-gradient(90deg,#38bdf8,#60a5fa,#a78bfa); }
 
-  /* === 코너 UI 공통 === */
+  #btnLevelUp{
+    width:100%; margin-top:6px; border:0; border-radius:10px; padding:8px 10px;
+    font-weight:800; background:#22c55e; color:#0b1320; cursor:pointer;
+  }
+  #btnLevelUp[disabled]{ opacity:.5; cursor:not-allowed; }
+
+  #startGate{
+    position:fixed; inset:0; width:100%; height:100%;
+    background:#111827; color:#fff; font-size:20px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    z-index:2000; border:none; cursor:pointer;
+  }
+
   :root{ --gap:12px; --fab-size:52px; --fab-radius:16px; }
 
-  /* Leaflet 줌 컨트롤: 좌상단 + 세이프에어리어 */
   .leaflet-top.leaflet-left{
-    top: calc(env(safe-area-inset-top, 0px) + var(--gap));
+    top:  calc(env(safe-area-inset-top,  0px) + var(--gap));
     left: calc(env(safe-area-inset-left, 0px) + var(--gap));
   }
 
-  /* FAB 버튼 공통 (홈/인벤토리) */
   .fab{
     position: fixed; z-index:10045;
     width: var(--fab-size); height: var(--fab-size);
@@ -59,16 +84,14 @@ export function injectCSS(){
   .fab:active{ transform: translateY(1px) scale(.98); }
   .fab svg{ width:28px; height:28px; }
 
-  /* 좌하=홈, 우하=인벤토리 */
   #btn-home{
-    left: calc(env(safe-area-inset-left, 0px) + var(--gap));
-    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--gap));
+    left:   calc(env(safe-area-inset-left,  0px) + var(--gap));
+    bottom: calc(env(safe-area-inset-bottom,0px) + var(--gap));
   }
   #btn-inventory{
-    right: calc(env(safe-area-inset-right, 0px) + var(--gap));
-    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--gap));
-  }
-  `;
+    right:  calc(env(safe-area-inset-right, 0px) + var(--gap));
+    bottom: calc(env(safe-area-inset-bottom,0px) + var(--gap));
+  }`;
   const s = document.createElement('style');
   s.id = 'ui-base-css';
   s.textContent = css;
@@ -76,52 +99,107 @@ export function injectCSS(){
 }
 
 export function toast(msg){
+  if (!msg && msg !== 0) return;
   let t=document.getElementById('eventToast');
   if(!t){ t=document.createElement('div'); t.id='eventToast'; document.body.appendChild(t); }
-  t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',1100);
+  t.textContent=String(msg);
+  t.style.display='block';
+  setTimeout(()=>{ try{ t.style.display='none'; }catch{} },1100);
 }
 
+/* ---------- 내부 유틸 ---------- */
+const $ = (id)=>document.getElementById(id);
+const _num = (v, def=0)=> (Number.isFinite(Number(v)) ? Number(v) : def);
+
+/** HUD 생성 */
 export function ensureHUD(){
-  let hud = document.querySelector('.hud');
+  let hud = $('hud');
   if (hud) return hud;
+
   hud = document.createElement('div');
-  hud.className='hud';
+  hud.id = 'hud';
   hud.innerHTML = `
-    <div class="row"><div>남은 시간</div><div id="hudTime" class="mono warn">-</div></div>
-    <div class="row"><div>남은 타격</div><div id="hudHits" class="mono ok">-</div></div>
-    <div class="row"><div>이번 보상</div><div id="hudEarn" class="mono">-</div></div>
-    <div class="row"><div>이동거리</div><div id="hudDist" class="mono">0 m</div></div>
-    <div class="row"><div>블록체인점수</div><div id="hudChain" class="mono">0</div></div>
+    <div class="row"><span class="label">레벨</span>   <span id="hudLevel" class="val">1</span></div>
+    <div class="row"><span class="label">공격력</span> <span id="hudAtk" class="val">1</span></div>
+    <div class="row"><span class="label">방어력</span> <span id="hudDef" class="val">10</span></div>
+
+    <div class="row" style="margin-top:2px">
+      <span class="label">경험치</span>
+      <span id="hudExpText" class="val">0 / 20,000</span>
+    </div>
+    <div class="bar exp"><i id="hudExpFill"></i></div>
+
+    <div class="row" style="margin-top:6px">
+      <span class="label">HP</span>
+      <span id="hudHPText" class="val">0 / 0</span>
+    </div>
+    <div class="bar"><i id="hudHPFill"></i></div>
+
+    <button id="btnLevelUp" disabled>레벨업</button>
+
+    <div class="row" style="margin-top:2px">
+      <span class="label">블록체인 포인트</span>
+      <span id="hudChain" class="val">0</span>
+    </div>
   `;
   document.body.appendChild(hud);
+
+  const btn = $('btnLevelUp');
+  if (btn){
+    btn.addEventListener('click', ()=>{ try { window.__hudLevelUp?.(); } catch (e) { console.warn('[HUD] level-up click err', e); }});
+  }
   return hud;
 }
 
-export function setHUD({timeLeft=null, hitsLeft=null, earn=null, chain=null, distanceM=null}={}){
-  const hud = ensureHUD();
-  if (timeLeft!=null)  hud.querySelector('#hudTime').textContent  = timeLeft;
-  if (hitsLeft!=null)  hud.querySelector('#hudHits').textContent  = hitsLeft;
-  if (earn!=null)      hud.querySelector('#hudEarn').textContent  = `+${earn} GP`;
-  if (chain!=null)     hud.querySelector('#hudChain').textContent = chain;
-  if (distanceM!=null) hud.querySelector('#hudDist').textContent  = `${Math.round(distanceM)} m`;
+/** HUD 업데이트: 필요한 키만 넘기면 됩니다. */
+export function setHUD(partial = {}){
+  ensureHUD();
+
+  if (partial.level   != null && $('hudLevel')) $('hudLevel').textContent = String(partial.level);
+  if (partial.attack  != null && $('hudAtk'))   $('hudAtk').textContent   = String(partial.attack);
+  if (partial.defense != null && $('hudDef'))   $('hudDef').textContent   = String(partial.defense);
+
+  // EXP: 현재 / (다음레벨 × 20000)
+  if (partial.exp != null || partial.level != null){
+    const lvFromHUD = _num($('hudLevel')?.textContent, 1);
+    const lv   = _num(partial.level, lvFromHUD);
+    const cur  = Math.max(0, _num(partial.exp, 0));
+    const need = Math.max(1, (lv + 1) * 20000);
+    const pct  = Math.max(0, Math.min(100, (cur/need)*100));
+    if ($('hudExpText')) $('hudExpText').textContent = `${cur.toLocaleString()} / ${need.toLocaleString()}`;
+    if ($('hudExpFill')) $('hudExpFill').style.width = pct.toFixed(1) + '%';
+    const btn = $('btnLevelUp');
+    if (btn) btn.disabled = !(cur >= need);
+  }
+
+  // HP
+  if (partial.hp != null || partial.hpMax != null){
+    const cur = Math.max(0, _num(partial.hp, 0));
+    const max = Math.max(1, _num(partial.hpMax, Math.max(cur, 1)));
+    const pct = Math.max(0, Math.min(100, (cur/max)*100));
+    if ($('hudHPText')) $('hudHPText').textContent = `${cur} / ${max}`;
+    if ($('hudHPFill')) $('hudHPFill').style.width = pct.toFixed(1) + '%';
+  }
+
+  if (partial.chain != null && $('hudChain')) $('hudChain').textContent = String(partial.chain);
 }
 
+/** 시작 게이트 */
 export function addStartGate(onStart){
   if (document.getElementById('startGate')) return;
   const btn = document.createElement('button');
-  btn.id = 'startGate'; btn.textContent = '탭해서 시작';
+  btn.id = 'startGate';
+  btn.textContent = '탭해서 시작';
   document.body.appendChild(btn);
-  const kick = ()=>{ try { onStart?.(); } catch {} btn.remove(); };
+  const kick = ()=>{ try { onStart?.(); } catch (e) { console.warn('[startGate] onStart err', e); } try { btn.remove(); } catch {} };
   btn.addEventListener('pointerdown', kick, { once:true });
-  document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible') { try {} catch {} }});
 }
 
-/* ===== 코너 버튼/레이아웃 설치 ===== */
 export function mountCornerUI({ map, playerMarker, invUI } = {}){
   injectCSS();
-  try { ensureHUD(); } catch {}
+  ensureHUD();
 
-  // 홈(FAB, 좌하)
+  // 홈 버튼
   if (!document.getElementById('btn-home')){
     const b = document.createElement('button');
     b.id = 'btn-home'; b.className = 'fab'; b.title = '내 위치로 이동';
@@ -132,14 +210,15 @@ export function mountCornerUI({ map, playerMarker, invUI } = {}){
       </svg>`;
     b.addEventListener('click', ()=>{
       try{
+        if (!map || !playerMarker?.getLatLng) return;
         const { lat, lng } = playerMarker.getLatLng();
-        map.setView([lat,lng], Math.max(map.getZoom(), 18), { animate:true });
-      }catch{}
+        map.setView([lat,lng], Math.max(map.getZoom?.()||18, 18), { animate:true });
+      }catch(e){ console.warn('[btn-home] err', e); }
     });
     document.body.appendChild(b);
   }
 
-  // 인벤토리(FAB, 우하)
+  // 인벤토리 버튼
   if (!document.getElementById('btn-inventory')){
     const b = document.createElement('button');
     b.id = 'btn-inventory'; b.className = 'fab'; b.title = '인벤토리';
@@ -157,7 +236,7 @@ export function mountCornerUI({ map, playerMarker, invUI } = {}){
         if (isOpen && typeof invUI?.close === 'function') invUI.close();
         else if (typeof invUI?.open === 'function') invUI.open();
         else console.log('[InventoryUI] toggle: open/close 메서드가 없습니다.');
-      }catch(e){ console.warn(e); }
+      }catch(e){ console.warn('[btn-inventory] err', e); }
     });
     document.body.appendChild(b);
   }

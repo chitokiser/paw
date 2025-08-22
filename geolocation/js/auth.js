@@ -1,7 +1,7 @@
 // /geolocation/js/auth.js
 import { auth, db } from './firebase.js';
 import {
-  onAuthStateChanged, signOut, updateProfile,
+  onAuthStateChanged, updateProfile,
   GoogleAuthProvider, signInWithPopup
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
