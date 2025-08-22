@@ -1,7 +1,7 @@
 /* =================================================================
  * HUD & 코너 UI (안정판)
- *  - HUD 항목: 레벨 / 공격력 / 방어력 / 경험치바 / HP / 블록체인 포인트
- *  - 레벨업 버튼 삭제
+ *  - HUD 항목: 레벨 / 공격력 / 방어력 / 경험치바 / HP / 블록체인 포인트 / 이동거리
+ *  - 레벨업 버튼 제거(자동 레벨업 정책)
  *  - 널가드/중복주입/숫자 변환 방어
  * ================================================================= */
 export function injectCSS(){
@@ -28,12 +28,12 @@ export function injectCSS(){
     display:none; z-index:10050; font-weight:600
   }
 
-  /* === HUD: 우상단 고정 (더 투명) === */
+  /* === HUD: 우상단 고정 === */
   #hud{
     position:fixed;
     right: calc(env(safe-area-inset-right, 0px) + 12px);
     top:   calc(env(safe-area-inset-top,   0px) + 12px);
-    background:rgba(17,24,39,.68); /* 0.92 -> 0.68 */
+    background:rgba(17,24,39,.68); /* 더 투명하게 */
     color:#fff; padding:10px 12px;
     border-radius:12px; z-index:10040; min-width:220px;
     box-shadow:0 10px 30px rgba(0,0,0,.28); backdrop-filter: blur(8px);
@@ -50,13 +50,6 @@ export function injectCSS(){
           transition: width .25s ease; }
   .bar.exp>i{ background: linear-gradient(90deg,#38bdf8,#60a5fa,#a78bfa); }
 
-  #startGate{
-    position:fixed; inset:0; width:100%; height:100%;
-    background:#111827; color:#fff; font-size:20px; font-weight:700;
-    display:flex; align-items:center; justify-content:center;
-    z-index:2000; border:none; cursor:pointer;
-  }
-
   :root{ --gap:12px; --fab-size:52px; --fab-radius:16px; }
 
   .leaflet-top.leaflet-left{
@@ -68,11 +61,12 @@ export function injectCSS(){
     position: fixed; z-index:10045;
     width: var(--fab-size); height: var(--fab-size);
     border-radius: var(--fab-radius);
-    background:#111827; color:#fff; border:none;
+    background:rgba(17,24,39,.68); color:#fff; border:none;
     display:flex; align-items:center; justify-content:center;
     font-size:20px; cursor:pointer; box-shadow:0 6px 20px rgba(0,0,0,.28);
     outline:none; user-select:none;
     transition: transform .08s ease, box-shadow .2s ease, background .2s ease;
+    backdrop-filter: blur(6px);
   }
   .fab:hover{ transform: translateY(-1px); }
   .fab:active{ transform: translateY(1px) scale(.98); }
@@ -104,6 +98,12 @@ export function toast(msg){
 /* ---------- 내부 유틸 ---------- */
 const $ = (id)=>document.getElementById(id);
 const _num = (v, def=0)=> (Number.isFinite(Number(v)) ? Number(v) : def);
+const _distText = (m)=>{
+  const n = Number(m);
+  if (!Number.isFinite(n)) return '0 m';
+  if (n < 1000) return `${Math.round(n)} m`;
+  return `${(n/1000).toFixed(2)} km`;
+};
 
 /** HUD 생성 */
 export function ensureHUD(){
@@ -129,9 +129,14 @@ export function ensureHUD(){
     </div>
     <div class="bar"><i id="hudHPFill"></i></div>
 
-    <div class="row" style="margin-top:2px">
+    <div class="row" style="margin-top:6px">
       <span class="label">블록체인 포인트</span>
       <span id="hudChain" class="val">0</span>
+    </div>
+
+    <div class="row" style="margin-top:2px">
+      <span class="label">이동거리</span>
+      <span id="hudDist" class="val">0 m</span>
     </div>
   `;
   document.body.appendChild(hud);
@@ -167,7 +172,11 @@ export function setHUD(partial = {}){
     if ($('hudHPFill')) $('hudHPFill').style.width = pct.toFixed(1) + '%';
   }
 
+  // 체인 포인트
   if (partial.chain != null && $('hudChain')) $('hudChain').textContent = String(partial.chain);
+
+  // 이동거리
+  if (partial.distanceM != null && $('hudDist')) $('hudDist').textContent = _distText(partial.distanceM);
 }
 
 /** 시작 게이트 */
@@ -176,6 +185,12 @@ export function addStartGate(onStart){
   const btn = document.createElement('button');
   btn.id = 'startGate';
   btn.textContent = '탭해서 시작';
+  Object.assign(btn.style, {
+    position:'fixed', inset:0, width:'100%', height:'100%',
+    background:'#111827', color:'#fff', fontSize:'20px', fontWeight:700,
+    display:'flex', alignItems:'center', justifyContent:'center',
+    zIndex:2000, border:'none', cursor:'pointer'
+  });
   document.body.appendChild(btn);
   const kick = ()=>{ try { onStart?.(); } catch (e) { console.warn('[startGate] onStart err', e); } try { btn.remove(); } catch {} };
   btn.addEventListener('pointerdown', kick, { once:true });
