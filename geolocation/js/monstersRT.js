@@ -31,7 +31,7 @@ function makeStaticIcon(url, sizePx){
  * mid 기반 첫 프레임 아이콘 선택기
  * =============================== */
 function buildAniSheetURL(mid){
-  return `http://127.0.0.1:5550/images/ani/${encodeURIComponent(mid)}.png`;
+  return `https://puppi.netlify.app/images/ani/${encodeURIComponent(mid)}.png`;
 }
 
 function makeMonsterIconFromData(d, sizePx, fallbackUrl){

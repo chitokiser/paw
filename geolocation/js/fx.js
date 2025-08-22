@@ -2,7 +2,7 @@
 // mid(숫자) 기반 4컷(800x200) 정책 + 공통 FX 유틸 (Leaflet 기반)
 
 /* ========================= 전역(기본 로컬 경로) ========================= */
-let ANI_BASE = 'http://127.0.0.1:5550/images/ani/';
+let ANI_BASE = 'https://puppi.netlify.app/images/ani/';
 export function setAniBase(url){
   if (!url) return;
   ANI_BASE = String(url).replace(/\/+$/,'') + '/';

@@ -1,5 +1,4 @@
 // /geolocation/js/main.js
-import { logout } from './auth.js';
 import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { auth, db } from './firebase.js';
 import {
@@ -34,7 +33,7 @@ import { Shops } from './shops.js';
 injectCSS();
 ensureImpactCSS();
 ensureMonsterAniCSS();
-setAniBase('http://127.0.0.1:5550/images/ani/'); // 로컬 시트
+setAniBase('https://puppi.netlify.app/images/ani/'); // 로컬 시트
 
 /* ------------------------- 전역 ------------------------- */
 let map, playerMarker;
@@ -108,18 +107,28 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     onUseItem: async (id) => {
       if (id === 'red_potion') {
         try {
-          if (typeof Score.addEnergy === 'function') await Score.addEnergy(10);
-          else if (typeof Score.recoverEnergy === 'function') await Score.recoverEnergy(10);
-          else if (typeof Score.setEnergy === 'function') {
-            const cur = Number(Score.getStats?.().energy ?? 0);
-            await Score.setEnergy(cur + 10);
-          }
-          Score.updateEnergyUI?.();
-          toast?.('빨간약 사용! (+10 에너지)');
-        } catch (e) {
-          console.warn('[use red_potion] energy add failed', e);
-        }
+          // 🔹 유저 현재 HP 가져오기
+    const stats = Score.getStats?.() || {};
+    const curHP = Number(stats.hp ?? 0);
+    const maxHP = Number(stats.level ? stats.level * 1000 : 1000); // 레벨 × 1000
+     const newHP = Math.min(maxHP, curHP + 10);
+       // 저장 메소드가 구현되어 있다면 호출
+    if (typeof Score.setHP === 'function') {
+      await Score.setHP(newHP);
+    } else {
+      // Score 내부 stats 객체 업데이트 (fallback)
+      if (Score.getStats) {
+        Score.getStats().hp = newHP;
       }
+    }
+
+    // UI 업데이트
+    Score.updateHPUI?.();
+    toast?.('빨간약 사용! (+10 HP)');
+  } catch (e) {
+    console.warn('[use red_potion] hp add failed', e);
+  }
+}
 
       // ⚡ 벼락 소환
       if (id === 'lightning_summon' || id === 'lightning_talisman' || id === '벼락소환') {
@@ -263,7 +272,7 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
       const { lat, lng } = playerMarker.getLatLng();
       try {
         flashPlayer();
-        Score.deductGP(damage, lat, lng);
+        Score.deductHP(damage, lat, lng);
         spawnImpactAt(map, lat, lng);
         shakeMap();
         playAttackImpact({ intensity: 1.0 });
@@ -285,7 +294,7 @@ catch(e){ console.warn('[Inventory.load] fail', e); }
     onUserHit: (damage, mon) => {
       flashPlayer();
       try {
-        Score.deductGP(damage, mon.lat, mon.lon);
+        Score.deductHP(damage, mon.lat, mon.lon);
         const { lat: uLat, lng: uLng } = playerMarker.getLatLng();
         spawnImpactAt(map, uLat, uLng);
         shakeMap();

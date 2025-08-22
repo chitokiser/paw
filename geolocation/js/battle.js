@@ -1,8 +1,11 @@
 // /geolocation/js/battle.js
 import { getEquippedWeapon } from './equipment.js';
+
+// 현재 전투 타깃 getter(외부에서 읽음)
 export let getCurrentBattleTarget = () => null;
 export function _setCurrentBattleTarget(fn){ getCurrentBattleTarget = fn; }
 
+// FX / 오디오
 import {
   spawnImpactAt as fxSpawnImpactAt,
   shakeMap as fxShakeMap,
@@ -14,11 +17,17 @@ import { playAttackImpact as importedPlayAttackImpact } from './audio.js';
 export function createAttachMonsterBattle({
   db, map, playerMarker, dog, Score, toast,
   ensureAudio, setFacingByLatLng, attackOnceToward,
+
+  // 주입 가능(있으면 우선)
   spawnImpactAt: injSpawnImpactAt,
   shakeMap: injShakeMap,
   playAttackImpact, playFail, playDeath,
-  attachHPBar, getChallengeDurationMs, transferMonsterInventory, getGuestId,
+
+  // HUD/인벤토리/RT
+  attachHPBar, transferMonsterInventory, getGuestId,
   monstersGuard, setHUD,
+
+  // 스프라이트 어태치(선택)
   attachSpriteToMarker: injAttachSpriteToMarker
 }) {
   const _spawnImpactAt = injSpawnImpactAt || fxSpawnImpactAt;
@@ -26,6 +35,7 @@ export function createAttachMonsterBattle({
   const _playAttackImpact = playAttackImpact || importedPlayAttackImpact;
   const _attachSpriteToMarker = injAttachSpriteToMarker || null;
 
+  // ───────────────────── 도우미
   const FACING_THRESH_PX = 8;
   const faceTowards = (targetLL) => {
     const p1 = map.latLngToLayerPoint(playerMarker.getLatLng());
@@ -35,24 +45,26 @@ export function createAttachMonsterBattle({
     if (dir) { try { setFacingByLatLng(map, playerMarker, targetLL, dir); } catch {} }
   };
 
+  // 히트 FX(크리티컬 강조 포함)
   const showHitFX = (marker, lat, lon, { crit = false } = {}) => {
     try {
       if (crit && typeof spawnExplosionAt === 'function') {
+        // 있으면 큰 폭발(선택)
         spawnExplosionAt(map, lat, lon, { size: 140, hue: 48, crit: true });
       } else {
         _spawnImpactAt(map, lat, lon);
       }
     } catch { try { _spawnImpactAt(map, lat, lon); } catch {} }
+
     if (crit) {
       try { spawnCritLabelAt?.(map, lat, lon, { text: 'CRIT!', ms: 700 }); } catch {}
       try { flashCritRingOnMarker?.(marker, { ms: 500 }); } catch {}
     }
-    try {
-      _playAttackImpact({ intensity: crit ? 1.6 : 1.15, includeWhoosh: crit, critical: crit });
-    } catch {}
+    try { _playAttackImpact({ intensity: crit ? 1.6 : 1.15, includeWhoosh: crit, critical: crit }); } catch {}
     try { _shakeMap(); } catch {}
   };
 
+  // 마커 실제 보이는 크기에 맞춰 시트 스케일 추정
   function _getSheetURLAndScale(marker, mid, frameW = 200, frameH = 200) {
     const root = marker?.getElement();
     let url = '', scale = 1;
@@ -71,18 +83,19 @@ export function createAttachMonsterBattle({
       }
     }
     if (!url && mid != null) {
-      url = `http://127.0.0.1:5550/images/ani/${encodeURIComponent(mid)}.png`;
+      url = `https://puppi.netlify.app/images/ani/${encodeURIComponent(mid)}.png`;
     }
     return { url, scale };
   }
 
+  // ───────────────────── 메인
   function attachMonsterBattle(marker, monsterId, raw = {}) {
     if (!marker || !monsterId) return;
 
     const data = {
       lat: raw.lat, lon: raw.lon,
       mid: raw.mid ?? raw.mId ?? raw.animId ?? null,
-      power: Number.isFinite(raw.power) ? +raw.power : 20,
+      power: Number.isFinite(raw.power) ? +raw.power : 20,     // ✅ 전투 난이도 & EXP/체인 가산용
       hp: Number.isFinite(raw.hp) ? +raw.hp : undefined,
       cooldownMs: Number.isFinite(raw.cooldownMs) ? +raw.cooldownMs : 2000,
       approachMaxM: Number.isFinite(raw.approachMaxM) ? +raw.approachMaxM : 10,
@@ -91,84 +104,58 @@ export function createAttachMonsterBattle({
       critChance: Number.isFinite(raw.critChance) ? +raw.critChance : 0.3
     };
 
-    // HP/UI
+    // ── 몬스터 HP 바
     let hpLeft = Math.max(1, Number(data.hp ?? data.power));
     let hpUI = { set: () => {} };
     setTimeout(() => {
       try { hpUI = attachHPBar(marker, hpLeft) || { set: () => {} }; hpUI.set(hpLeft); } catch {}
-      try { setHUD?.({ timeLeft: '-', hitsLeft: hpLeft, earn: data.power, chain: Score.getChainTotal() }); } catch {}
+      // ⛔️ 정책상: 타임어택/필요타격/보상 등 HUD 요소는 더 이상 표시하지 않음
     }, 0);
 
-    // 타임어택 HUD
-    let chal = null; // { remain, deadline, timer }
-    const stopHUD = () => {
-      if (chal?.timer) clearInterval(chal.timer);
-      chal = null;
-      try { setHUD?.({ timeLeft: '-', hitsLeft: '-', earn: data.power, chain: Score.getChainTotal() }); } catch {}
-    };
-    const tickHUD = () => {
-      if (!chal) return;
-      const left = Math.max(0, chal.deadline - Date.now());
-      try { setHUD?.({ timeLeft: (left / 1000).toFixed(1) + 's', hitsLeft: chal.remain, earn: data.power }); } catch {}
-    };
-
-    // 🔒 사망 처리: 공격/타깃/가드/타이머/HP바/마커 모두 정리
+    // 공격/타깃 정리
     const clearAsActiveTargetIfNeeded = () => {
       try {
-        if (window.__activeBattleCtrl && window.__activeBattleCtrl.id === monsterId) {
-          window.__activeBattleCtrl = null;
-        }
-        if (window.__battleCtrlById instanceof Map) {
-          window.__battleCtrlById.delete(monsterId);
-        }
-        if (typeof window !== 'undefined') {
-          // 레거시 폴백 변수도 정리
-          if (window.__battleCtrlLast && window.__battleCtrlLast.id === monsterId) {
-            window.__battleCtrlLast = null;
-          }
-        }
-        // getCurrentBattleTarget는 항상 __activeBattleCtrl를 참조하도록 이미 결선되어 있음
+        if (window.__activeBattleCtrl && window.__activeBattleCtrl.id === monsterId) window.__activeBattleCtrl = null;
+        if (window.__battleCtrlById instanceof Map) window.__battleCtrlById.delete(monsterId);
       } catch {}
     };
 
     const setDead = () => {
-      try {
-        marker.options.interactive = false;
-        marker.off('click');
-        marker._pf_dead = true;
-      } catch {}
+      try { marker.options.interactive = false; marker.off('click'); marker._pf_dead = true; } catch {}
       try { monstersGuard?.stopAttacksFrom?.(monsterId); } catch {}
       try {
         const ttl = Number(data.cooldownMs || 60000);
-        monstersGuard?.markKilled?.(monsterId, ttl); // RT 노출 차단(로컬)
+        monstersGuard?.markKilled?.(monsterId, ttl);
       } catch {}
-      // HUD/타이머/타깃 정리
-      stopHUD();
       clearAsActiveTargetIfNeeded();
-      // HP바 UI 제거(attachHPBar 구현에 따라 엘리먼트가 marker DOM 내에 있음)
-      try {
-        const el = marker.getElement();
-        el?.querySelector?.('.hpbar, .hp-bar, .hp')?.remove?.();
-      } catch {}
+      try { marker.getElement()?.querySelector?.('.hpbar, .hp-bar, .hp')?.remove?.(); } catch {}
     };
 
     const win = async () => {
       setDead();
-      try { playDeath(); } catch {}
+      try { playDeath?.(); } catch {}
 
-      // 점수/체인
+      // ✅ 정책: 승리 시 EXP/체인 포인트(모의)만 가산. GP/에너지 없음.
       try {
-        const distM = Math.round(Score.getStats().totalDistanceM);
-        await Score.awardGP(data.power, data.lat, data.lon, distM);
-        Score.updateEnergyUI();
-        const tx = await Score.saveToChainMock(data.power);
-        setHUD?.({ chain: tx.total });
-      } catch (e) { console.warn('[battle] score/chain fail', e); }
+        // addExp가 있으면 사용(권장), 없으면 exp 필드 직접 갱신용 훅만 호출하도록 두기
+        if (typeof Score?.addExp === 'function') {
+          await Score.addExp(data.power);
+        }
+      } catch (e) { console.warn('[battle] addExp fail', e); }
 
-      // 로컬 CD 기록 → RT가 다시 불러오지 않도록
-      try { localStorage.setItem('mon_cd:' + monsterId, String(Date.now() + data.cooldownMs)); } catch {}
+      // 체인 포인트(모의 누적 유지) — 구현 유무에 따른 안전 가산
+      try {
+        if (typeof Score?.saveToChainMock === 'function') {
+          const tx = await Score.saveToChainMock(data.power);
+          try { setHUD?.({ chain: tx.total }); } catch {}
+        } else if (typeof Score?.getChainTotal === 'function' && typeof Score?.setChainTotal === 'function') {
+          const total = (Score.getChainTotal() || 0) + data.power;
+          Score.setChainTotal(total);
+          try { setHUD?.({ chain: total }); } catch {}
+        }
+      } catch(e){ console.warn('[battle] chain add fail', e); }
 
-      // 전리품
+      // 전리품 이관
       try {
         const gid =
           (typeof getGuestId === 'function' && getGuestId()) ||
@@ -176,43 +163,41 @@ export function createAttachMonsterBattle({
           localStorage.getItem('guestId') || 'guest';
         const moved = await transferMonsterInventory(db, { monsterId, guestId: gid });
         toast(moved?.length
-          ? `+${data.power} GP & 전리품: ${moved.map(it => `${it.name || it.id} x${it.qty || 1}`).join(', ')}`
-          : `+${data.power} GP!`);
+          ? `전리품: ${moved.map(it => `${it.name || it.id} x${it.qty || 1}`).join(', ')}`
+          : `처치 완료!`);
       } catch (e) {
         console.warn('[battle] loot transfer fail', e);
         toast('전리품 이전 실패. 잠시 후 다시 시도해 주세요.');
       }
 
       // 마커 제거
-      setTimeout(() => {
-        try { map.removeLayer(marker); } catch {}
-      }, 900);
+      setTimeout(() => { try { map.removeLayer(marker); } catch {} }, 900);
     };
 
-    const fail = () => { stopHUD(); try { playFail(); } catch {}; toast('실패… 다시!'); };
+    const fail = () => { try { playFail?.(); } catch {}; toast('실패… 다시!'); };
 
-    // 클릭 전투
+    // ── 클릭 전투(근접/히트/HP 감소)
     marker.options.interactive = true;
     marker.on('click', async () => {
       if (marker._pf_dead) return;
-      try { ensureAudio(); } catch {}
+      try { ensureAudio?.(); } catch {}
       if (attachMonsterBattle._busy) return;
       attachMonsterBattle._busy = true;
 
       try {
-        // 무기 스펙
-        const w = getEquippedWeapon();
+        // 무기 스펙(공격력/크확)
+        const w = getEquippedWeapon?.();
         const wpAtk   = Math.max(0, Number(w?.baseAtk || 0));
         const wpCritA = Math.max(0, Number(w?.extraCrit || 0));
         const CRIT_MULTI = 2.0;
 
-        // 접근/대시
+        // 접근
         const uLL = playerMarker.getLatLng();
         const mLL = marker.getLatLng();
         const dist0 = map.distance(uLL, mLL);
 
         if (dist0 > data.approachMaxM) {
-          try { playFail(); } catch {}
+          try { playFail?.(); } catch {}
           toast(`먼저 가까이 가세요 (현재 ${Math.round(dist0)}m / 필요 ${data.approachMaxM}m)`);
           return;
         }
@@ -231,7 +216,7 @@ export function createAttachMonsterBattle({
         }
         if (marker._pf_dead) return;
 
-        // 공격 연출 + 판정
+        // 공격 애니/판정
         const nowLL = marker.getLatLng();
         faceTowards(nowLL);
         await attackOnceToward(map, playerMarker, nowLL.lat, nowLL.lng);
@@ -259,12 +244,14 @@ export function createAttachMonsterBattle({
           } catch (e) { console.warn('[battle] attachSpriteToMarker failed', e); }
         }
 
-        // === 외부 히트 컨트롤러(번개 등) ===
+        // === 외부 컨트롤러(번개 등 원격 히트 & 플레이어 피격 훅) ===
         const ctrl = {
           id: monsterId,
           marker,
           getLatLng: () => marker.getLatLng(),
           isDead: () => !!marker._pf_dead,
+
+          /** 몬스터가 외부 요인으로 피해(양수) */
           async hit(amount = 1, opts = {}) {
             if (marker._pf_dead) return;
             const nowLL = marker.getLatLng();
@@ -278,20 +265,29 @@ export function createAttachMonsterBattle({
               _shakeMap();
             } catch {}
 
-            // HP/HUD
             const dmg = Math.max(1, Math.floor(amount));
             hpLeft = Math.max(0, hpLeft - dmg);
-            if (chal){
-              chal.remain = Math.max(0, chal.remain - dmg);
-              tickHUD();               // ✅ 오타 수정 (hud() → tickHUD())
-            }
             try { hpUI.set(hpLeft); } catch {}
 
             if (hpLeft <= 0) { await win(); }
+          },
+
+          /** 🔥 몬스터가 플레이어를 타격(양수=피해). monstersRT 등에서 호출 */
+          hitPlayer(amount = 1) {
+            const dmg = Math.max(1, Math.floor(amount));
+            // Score에 HP 차감 API가 있으면 사용(정책)
+            try {
+              if (typeof Score?.deductHP === 'function') {
+                Score.deductHP(dmg);
+              } else if (typeof Score?.deductGP === 'function') {
+                // 레거시 호환(기존 모듈이 deductGP만 부를 수 있어 폴백)
+                Score.deductHP(dmg);
+              }
+            } catch(e){ console.warn('[battle] hitPlayer fail', e); }
           }
         };
 
-        // 글로벌 타깃 등록
+        // 글로벌 등록(가장 최근 타깃)
         try {
           marker._pf_ctrl = ctrl;
           window.__battleCtrlById = window.__battleCtrlById || new Map();
@@ -299,34 +295,22 @@ export function createAttachMonsterBattle({
           window.__activeBattleCtrl = ctrl;
           _setCurrentBattleTarget(() => {
             const c = window.__activeBattleCtrl || null;
-            // 죽은 컨트롤러가 남아있으면 즉시 해제
-            if (c && c.isDead && c.isDead()) return null;
-            return c;
+            return (c && c.isDead && c.isDead()) ? null : c;
           });
+
+          // RT/AI가 참조할 수 있도록 “몬스터별 플레이어 타격 훅”도 노출
+          window.__applyPlayerDamage = (fromId, dmg) => {
+            try {
+              const c = window.__battleCtrlById?.get(fromId);
+              c?.hitPlayer?.(dmg);
+            } catch {}
+          };
         } catch {}
 
-        // 타임어택 HUD 시작
-        if (!chal) {
-          const ms = getChallengeDurationMs(data.power);
-          chal = {
-            remain: Math.max(1, hpLeft),
-            deadline: Date.now() + ms,
-            timer: setInterval(() => {
-              if (!chal) return;
-              if (marker._pf_dead) { fail(); return; }
-              if (Date.now() >= chal.deadline) fail(); else tickHUD();
-            }, 80)
-          };
-          tickHUD();
-        }
-        if (Date.now() >= chal.deadline) return fail();
-
-        // HP 감소(무기/크리 반영)
-        hpLeft = Math.max(0, hpLeft - damage);
-        chal.remain = Math.max(0, chal.remain - damage);
+        // HP 감소(플레이어 → 몬스터)
+        hpLeft = Math.max(0, hpLeft - Math.max(1, Math.floor(damage)));
         try { hpUI.set(hpLeft); } catch {}
-
-        if (hpLeft <= 0) await win(); else tickHUD();
+        if (hpLeft <= 0) await win();
 
       } catch (e) {
         console.warn('[battle] attack flow error', e);
@@ -343,7 +327,7 @@ export function createAttachMonsterBattle({
   return attachMonsterBattle;
 }
 
-/* 유연한 대시 */
+/* 부드러운 대시(근접까지 이동) */
 function dashToMeleeDynamic({
   map, playerMarker,
   getTargetLatLng,
