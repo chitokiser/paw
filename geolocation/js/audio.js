@@ -275,12 +275,7 @@ const deathSound  = new Audio('/sounds/death.mp3');
 const rewardSound = new Audio('/sounds/reward.mp3');
 const critSound   = new Audio('/sounds/crit.mp3');
 
-/* ─────────────── 오디오 초기화 ─────────────── */
-export function ensureAudio() {
-  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  return audioCtx;
-}
+
 
 /* ─────────────── 간단 MP3 재생 ─────────────── */
 export function playMp3(url, { volume = 1.0 } = {}) {

@@ -12,7 +12,7 @@ import {
   spawnCritLabelAt, spawnLightningAt,
   flashCritRingOnMarker
 } from './fx.js';
-import { playAttackImpact as importedPlayAttackImpact } from './audio.js';
+import { playAttackImpact as importedPlayAttackImpact, playCrit } from './audio.js';
 
 export function createAttachMonsterBattle({
   db, map, playerMarker, dog, Score, toast,
@@ -51,6 +51,7 @@ export function createAttachMonsterBattle({
       if (crit && typeof spawnExplosionAt === 'function') {
         // 있으면 큰 폭발(선택)
         spawnExplosionAt(map, lat, lon, { size: 140, hue: 48, crit: true });
+        playCrit();
       } else {
         _spawnImpactAt(map, lat, lon);
       }

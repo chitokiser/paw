@@ -3,7 +3,7 @@ import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0
 import { auth, db } from './firebase.js';
 import {
   ensureAudio, playFail, playDeath, playAttackImpact,
-  playThunderBoom, playLightningImpact
+  playThunderBoom, playLightningImpact, playReward, playCrit
 } from './audio.js';
 import { injectCSS, toast, ensureHUD, setHUD, addStartGate, mountCornerUI } from './ui.js';
 import { makePlayerDivIcon, getChallengeDurationMs, getGuestId, haversineM } from './utils.js';
