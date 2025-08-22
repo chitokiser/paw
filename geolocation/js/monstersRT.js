@@ -29,9 +29,6 @@ function makeStaticIcon(url, sizePx){
 
 /* ===============================
  * mid 기반 첫 프레임 아이콘 선택기
- *  - d.mid(또는 d.animId)를 우선 사용
- *  - 강제 비활성: d.useAniFirst === false
- *  - 폴백: d.imageURL/imagesURL/iconURL → 정적 아이콘
  * =============================== */
 function buildAniSheetURL(mid){
   return `http://127.0.0.1:5550/images/ani/${encodeURIComponent(mid)}.png`;
@@ -54,11 +51,10 @@ function makeMonsterIconFromData(d, sizePx, fallbackUrl){
   // 3) 강제 비활성 플래그
   if (d && d.useAniFirst === false) mid = null;
 
-  // 4) mid가 있으면 시트 첫 프레임 아이콘 (4컷 가정)
+  // 4) mid가 있으면 시트 첫 프레임 아이콘
   if (mid) {
     try {
       const sheetURL = buildAniSheetURL(mid);
-      // fx.js의 makeAniFirstFrameIcon은 (sheetURL, { size, frames }) 형태라고 가정
       return makeAniFirstFrameIcon(sheetURL, { size: s, frames: 4 });
     } catch {
       // 실패 시 정적 폴백
@@ -76,7 +72,7 @@ function makeMonsterIconFromData(d, sizePx, fallbackUrl){
 export class RealTimeMonsters {
   constructor({
     db, map,
-    makeImageDivIcon: mkImg = null, // (url, size, d) 시그니처 지원
+    makeImageDivIcon: mkImg = null, // (url, size, d)
     DEFAULT_IMG = 'https://puppi.netlify.app/images/mon/30.png',
     attachMonsterBattle,
     monstersGuard,
@@ -90,7 +86,7 @@ export class RealTimeMonsters {
   }){
     this.db = db;
     this.map = map;
-    this.makeImageDivIcon = mkImg || ((url, size, d)=> makeStaticIcon(url, size)); // 외부 커스텀 허용
+    this.makeImageDivIcon = mkImg || ((url, size, d)=> makeStaticIcon(url, size));
     this.DEFAULT_IMG = DEFAULT_IMG;
     this.attachMonsterBattle = (marker, id, d)=> attachMonsterBattle?.(marker, id, d || {});
     this.monstersGuard = monstersGuard;
@@ -114,6 +110,7 @@ export class RealTimeMonsters {
     this._onZoomEnd = this._onZoomEnd.bind(this);
   }
 
+  /* 외부에서 가시 리스트가 필요할 때 사용 */
   getVisibleMonsters(){
     const out = [];
     for (const [id, rec] of this.reg){
@@ -122,11 +119,19 @@ export class RealTimeMonsters {
     }
     return out;
   }
-  // class RealTimeMonsters 내부 메서드로 추가
-getMarkerById(id){
-  const rec = this.reg.get(String(id));
-  return rec ? rec.marker : null;
-}
+  getMarkerById(id){
+    const rec = this.reg.get(String(id));
+    return rec ? rec.marker : null;
+  }
+  getMarker(id){
+    const rec = this.reg?.get?.(String(id));
+    return rec ? rec.marker : null;
+  }
+
+  /* 🔴 공격 정지 헬퍼: 어디서든 숨길 때 같이 호출 */
+  _haltAttacks(id){
+    try { this.monstersGuard?.stopAttacksFrom?.(String(id)); } catch {}
+  }
 
   start(){
     if (this._started) return;
@@ -134,7 +139,7 @@ getMarkerById(id){
     try {
       this.map.on('moveend', this._onMoveEnd);
       this.map.on('zoomend', this._onZoomEnd);
-      // 🔗 MonsterGuard가 이 RT 인스턴스의 가시 목록을 쓰도록 연결
+      // 🔗 MonsterGuard가 현재 RT 인스턴스의 레지스트리를 쓸 수 있게 연결
       this.monstersGuard?.setSharedRegistry?.(this);
     } catch {}
     this._fetchOnce(true).catch(()=>{});
@@ -147,7 +152,8 @@ getMarkerById(id){
     if (this._pollTid) clearInterval(this._pollTid);
     if (this._moveTid) clearTimeout(this._moveTid);
     try { this.map.off('moveend', this._onMoveEnd); this.map.off('zoomend', this._onZoomEnd); } catch {}
-    this.reg.forEach(rec=>{
+    this.reg.forEach((rec, id)=>{
+      this._haltAttacks(id);
       try { rec.marker.remove(); } catch {}
       try { this.map.removeLayer(rec.marker); } catch {}
       try { rec.marker.getElement()?.remove(); } catch {}
@@ -156,11 +162,6 @@ getMarkerById(id){
     this._lastIdsInView.clear();
     this._lastTilesKey = '';
   }
-   // 클래스 내부 어딘가에 메서드 추가
-getMarker(id){
-  const rec = this.reg?.get?.(String(id));
-  return rec ? rec.marker : null;
-}
 
   _onMoveEnd(){ this._debouncedFetch(); }
   _onZoomEnd(){ this._debouncedFetch(); }
@@ -225,31 +226,54 @@ getMarker(id){
       const d  = ds.data() || {};
       if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) return;
 
-      // 로컬 쿨다운 (DB 쓰기 없이 숨김)
-      if (getLocalCooldownUntil(id) > now) return;
+      // 1) 로컬 쿨다운(로컬 히든): 공격도 즉시 중지
+      if (getLocalCooldownUntil(id) > now) {
+        this._ensureHidden(id);
+        this._haltAttacks(id);
+        return;
+      }
 
-      // 레거시 숨김 조건
+      // 2) 레거시 필드 기반 사망/리스폰 대기: 공격 중지 + 숨김
       const cd = Number(d.cooldownUntil || 0);
       const legacyDead = (d.dead === true) || (d.alive === false);
       const legacyResp = Number(d.respawnAt || 0);
-      if (cd > now || (legacyDead && legacyResp > now)) return;
+      if (cd > now || (legacyDead && legacyResp > now)) {
+        this._ensureHidden(id);
+        this._haltAttacks(id);
+        return;
+      }
 
-      // (선택) 가드의 로컬 처치셋
-      if (this.monstersGuard?.killedLocal?.has?.(id)) { this._ensureHidden(id); return; }
+      // 3) MonsterGuard가 로컬로 처치 표시한 대상: 숨김 + 공격 중지
+      if (this.monstersGuard?.killedLocal?.has?.(id)) {
+        this._ensureHidden(id);
+        this._haltAttacks(id);
+        return;
+      }
 
       nextIds.add(id);
       this._ensureShownOrUpdate(id, d);
     });
 
+    // 4) 뷰에서 사라진(타일 범위 이탈) 아이들 정리 + 공격 중지
     if (this.useTiles){
       for (const id of this._lastIdsInView){
-        if (!nextIds.has(id)) this._ensureHidden(id);
+        if (!nextIds.has(id)) {
+          this._ensureHidden(id);
+          this._haltAttacks(id);
+        }
       }
       this._lastIdsInView = nextIds;
     }
   }
 
   _ensureShownOrUpdate(id, d){
+    // 방어: 서버 데이터에 사망 표시가 있으면 즉시 숨김 + 공격 정지
+    if ((d.dead === true || d.alive === false) && Number(d.respawnAt || 0) > Date.now()){
+      this._ensureHidden(id);
+      this._haltAttacks(id);
+      return;
+    }
+
     const sizePx = this._sizeOf(d.size);
     let rec = this.reg.get(id);
 
@@ -274,10 +298,7 @@ getMarker(id){
       try { rec.marker.setLatLng([d.lat, d.lon]); } catch {}
     }
 
-  
-
-
-    // 아이콘 교체 필요 여부( mid/useAniFirst/사이즈 변경 감지 )
+    // 아이콘 교체 필요 여부
     const needSwap = this._iconKindChanged(rec.data, d) || (rec.sizePx !== sizePx);
     if (needSwap){
       rec.marker.setIcon(icon);
@@ -304,6 +325,8 @@ getMarker(id){
   _ensureHidden(id){
     const rec = this.reg.get(id);
     if (!rec) return;
+    // 마커 자체에 남아있을 수 있는 전투 컨트롤도 비활성화 표시
+    try { rec.marker._pf_dead = true; } catch {}
     try { rec.marker.remove(); } catch {}
     try { this.map.removeLayer(rec.marker); } catch {}
     try { rec.marker.getElement()?.remove(); } catch {}

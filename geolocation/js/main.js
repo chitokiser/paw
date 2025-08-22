@@ -88,19 +88,19 @@ export async function main() {
   } catch (e) {
     console.warn('[profile load] failed:', e);
   }
-  /* ===== Score/HUD ===== */
+ // main.js 일부 (초반 초기화 주변)
+try {
   await Score.init({ db, getGuestId, toast, playFail });
   Score.attachToHUD(ensureHUD());
   setHUD({ chain: Score.getChainTotal() });
   Score.updateEnergyUI();
-  Score.wireRespawn();
+  Score.wireRespawn?.();
+} catch(e){ console.warn('[Score.init] fail', e); }
 
-  /* ===== Inventory + UI ===== */
-  const guestId = getGuestId();
-  const inv = new Inventory({ db, guestId, onChange: (items) => console.log('inv change', items) });
-
-  try { await inv.load({ autoListen: true }); }
-  catch (e) { console.error('[Inventory] load failed:', e); }
+const guestId = getGuestId();
+const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
+try { await inv.load({ autoListen:true }); }
+catch(e){ console.warn('[Inventory.load] fail', e); }
 
   const invUI = new InventoryUI({
     inventory: inv,
