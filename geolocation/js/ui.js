@@ -1,5 +1,8 @@
 /* =================================================================
  * HUD & 코너 UI (안정판)
+ *  - HUD 항목: 레벨 / 공격력 / 방어력 / 경험치바 / HP / 블록체인 포인트
+ *  - 레벨업 버튼 삭제
+ *  - 널가드/중복주입/숫자 변환 방어
  * ================================================================= */
 export function injectCSS(){
   if (document.getElementById('ui-base-css')) return;
@@ -25,17 +28,15 @@ export function injectCSS(){
     display:none; z-index:10050; font-weight:600
   }
 
-  /* === HUD: 우상단 고정 === */
+  /* === HUD: 우상단 고정 (더 투명) === */
   #hud{
     position:fixed;
     right: calc(env(safe-area-inset-right, 0px) + 12px);
     top:   calc(env(safe-area-inset-top,   0px) + 12px);
-    background:rgba(17,24,39,.72); /* ← 더 투명하게 */
+    background:rgba(17,24,39,.68); /* 0.92 -> 0.68 */
     color:#fff; padding:10px 12px;
     border-radius:12px; z-index:10040; min-width:220px;
-    box-shadow:0 10px 30px rgba(0,0,0,.22);
-    backdrop-filter: blur(8px); /* ← 블러 약간 강화 */
-    -webkit-backdrop-filter: blur(8px);
+    box-shadow:0 10px 30px rgba(0,0,0,.28); backdrop-filter: blur(8px);
     font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
   }
   #hud .row{display:flex; justify-content:space-between; align-items:center; gap:8px; margin:4px 0;}
@@ -48,12 +49,6 @@ export function injectCSS(){
           background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
           transition: width .25s ease; }
   .bar.exp>i{ background: linear-gradient(90deg,#38bdf8,#60a5fa,#a78bfa); }
-
-  #btnLevelUp{
-    width:100%; margin-top:6px; border:0; border-radius:10px; padding:8px 10px;
-    font-weight:800; background:#22c55e; color:#0b1320; cursor:pointer;
-  }
-  #btnLevelUp[disabled]{ opacity:.5; cursor:not-allowed; }
 
   #startGate{
     position:fixed; inset:0; width:100%; height:100%;
@@ -130,11 +125,9 @@ export function ensureHUD(){
 
     <div class="row" style="margin-top:6px">
       <span class="label">HP</span>
-      <span id="hudHPText" class="val hud-hp-text">0 / 0</span>
+      <span id="hudHPText" class="val">0 / 0</span>
     </div>
-    <div class="bar"><i id="hudHPFill" class="hud-hp-fill"></i></div>
-
-    <button id="btnLevelUp" disabled>레벨업</button>
+    <div class="bar"><i id="hudHPFill"></i></div>
 
     <div class="row" style="margin-top:2px">
       <span class="label">블록체인 포인트</span>
@@ -143,10 +136,6 @@ export function ensureHUD(){
   `;
   document.body.appendChild(hud);
 
-  const btn = $('btnLevelUp');
-  if (btn){
-    btn.addEventListener('click', ()=>{ try { window.__hudLevelUp?.(); } catch (e) { console.warn('[HUD] level-up click err', e); }});
-  }
   return hud;
 }
 
@@ -167,8 +156,6 @@ export function setHUD(partial = {}){
     const pct  = Math.max(0, Math.min(100, (cur/need)*100));
     if ($('hudExpText')) $('hudExpText').textContent = `${cur.toLocaleString()} / ${need.toLocaleString()}`;
     if ($('hudExpFill')) $('hudExpFill').style.width = pct.toFixed(1) + '%';
-    const btn = $('btnLevelUp');
-    if (btn) btn.disabled = !(cur >= need);
   }
 
   // HP

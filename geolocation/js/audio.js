@@ -1,9 +1,18 @@
 // /geolocation/js/audio.js
 
+/* ============================================================
+ * Audio Core (정리본)
+ *  - 레벨업: /sounds/reward.mp3
+ *  - 사망(플레이어): /sounds/death.mp3
+ *  - 크리티컬: 기존 가장 강력한 합성(Death Synth) 재사용
+ *  - 중복 함수 제거 및 일관된 export
+ * ============================================================ */
+
 let audioCtx;
 
 /* ───────────────── 기본 유틸 ───────────────── */
-export function ensureAudio(){
+export function ensureAudio()
+{
   audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
@@ -15,10 +24,11 @@ export function createNoise(){
   const buf = ac.createBuffer(1, len, sr);
   const data = buf.getChannelData(0);
   for (let i=0;i<len;i++) data[i] = Math.random()*2-1;
-  const src = ac.createBufferSource(); src.buffer = buf; src.loop = false; return src;
+  const src = ac.createBufferSource(); src.buffer = buf; src.loop = false;
+  return src;
 }
 
-export function applyADSR(g, t, {a=0.01, d=0.12, s=0.4, r=0.25, peak=0.9, sus=0.25}={}){
+export function applyADSR(g, t, {a=0.01, d=0.12, s=0.4, r=0.25, peak=0.9, sus=0.25} = {}){
   g.gain.cancelScheduledValues(t);
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(peak, t+a);
@@ -38,7 +48,10 @@ export function blip(freq=300, dur=0.07, type='square', startGain=0.35){
 }
 export const playHit = ()=>blip();
 
-/* ─────────────── 실패/사망 효과 ─────────────── */
+/* ─────────────── 합성 실패/사망 효과(레거시) ───────────────
+ *  - 이 강력한 합성 사운드는 이제 "크리티컬"에서 사용됩니다.
+ *  - 플레이어 사망시에는 MP3를 재생합니다(아래 playDeathMP3).
+ */
 export function playFail(){
   const ac = ensureAudio(), t = ac.currentTime;
   const o1 = ac.createOscillator(), o2 = ac.createOscillator();
@@ -55,7 +68,8 @@ export function playFail(){
   o1.stop(t+0.75); o2.stop(t+0.75); nz.stop(t+0.5);
 }
 
-export function playDeath(){
+/* ⛔ 기존 “사망 합성” (아주 강력) —> 크리티컬 전용으로 재사용 */
+function _deathSynthStrong(){
   const ac = ensureAudio(), t = ac.currentTime;
   const freqs = [523.25, 659.25, 783.99];
   const groupGain = ac.createGain(); groupGain.connect(ac.destination);
@@ -94,9 +108,7 @@ export function swordWhoosh(){
   nz.start(t); nz.stop(t+0.18);
 }
 
-/* ───────────────── 임팩트 코어 ─────────────────
-   - player: 둔탁/묵직(저역+거친 노이즈)
-   - monster: 날카로움(메탈+스파클) */
+/* ───────────────── 임팩트(플레이어/몬스터) ───────────────── */
 function _impactCore(kind = 'player', { intensity = 1.0, includeWhoosh = false } = {}) {
   const ac = ensureAudio();
   const t  = ac.currentTime;
@@ -170,125 +182,32 @@ function _impactCore(kind = 'player', { intensity = 1.0, includeWhoosh = false }
   }
 }
 
-/* ────────────── 공개 API (정책 매핑) ────────────── */
 export function playPlayerAttackImpact(opts = {}) { _impactCore('player', opts); }
 export function playMonsterAttackImpact(opts = {}) { _impactCore('monster', opts); }
 
-/* ──────── 크리티컬(강화판) ──────── */
+/* ──────── 크리티컬(강화판) ────────
+ * 요청: “지금 죽을때 나오던 가장 강력한 사운드”를 크리티컬에 사용
+ */
 export function playCriticalImpact({ intensity = 1.0, includeWhoosh = true } = {}) {
-  const ac = ensureAudio();
-  const t  = ac.currentTime;
-  const CRIT_GAIN = 1.35 * intensity;
-
-  const pre = ac.createGain(); pre.gain.setValueAtTime(Math.min(1.6, CRIT_GAIN), t);
-
-  // soft clipper
-  const shaper = ac.createWaveShaper();
-  const curve = new Float32Array(44100);
-  for (let i = 0; i < curve.length; i++) {
-    const x = (i / (curve.length - 1)) * 2 - 1;
-    curve[i] = Math.tanh(2.8 * x);
-  }
-  shaper.curve = curve; shaper.oversample = '4x';
-
-  const comp = ac.createDynamicsCompressor();
-  comp.threshold.setValueAtTime(-12, t);
-  comp.knee.setValueAtTime(18, t);
-  comp.ratio.setValueAtTime(12, t);
-  comp.attack.setValueAtTime(0.0012, t);
-  comp.release.setValueAtTime(0.14, t);
-
-  pre.connect(shaper); shaper.connect(comp); comp.connect(ac.destination);
-
-  if (includeWhoosh) { try { swordWhoosh(); } catch {} }
-
-  // high crack
-  const crack = createNoise();
-  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.setValueAtTime(3100, t);
-  const cg = ac.createGain(); cg.gain.setValueAtTime(0.0001, t);
-  cg.gain.exponentialRampToValueAtTime(1.05 * CRIT_GAIN, t + 0.006);
-  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.095);
-  crack.connect(hp); hp.connect(cg); cg.connect(pre);
-  crack.start(t); crack.stop(t + 0.1);
-
-  // metallic stack (w/ tiny FM & detune)
-  const lfo = ac.createOscillator(); const lfoG = ac.createGain();
-  lfo.frequency.setValueAtTime(7, t); lfoG.gain.setValueAtTime(6, t); lfo.connect(lfoG);
-
-  const pans = [ -0.2, 0.0, 0.2 ];
-  [1500, 2000, 2600].forEach((f, i) => {
-    const o = ac.createOscillator(); o.type = i === 0 ? 'sawtooth' : 'square';
-    o.frequency.setValueAtTime(f, t);
-    o.detune.setValueAtTime(i === 1 ? +8 : (i === 2 ? -8 : 0), t);
-    lfoG.connect(o.frequency);
-
-    const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime((0.65 - i*0.12) * CRIT_GAIN, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16 + i*0.015);
-
-    const p = typeof ac.createStereoPanner === 'function' ? ac.createStereoPanner() : null;
-    if (p) p.pan.setValueAtTime(pans[i], t);
-
-    o.connect(g); g.connect(p || pre); if (p) p.connect(pre);
-    o.start(t); o.stop(t + 0.2 + i*0.02);
-  });
-  lfo.start(t); lfo.stop(t + 0.22);
-
-  // sub thump
-  const th = ac.createOscillator(); th.type = 'sine';
-  th.frequency.setValueAtTime(105, t);
-  th.frequency.linearRampToValueAtTime(60, t + 0.14);
-  const thG = ac.createGain(); thG.gain.setValueAtTime(0.0001, t);
-  thG.gain.exponentialRampToValueAtTime(1.25 * CRIT_GAIN, t + 0.012);
-  thG.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-  th.connect(thG); thG.connect(pre);
-  th.start(t); th.stop(t + 0.26);
-
-  // sparkle
-  const sp = createNoise();
-  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(7600, t); bp.Q.value = 3.2;
-  const spG = ac.createGain(); spG.gain.setValueAtTime(0.0001, t);
-  spG.gain.exponentialRampToValueAtTime(0.45 * CRIT_GAIN, t + 0.006);
-  spG.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
-  sp.connect(bp); bp.connect(spG); spG.connect(pre);
-  sp.start(t); sp.stop(t + 0.08);
-
-  // subtle stereo delay thickness
-  if (ac.createDelay) {
-    const dL = ac.createDelay(); dL.delayTime.setValueAtTime(0.012, t);
-    const dG = ac.createGain(); dG.gain.setValueAtTime(0.25, t);
-    const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
-    if (pan) pan.pan.setValueAtTime(0.25, t);
-    pre.connect(dL); dL.connect(dG); dG.connect(pan || comp); if (pan) pan.connect(comp);
-  }
+  try { _deathSynthStrong(); } catch {}                // 강력한 레이어
+  _impactCore('player', { intensity: Math.max(1, 1.2*intensity), includeWhoosh });
 }
 
-/* ───────────── 하위호환 래퍼 ─────────────
-   - 기본: 플레이어 둔탁
-   - critical:true → 크리 전용 */
+/* 하위 호환(critical 플래그) */
 export function playAttackImpact(opts = {}) {
   const { critical = false, ...rest } = opts || {};
   if (critical) return playCriticalImpact(rest);
   return playPlayerAttackImpact(rest);
 }
 
-
-
-let _audioUnlocked = false;
-
-
-// audio.js (추가)
-let _ac;
-function _ctx(){ return _ac || (_ac = new (window.AudioContext||window.webkitAudioContext)()); }
-
-// 간단한 천둥소리: 노이즈 + 로패스 + 감쇄
+/* ───────────── 번개/천둥 FX ───────────── */
 export function playLightning(){
   try{
-    const ac = _ctx();
+    const ac = ensureAudio();
     const dur = 0.6;
     const buffer = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
     const data = buffer.getChannelData(0);
-    // 브라운 노이즈 풍 (적당히 감쇠)
+    // 브라운 노이즈풍
     let lastOut = 0;
     for (let i=0;i<data.length;i++){
       const white = Math.random()*2 - 1;
@@ -296,26 +215,20 @@ export function playLightning(){
       data[i] = lastOut * 2.5;
     }
     const src = ac.createBufferSource(); src.buffer = buffer;
-
-    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 800;
+    const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 800;
     const gain = ac.createGain(); gain.gain.value = 0.9;
-
     src.connect(lp); lp.connect(gain); gain.connect(ac.destination);
-    // 짧은 이닝/아웃 엔벨롭
     const now = ac.currentTime;
     gain.gain.setValueAtTime(0.0, now);
     gain.gain.linearRampToValueAtTime(0.9, now + 0.05);
     gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-
     src.start();
-  } catch(e){ /* 사일런트 폴백 */ }
+  } catch {}
 }
 
 export function playThunderBoom({ intensity = 1.0 } = {}){
   const ac = ensureAudio();
   const t  = ac.currentTime;
-
-  // 마스터 (컴프 + 리미트 느낌)
   const master = ac.createGain();
   const comp = ac.createDynamicsCompressor();
   comp.threshold.setValueAtTime(-24, t);
@@ -325,8 +238,6 @@ export function playThunderBoom({ intensity = 1.0 } = {}){
   master.gain.setValueAtTime(Math.min(1, 1.0 * intensity), t);
   master.connect(comp); comp.connect(ac.destination);
 
-  // 번개 크랙(아주 짧게) + 저역 우르릉
-  // 1) 크랙
   const crack = createNoise();
   const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.setValueAtTime(2500, t);
   const cg = ac.createGain(); cg.gain.setValueAtTime(0.0001, t);
@@ -335,31 +246,74 @@ export function playThunderBoom({ intensity = 1.0 } = {}){
   crack.connect(hp); hp.connect(cg); cg.connect(master);
   crack.start(t); crack.stop(t+0.07);
 
-  // 2) 우르릉(저역 + 노이즈 저역통과)
   const boom = ac.createOscillator(); boom.type='sine';
   boom.frequency.setValueAtTime(65, t);
   boom.frequency.exponentialRampToValueAtTime(45, t+0.9);
-
   const lpN = ac.createBiquadFilter(); lpN.type='lowpass'; lpN.frequency.setValueAtTime(500, t);
   const noise = createNoise(); noise.connect(lpN);
 
   const g = ac.createGain(); g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(0.8 * intensity, t+0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t+1.2);
-
   boom.connect(g); lpN.connect(g); g.connect(master);
   boom.start(t); boom.stop(t+1.25);
   noise.start(t+0.02); noise.stop(t+1.0);
 }
+
 export function playLightningImpact({ intensity = 1.0, withBoom = true, delayMs = 110 } = {}) {
   try { ensureAudio(); } catch {}
   try { playLightning(); } catch {}
-
   if (withBoom) {
     try {
-      setTimeout(() => {
-        try { playThunderBoom({ intensity }); } catch {}
-      }, Math.max(0, delayMs | 0));
+      setTimeout(() => { try { playThunderBoom({ intensity }); } catch {} }, Math.max(0, delayMs | 0));
     } catch {}
   }
 }
+
+/* ─────────────── 사운드 파일 객체 ─────────────── */
+const deathSound  = new Audio('/sounds/death.mp3');
+const rewardSound = new Audio('/sounds/reward.mp3');
+const critSound   = new Audio('/sounds/crit.mp3');
+
+/* ─────────────── 오디오 초기화 ─────────────── */
+export function ensureAudio() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+/* ─────────────── 간단 MP3 재생 ─────────────── */
+export function playMp3(url, { volume = 1.0 } = {}) {
+  try { ensureAudio(); } catch {}
+  const a = new Audio(url);
+  a.volume = Math.max(0, Math.min(1, volume));
+  a.currentTime = 0;
+  a.play().catch(()=>{});
+  return a;
+}
+
+/* ─────────────── 효과음 (MP3) ─────────────── */
+export function playDeath() {
+  try {
+    deathSound.currentTime = 0;
+    deathSound.play();
+  } catch (e) { console.warn('death sound play failed', e); }
+}
+
+export function playReward() {
+  try {
+    rewardSound.currentTime = 0;
+    rewardSound.play();
+  } catch (e) { console.warn('reward sound play failed', e); }
+}
+
+export function playCrit() {
+  try {
+    critSound.currentTime = 0;
+    critSound.play();
+  } catch (e) { console.warn('crit sound play failed', e); }
+}
+
+/* 레벨업/사망 MP3 래퍼 (경로 직접 호출용) */
+export const playRewardMP3 = (v=1)=> playMp3('/sounds/reward.mp3', { volume:v });
+export const playDeathMP3  = (v=1)=> playMp3('/sounds/death.mp3',  { volume:v });
