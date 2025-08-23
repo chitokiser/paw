@@ -1,9 +1,10 @@
 // /geolocation/js/shops.js
-// 상점 구독/마커/모달 UI/거래
+// 상점 구독/마커/모달 UI/거래 (CP 통화 전용, Firestore 트랜잭션 폴백 포함)
 import {
   collection, query, where, onSnapshot, doc, runTransaction,
   serverTimestamp, getDocs, updateDoc, increment
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { auth, db as _db } from './firebase.js'; // uid 폴백용 (Score 미구현 대비)
 
 /* ---------------- 유틸 ---------------- */
 function _tileSizeDeg(){ return 0.01; }
@@ -24,9 +25,13 @@ function _shopIcon(size=68, imageURL='https://puppi.netlify.app/images/event/sho
   return L.divIcon({ className:'', html, iconSize:[s,s], iconAnchor:[s/2,s/2] });
 }
 
+/** 🔁 가격은 CP 우선, 기존 GP 필드는 폴백으로만 사용 */
 function _getBuyPrice(it){
-  // buyPriceGP가 없을 때 대비한 폴백
-  const b = Number(it.buyPriceGP ?? it.priceGP ?? it.sellPriceGP ?? 0);
+  const b = Number(
+    it.buyPriceCP ?? it.priceCP ??
+    it.buyPriceGP ?? it.priceGP ??
+    it.sellPriceCP ?? it.sellPriceGP ?? 0
+  );
   return Math.max(0, b|0);
 }
 
@@ -78,7 +83,6 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
         </div>`;
       row.appendChild(meta);
 
-      // 수량 선택
       const qtySelect = document.createElement('select');
       const maxQty = 10;
       for (let q=1; q<=maxQty; q++){
@@ -89,7 +93,7 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
       row.appendChild(qtySelect);
 
       const buyBtn = document.createElement('button');
-      buyBtn.textContent = `${price} GP`;
+      buyBtn.textContent = `${price} CP`;
       Object.assign(buyBtn.style,{background:'#111827',color:'#fff',border:'1px solid #e5e7eb',padding:'8px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'800'});
       buyBtn.addEventListener('click', async ()=>{
         buyBtn.disabled=true;
@@ -108,7 +112,7 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
   /* --- 판매탭 --- */
   function renderSell(){
     body.innerHTML='';
-    const sellables = items.filter(x=> Number(x.sellPriceGP||0)>0);
+    const sellables = items.filter(x=> Number((x.sellPriceCP ?? x.sellPriceGP) || 0)>0);
     const invRows = [];
     for (const it of sellables){
       const key = it.itemId || it.id;
@@ -127,7 +131,7 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
 
       const meta = document.createElement('div');
       meta.innerHTML = `<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
-        <div style="font-size:12px;color:#6b7280">보유수량 ${qty} · 판매가 ${it.sellPriceGP|0} GP</div>`;
+        <div style="font-size:12px;color:#6b7280">보유수량 ${qty} · 판매가 ${(it.sellPriceCP ?? it.sellPriceGP)|0} CP</div>`;
       row.appendChild(meta);
 
       const qtySelect = document.createElement('select');
@@ -172,7 +176,7 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
 /* ---------------- Shops 클래스 ---------------- */
 export class Shops {
   constructor({ db, map, playerMarker, Score, toast, inv, transferMonsterInventory, getGuestId }) {
-    this.db = db; this.map = map; this.playerMarker = playerMarker;
+    this.db = db || _db; this.map = map; this.playerMarker = playerMarker;
     this.Score = Score; this.toast = toast; this.inv = inv; this.transferMonsterInventory = transferMonsterInventory;
     this._getGuestId = ()=> getGuestId?.() || this.Score?.getGuestId?.() || localStorage.getItem('guestId') || 'guest';
     this._markers = new Map(); this._unsub = null; this._tilesKey = '';
@@ -187,6 +191,16 @@ export class Shops {
         try{ origOnChange?.(items);}catch{}
       };
     }catch{}
+  }
+
+  _getUid(){
+    try{
+      const s = this.Score?.getStats?.();
+      if (s?.uid) return s.uid;
+    }catch{}
+    try{ return auth?.currentUser?.uid || null; }catch{}
+    try{ return window?.__uid || null; }catch{}
+    return null;
   }
 
   _buildInvSnapshot(itemsMaybe){
@@ -223,81 +237,155 @@ export class Shops {
     }catch{ return true; }
   }
 
- // 기존 _buy(...) 전체를 아래로 교체
-// 기존 _buy(...) 전체를 아래 구현으로 교체
-async _buy(shop, item, qty = 1){
-  // 0) 거리 체크
-  if (!this._inTradeRange(shop)) {
-    this.toast?.('거래 가능 거리 밖입니다.');
-    throw new Error('out_of_range');
+  /** Firestore 트랜잭션으로 직접 CP 차감 (Score 실패/부재 시 폴백) */
+  async _directSpendCP(pay){
+    const uid = this._getUid();
+    if (!uid) throw new Error('no_uid');
+    const uref = doc(this.db, 'users', uid);
+    await runTransaction(this.db, async (tx)=>{
+      const ss = await tx.get(uref);
+      if (!ss.exists()) throw new Error('user_missing');
+      const data = ss.data()||{};
+      const cur = Number(data.chainPoint ?? data.cp ?? 0);
+      if (!Number.isFinite(cur)) throw new Error('cp_invalid');
+      if (cur < pay) throw Object.assign(new Error('insufficient_cp'), { code:'insufficient_cp' });
+      tx.update(uref, {
+        chainPoint: cur - pay,
+        updatedAt: serverTimestamp()
+      });
+    });
+    return true;
   }
 
-  const ref = doc(this.db, `shops/${shop.id}/items`, item.id);
-  let unitPrice = 0;
+  /** Firestore 트랜잭션으로 직접 CP 지급 */
+  async _directAwardCP(amount){
+    const uid = this._getUid();
+    if (!uid) throw new Error('no_uid');
+    const uref = doc(this.db, 'users', uid);
+    await runTransaction(this.db, async (tx)=>{
+      const ss = await tx.get(uref);
+      const data = ss.exists() ? (ss.data()||{}) : {};
+      const cur = Number(data.chainPoint ?? data.cp ?? 0);
+      const next = Math.max(0, cur + Math.max(0, amount|0));
+      tx.set(uref, { chainPoint: next, updatedAt: serverTimestamp() }, { merge:true });
+    });
+    return true;
+  }
 
-  // 1) 트랜잭션: 활성/재고/가격을 "서버 기준"으로 검증
-  await runTransaction(this.db, async (tx) => {
-    const s = await tx.get(ref);
-    if (!s.exists()) throw new Error('gone');
+  /** 결제: Score 구현 차이를 흡수 + 트랜잭션 폴백 */
+  async _spendCP(pay, lat, lon){
+    if (pay <= 0) return true;
 
-    const d = s.data() || {};
-    if (d.active === false) throw new Error('inactive');
-
-    // 가격은 서버값 우선 (없으면 0)
-    unitPrice = Number(d.buyPriceGP ?? d.priceGP ?? 0) || 0;
-
-    // ✅ 재고정책: stock 이 "숫자"일 때만 재고 관리 / null 또는 미존재는 무제한
-    const managesStock = typeof d.stock === 'number';
-    if (managesStock) {
-      const cur = Number(d.stock);
-      if (!Number.isFinite(cur)) throw new Error('stock_invalid');
-      if (cur < qty) throw new Error('soldout');
-      tx.update(ref, { stock: cur - qty, updatedAt: serverTimestamp() });
-    } else {
-      // 무제한 판매: 흔적만 남김(옵션)
-      tx.update(ref, { updatedAt: serverTimestamp() });
-    }
-  });
-
-  // 2) GP 차감
-  const pay = Math.max(0, unitPrice * qty);
-  try {
-    const pos = this.playerMarker?.getLatLng?.() || { lat: shop.lat, lng: shop.lon };
-    if (pay > 0) {
-      if (typeof this.Score?.deductGP === 'function') {
-        await this.Score.deductGP(pay, pos.lat, pos.lng);
-      } else if (typeof this.Score?.addGP === 'function') {
-        await this.Score.addGP(-pay, pos.lat, pos.lng);
+    // 1) Score.spendCP(boolean?) 우선
+    if (typeof this.Score?.spendCP === 'function') {
+      try {
+        const res = await this.Score.spendCP(pay, { lat, lon, reason: 'shop_buy' });
+        if (typeof res === 'boolean') return res;
+        if (res && typeof res === 'object' && 'ok' in res) return !!res.ok;
+        // 반환값이 모호해도 예외 없으면 성공으로 간주
+        return true;
+      } catch (e) {
+        const msg = (e && (e.code || e.message || e.toString())).toString().toLowerCase();
+        if (msg.includes('insufficient') || msg.includes('not enough') || e?.code === 'insufficient_cp') {
+          return false;
+        }
+        // 구현 에러면 폴백 진행
       }
     }
-  } catch (e) {
-    console.warn('[shop] GP deduct fail', e);
-    this.toast?.('GP 차감 실패');
-    throw e; // (운영 시에는 재고 롤백 고려)
+
+    // 2) Score.deductCP(void) 시도
+    if (typeof this.Score?.deductCP === 'function') {
+      try { await this.Score.deductCP(pay, lat, lon); return true; }
+      catch(e){ /* 폴백 진행 */ }
+    }
+
+    // 3) Score.addCP(-pay) 시도
+    if (typeof this.Score?.addCP === 'function') {
+      try { await this.Score.addCP(-pay, lat, lon); return true; }
+      catch(e){ /* 폴백 진행 */ }
+    }
+
+    // 4) 최종 폴백: Firestore 트랜잭션으로 직접 차감
+    return this._directSpendCP(pay);
   }
 
-  // 3) 인벤 지급 (무기 스펙/타입 보존)
-  try {
-    await this.inv.addItems([{
-      id: item.itemId || item.id,
-      name: item.name,
-      qty,
-      rarity: item.weapon ? 'rare' : (item.rarity || 'common'),
-      weapon: item.weapon || null,
-      type: item.type || 'shopItem'
-    }]);
-    this._buildInvSnapshot();
-  } catch (e) {
-    console.warn('[shop] inventory add fail', e);
-    this.toast?.('인벤토리 지급 실패');
-    throw e;
+  /** 보상: Score 우선 + 트랜잭션 폴백 */
+  async _awardCP(amount, lat, lon){
+    if (amount <= 0) return;
+    if (typeof this.Score?.addCP === 'function') { try { await this.Score.addCP(amount, lat, lon); return; } catch(e){} }
+    if (typeof this.Score?.awardCP === 'function') { try { await this.Score.awardCP(amount, lat, lon); return; } catch(e){} }
+    // 레거시 호환: awardGP가 CP로 리다이렉트된 프로젝트도 있음
+    if (typeof this.Score?.awardGP === 'function') { try { await this.Score.awardGP(amount, lat, lon); return; } catch(e){} }
+    // 최종 폴백
+    await this._directAwardCP(amount);
   }
 
-  this.toast?.('구매 완료!');
-}
+  // 구매
+  async _buy(shop, item, qty = 1){
+    // 0) 거리 체크
+    if (!this._inTradeRange(shop)) {
+      this.toast?.('거래 가능 거리 밖입니다.');
+      throw new Error('out_of_range');
+    }
 
+    const ref = doc(this.db, `shops/${shop.id}/items`, item.id);
+    let unitPrice = 0;
 
+    // 1) 트랜잭션: 활성/재고/가격을 서버 기준으로 검증
+    await runTransaction(this.db, async (tx) => {
+      const s = await tx.get(ref);
+      if (!s.exists()) throw new Error('gone');
 
+      const d = s.data() || {};
+      if (d.active === false) throw new Error('inactive');
+
+      // 💰 가격: CP 우선, 없으면 기존 GP 폴백
+      unitPrice = Number(d.buyPriceCP ?? d.priceCP ?? d.buyPriceGP ?? d.priceGP ?? 0) || 0;
+
+      // ✅ 재고정책: stock이 숫자일 때만 재고 관리 / null 또는 미존재는 무제한
+      const managesStock = typeof d.stock === 'number';
+      if (managesStock) {
+        const cur = Number(d.stock);
+        if (!Number.isFinite(cur)) throw new Error('stock_invalid');
+        if (cur < qty) throw new Error('soldout');
+        tx.update(ref, { stock: cur - qty, updatedAt: serverTimestamp() });
+      } else {
+        tx.update(ref, { updatedAt: serverTimestamp() });
+      }
+    });
+
+    // 2) CP 차감
+    const pay = Math.max(0, (unitPrice|0) * (qty|0));
+    if (pay > 0) {
+      const pos = this.playerMarker?.getLatLng?.() || { lat: shop.lat, lng: shop.lon };
+      const ok = await this._spendCP(pay, pos.lat, pos.lng);
+      if (!ok) {
+        this.toast?.('CP 부족');
+        throw new Error('insufficient_cp');
+      }
+    }
+
+    // 3) 인벤 지급 (무기 스펙/타입 보존)
+    try {
+      await this.inv.addItems([{
+        id: item.itemId || item.id,
+        name: item.name,
+        qty,
+        rarity: item.weapon ? 'rare' : (item.rarity || 'common'),
+        weapon: item.weapon || null,
+        type: item.type || 'shopItem'
+      }]);
+      this._buildInvSnapshot();
+    } catch (e) {
+      console.warn('[shop] inventory add fail', e);
+      this.toast?.('인벤토리 지급 실패');
+      throw e;
+    }
+
+    this.toast?.('구매 완료! (CP 사용)');
+  }
+
+  // 판매
   async _sell(shop, item, qty=1){
     if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
 
@@ -311,17 +399,15 @@ async _buy(shop, item, qty = 1){
       try { await updateDoc(ref, { stock: increment(qty), updatedAt: serverTimestamp() }); } catch(e){ console.warn('[shop] stock increment fail', e); }
     }
 
-    // GP 지급
-    const reward = Math.max(0, Number(item.sellPriceGP||0))*qty;
+    // CP 지급
+    const reward = Math.max(0, Number((item.sellPriceCP ?? item.sellPriceGP) || 0)) * qty;
     const pos = this.playerMarker?.getLatLng?.() || {lat:shop.lat,lng:shop.lon};
     try {
-      if (typeof this.Score?.addGP==='function') await this.Score.addGP(reward,pos.lat,pos.lng);
-      else if (typeof this.Score?.awardGP==='function') await this.Score.awardGP(reward,pos.lat,pos.lng,0);
-      else this.toast?.(`+${reward} GP`);
-    } catch(e){ console.warn('[shop] addGP fail', e); this.toast?.(`GP 지급 실패(로그 확인).`); }
+      await this._awardCP(reward, pos.lat, pos.lng);
+    } catch(e){ console.warn('[shop] addCP fail', e); this.toast?.(`CP 지급 실패(로그 확인).`); }
 
     this._buildInvSnapshot();
-    this.toast?.('판매 완료!');
+    this.toast?.('판매 완료! (CP 지급)');
   }
 
   async _open(shop){

@@ -1,18 +1,19 @@
-// /geolocation/js/score.js
+// /geolocation/js/score.js  (Single SoT + CP 통합)
 import { auth, db } from './firebase.js';
 import {
-  doc, getDoc, setDoc, updateDoc, serverTimestamp
+  doc, setDoc, updateDoc, serverTimestamp, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
-// ▶ 사운드 자동 연결
 import { playReward, playDeath } from './audio.js';
 
 export const Score = (() => {
   let _hud = null;
   let _toast = (m)=>console.log('[toast]', m);
   let _playFail = ()=>{};
+  let _unsub = null;
+  const _listeners = new Set();
 
-  // 로컬 상태
+  // 세션 로컬 상태
   let _stats = {
     uid: null,
     level: 1,
@@ -22,6 +23,7 @@ export const Score = (() => {
     defense: 10,
     distanceM: 0,
     maxHp: 1000,
+    cp: 0, // ✅ 블록체인 포인트
   };
 
   /* ───────── 내부 유틸 ───────── */
@@ -38,7 +40,7 @@ export const Score = (() => {
 
     const fill =
       document.querySelector('.hud-hp-fill') ||
-      document.querySelector('#hud #hudHPFill') || // 하위호환
+      document.querySelector('#hud #hudHPFill') ||
       document.querySelector('#hud .bar .fill');
 
     const text =
@@ -50,7 +52,7 @@ export const Score = (() => {
     if (text) text.textContent = `${hp} / ${max}`;
   }
 
-  function _syncHUD() {
+  function _syncHUDAndNotify() {
     try {
       const hpMax = _getMaxHP();
       const hpPct = Math.max(0, Math.min(100, (_stats.hp / hpMax) * 100));
@@ -62,10 +64,13 @@ export const Score = (() => {
         exp: _stats.exp,
         attack: _stats.attack,
         defense: _stats.defense,
-        distanceM: _stats.distanceM
+        distanceM: _stats.distanceM,
+        // 필요 시 HUD 쪽에서 CP도 보여주려면 set() 내부에서 처리
+        cp: _stats.cp,
       });
     } catch {}
     _updateHPDom();
+    _listeners.forEach(fn => { try { fn({..._stats}); } catch {} });
   }
 
   async function _save(partial) {
@@ -80,34 +85,36 @@ export const Score = (() => {
     }
   }
 
-  async function _loadProfile() {
+  function _startUserSubscription(){
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     _stats.uid = uid;
 
-    try {
-      const ref = doc(db, 'users', uid);
-      const ss = await getDoc(ref);
-      if (ss.exists()) {
-        const p = ss.data() || {};
-        _stats.level     = Number(p.level ?? 1);
-        _stats.exp       = Number(p.exp ?? 0);
-        _stats.attack    = Number(p.attack ?? _stats.level);
-        _stats.defense   = Number(p.defense ?? 10);
-        _stats.distanceM = Number(p.distanceM ?? 0);
-        _stats.maxHp     = Number.isFinite(p.maxHp) ? Number(p.maxHp) : (_stats.level * 1000);
-        _stats.hp        = Number(p.hp ?? _stats.maxHp);
-      } else {
-        _stats.maxHp = 1000;
+    const ref = doc(db, 'users', uid);
+    if (_unsub) { try { _unsub(); } catch {} _unsub = null; }
+
+    _unsub = onSnapshot(ref, async (ss) => {
+      if (!ss.exists()) {
         await setDoc(ref, {
           uid,
           level: 1, hp: 1000, exp: 0, attack: 1, defense: 10,
-          maxHp: 1000, distanceM: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-        }, { merge: true });
+          maxHp: 1000, distanceM: 0, chainPoint: 0,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+        }, { merge:true });
+        return;
       }
-    } catch (e) {
-      console.warn('[Score] load profile fail', e);
-    }
+      const p = ss.data() || {};
+      _stats.level     = Number(p.level ?? 1);
+      _stats.exp       = Number(p.exp ?? 0);
+      _stats.attack    = Number(p.attack ?? _stats.level);
+      _stats.defense   = Number(p.defense ?? 10);
+      _stats.distanceM = Number(p.distanceM ?? 0);
+      _stats.maxHp     = Number.isFinite(p.maxHp) ? Number(p.maxHp) : (_stats.level * 1000);
+      _stats.hp        = Number(p.hp ?? _stats.maxHp);
+      _stats.cp        = Number(p.chainPoint ?? p.cp ?? 0);  // ✅ CP 동기화
+
+      _syncHUDAndNotify();
+    }, (e) => console.warn('[Score] onSnapshot error', e));
   }
 
   /* ───────── 공개 API ───────── */
@@ -115,30 +122,30 @@ export const Score = (() => {
     async init({ toast, playFail } = {}) {
       if (typeof toast === 'function') _toast = toast;
       if (typeof playFail === 'function') _playFail = playFail;
-      await _loadProfile();
-      _syncHUD();
+      _startUserSubscription();      // getDoc 없이 바로 구독
+      _syncHUDAndNotify();           // 기본값으로 HUD 초기화
     },
 
-    attachToHUD(hud) { _hud = hud; _syncHUD(); },
+    attachToHUD(hud) { _hud = hud; _syncHUDAndNotify(); },
+
+    onChange(fn){ if (typeof fn === 'function') _listeners.add(fn); return ()=>_listeners.delete(fn); },
 
     getStats() { return _stats; },
 
+    /* ===== HP ===== */
     async setHP(next) {
       const maxHP = _getMaxHP();
       _stats.hp = Math.max(0, Math.min(Number(next || 0), maxHP));
-      _syncHUD();
+      _syncHUDAndNotify();
       await _save({ hp: _stats.hp, maxHp: maxHP });
     },
 
-    /** 몬스터에게 맞았을 때 등 HP 감소 */
     async deductHP(amount = 1) {
       const dmg = Math.max(1, Math.floor(amount));
-      const before = Number(_stats.hp || 0);
-      const after = Math.max(0, before - dmg);
+      const after = Math.max(0, Number(_stats.hp || 0) - dmg);
       await this.setHP(after);
 
       if (_stats.hp <= 0) {
-        // ▶ 사망 사운드
         try { playDeath(); } catch {}
         try { _playFail?.(); } catch {}
         _toast?.('기절했습니다. (HP 0)');
@@ -149,31 +156,28 @@ export const Score = (() => {
       }
     },
 
-    updateHPUI(){ _syncHUD(); },
+    updateHPUI(){ _syncHUDAndNotify(); },
     updateEnergyUI(){},
 
-    /** EXP 추가 + 자동 레벨업(리셋 규칙) */
+    /* ===== EXP / Level ===== */
     async addExp(amount = 0) {
       const add = Math.max(0, Math.floor(amount));
       let newExp = Number(_stats.exp || 0) + add;
 
       let leveled = false;
-      // 자동 레벨업: 임계 도달 시 exp는 0으로 리셋(오버플로우 버림)
       const need = (_stats.level + 1) * 20000;
       if (newExp >= need) {
         _stats.level += 1;
         _stats.attack = _stats.level;
         _stats.maxHp  = _getMaxHP();
         _stats.hp     = _stats.maxHp;
-        newExp = 0; // ★ 요청: 레벨업 후 EXP 0으로 리셋
+        newExp = 0;
         leveled = true;
-
-        // ▶ 레벨업 사운드
         try { playReward(); } catch {}
       }
 
       _stats.exp = newExp;
-      _syncHUD();
+      _syncHUDAndNotify();
       await _save({
         exp: _stats.exp, level: _stats.level,
         attack: _stats.attack, hp: _stats.hp, maxHp: _stats.maxHp
@@ -182,7 +186,41 @@ export const Score = (() => {
       if (add > 0) _toast?.(`EXP +${add}${leveled ? ' (레벨업!)' : ''}`);
     },
 
-    /* 체인 포인트(모의) — 그대로 유지 */
+    /* ===== CP(Chain Point) ===== */
+    getCP(){ return Number(_stats.cp || 0); },
+
+    async setCP(next){
+      _stats.cp = Math.max(0, Math.floor(Number(next||0)));
+      _syncHUDAndNotify();
+      await _save({ chainPoint: _stats.cp, cp: _stats.cp });
+    },
+
+    async addCP(delta = 0){
+      const add = Math.max(0, Math.floor(delta));
+      if (add <= 0) return this.getCP();
+      return await this.setCP(this.getCP() + add);
+    },
+
+    /** 상점 결제 등: CP 차감 (성공 시 true) */
+    async spendCP(amount = 0, meta = {}){
+      const need = Math.max(0, Math.floor(amount));
+      if (need <= 0) return true;
+      const cur = this.getCP();
+      if (cur < need) return false;
+      await this.setCP(cur - need);
+      // 필요하면 메타 정보를 별도 로그 컬렉션에 적재(선택):
+      // await addDoc(collection(db,'cp_logs'), { uid:_stats.uid, ...meta, delta:-need, createdAt:serverTimestamp() })
+      return true;
+    },
+
+    /** 걷기 적립(하위호환): awardGP → CP로 누적 */
+    async awardGP(gp = 0 /*, lat, lon, distM */){
+      const add = Math.max(0, Math.floor(gp));
+      if (add <= 0) return this.getCP();
+      return await this.addCP(add);
+    },
+
+    /* 체인 포인트(모의) — 유지(별도 표시용) */
     getChainTotal(){ return Number(localStorage.getItem('chain_total') || 0); },
     setChainTotal(v){ localStorage.setItem('chain_total', String(Math.max(0, Math.floor(v || 0)))); },
     async saveToChainMock(delta = 0) {

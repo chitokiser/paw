@@ -12,7 +12,7 @@ import {
   spawnCritLabelAt, spawnLightningAt,
   flashCritRingOnMarker
 } from './fx.js';
-import { playAttackImpact as importedPlayAttackImpact, playCrit } from './audio.js';
+import { playAttackImpact as importedPlayAttackImpact, playCrit, playDeathForMid,  playDeath} from './audio.js';
 
 export function createAttachMonsterBattle({
   db, map, playerMarker, dog, Score, toast,
@@ -140,6 +140,13 @@ export function createAttachMonsterBattle({
 
     const win = async () => {
       setDead();
+      try {
+    if (data.mid) {
+      playDeathForMid(data.mid);   // 🔹 mid별 사망 사운드
+    } else {
+      playDeath?.();               // 🔹 mid가 없으면 기본 사운드
+    }
+  } catch {}
       try { playDeath?.(); } catch {}
 
       // ✅ 정책: 승리 시 EXP 가산 (구현 유무에 따른 안전 폴백 포함)

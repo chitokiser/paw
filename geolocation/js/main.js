@@ -1,9 +1,9 @@
 // /geolocation/js/main.js
-import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { auth, db } from './firebase.js';
 import {
   ensureAudio, playFail, playDeath, playAttackImpact,
-  playThunderBoom, playLightningImpact, playReward, playCrit
+  playThunderBoom, playLightningImpact
 } from './audio.js';
 import { injectCSS, toast, ensureHUD, setHUD, addStartGate, mountCornerUI } from './ui.js';
 import { makePlayerDivIcon, getChallengeDurationMs, getGuestId, haversineM } from './utils.js';
@@ -47,48 +47,26 @@ export async function main() {
     return;
   }
 
-  // 2) 유저 프로필 로드 + HUD 반영
+  // 1) 프로필 1회 로드(읽기 최소화) → HUD 세팅
   try {
     const ref = doc(db, 'users', uid);
-    const snap = await getDoc(ref);
-    let profile = snap.exists() ? snap.data() : null;
+    const snap = await getDoc(ref); // ✅ 단일 읽기
+    const profile = snap.exists() ? (snap.data() || {}) : {};
 
-    // 안전한 기본값
-    if (!profile) {
-      profile = {
-        character: 1, nickname: auth.currentUser.email || 'user',
-        level: 1, hp: 1000, exp: 0, attack: 1, defense: 10,
-        chainPoint: 0, distanceM: 0
-      };
-    }
-
-    // HUD 즉시 반영
     setHUD({
       level: profile.level ?? 1,
-      hp: profile.hp ?? 1000,
+      hp: profile.hp ?? Math.max(1000, (profile.level ?? 1) * 1000),
       exp: profile.exp ?? 0,
-      attack: profile.attack ?? 1,
+      attack: profile.attack ?? (profile.level ?? 1),
       defense: profile.defense ?? 10,
       distanceM: profile.distanceM ?? 0
     });
-
-    // 실시간 문서 변경 시 HUD 자동 갱신
-    onSnapshot(ref, (ss) => {
-      const p = ss.data?.() || {};
-      setHUD({
-        level: p.level ?? 1,
-        hp: p.hp ?? 1000,
-        exp: p.exp ?? 0,
-        attack: p.attack ?? 1,
-        defense: p.defense ?? 10,
-        distanceM: p.distanceM ?? 0
-      });
-    });
   } catch (e) {
     console.warn('[profile load] failed:', e);
+    setHUD({ level: 1, hp: 1000, exp: 0, attack: 1, defense: 10, distanceM: 0 });
   }
 
-  // Score/HUD/인벤 세팅
+  // 2) Score/HUD/인벤 세팅 (HUD는 Score가 로컬 상태로 계속 갱신)
   try {
     await Score.init({ db, getGuestId, toast, playFail });
     Score.attachToHUD(ensureHUD());
@@ -97,9 +75,10 @@ export async function main() {
     Score.wireRespawn?.();
   } catch(e){ console.warn('[Score.init] fail', e); }
 
+  // 3) 인벤토리
   const guestId = getGuestId();
   const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
-  try { await inv.load({ autoListen:true }); }
+  try { await inv.load({ autoListen:true }); } // 인벤은 자체 정책 유지(필요 시만 구독)
   catch(e){ console.warn('[Inventory.load] fail', e); }
 
   const invUI = new InventoryUI({
@@ -108,21 +87,15 @@ export async function main() {
     onUseItem: async (id) => {
       if (id === 'red_potion') {
         try {
-          // 🔹 HP +10 (최대: 레벨×1000)
           const stats = Score.getStats?.() || {};
           const curHP = Number(stats.hp ?? 0);
           const maxHP = Number(stats.level ? stats.level * 1000 : 1000);
           const newHP = Math.min(maxHP, curHP + 10);
-          if (typeof Score.setHP === 'function') {
-            await Score.setHP(newHP);
-          } else if (Score.getStats) {
-            Score.getStats().hp = newHP;
-          }
+          if (typeof Score.setHP === 'function') await Score.setHP(newHP);
+          else if (Score.getStats) Score.getStats().hp = newHP;
           Score.updateHPUI?.();
           toast?.('빨간약 사용! (+10 HP)');
-        } catch (e) {
-          console.warn('[use red_potion] hp add failed', e);
-        }
+        } catch (e) { console.warn('[use red_potion] hp add failed', e); }
       }
 
       // ⚡ 벼락 소환

@@ -309,6 +309,19 @@ export function playCrit() {
   } catch (e) { console.warn('crit sound play failed', e); }
 }
 
+// /geolocation/js/audio.js
+export function playDeathForMid(mid){
+  try {
+    const url = `/sounds/death/${encodeURIComponent(mid)}.mp3`;
+    const audio = new Audio(url);
+    audio.volume = 0.9;
+    audio.play().catch(()=>{});
+  } catch(e){
+    console.warn('[audio] playDeathForMid fail', e);
+    try { } catch {}
+  }
+}
+
 /* 레벨업/사망 MP3 래퍼 (경로 직접 호출용) */
 export const playRewardMP3 = (v=1)=> playMp3('/sounds/reward.mp3', { volume:v });
 export const playDeathMP3  = (v=1)=> playMp3('/sounds/death.mp3',  { volume:v });

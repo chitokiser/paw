@@ -3,6 +3,7 @@
 
 /* ========================= 전역(기본 프로덕션 경로) ========================= */
 let ANI_BASE = 'https://puppi.netlify.app/images/ani/';
+export function getAniBase(){ return ANI_BASE; }           // ← 추가: 외부에서 기본 경로 조회
 export function setAniBase(url){
   if (!url) return;
   ANI_BASE = String(url).replace(/\/+$/,'') + '/';
@@ -40,7 +41,13 @@ export function ensureImpactCSS() {
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
     pointer-events:none; overflow:hidden;
   }
-  .mon-hp-fill{height:100%; width:100%; background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444); transition: width .18s ease;}
+  .mon-hp-fill{
+    height:100%; width:100%;
+    background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
+    transition: width .18s ease;
+    will-change: width;            /* 잔상 감소 */
+    contain: paint;                /* 불필요한 리페인트 차단 */
+  }
   .mon-hp-text{position:absolute; left:0; right:0; top:-16px; font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6); pointer-events:none;}
   `;
   const s = document.createElement('style'); s.id = 'impactfx-css'; s.textContent = css; document.head.appendChild(s);
@@ -93,11 +100,13 @@ function ensureSpriteCSS(){
   const css = `
   .sprite-anim{
     position:absolute; left:50%; top:50%;
-    transform: translate(-50%, -50%) scale(var(--spr-scale, 1));
+    transform: translate3d(-50%, -50%, 0) scale(var(--spr-scale, 1));
     transform-origin: 50% 50%;
     image-rendering: pixelated;
     pointer-events:none;
-    will-change: background-position;
+    will-change: transform, background-position;
+    backface-visibility:hidden;
+    contain: layout paint size;
   }`;
   const s = document.createElement('style'); s.id = 'spritefx-css'; s.textContent = css;
   document.head.appendChild(s);
@@ -113,6 +122,8 @@ function createSpriteElem({ url, frameW, frameH, scale = 1, frames = 4 }){
   el.style.setProperty('--spr-scale', String(scale));
   return el;
 }
+
+/** 마커 위에 4컷 스프라이트(일회/반복) 부착 — requestAnimationFrame 기반 */
 export async function attachSpriteToMarker(marker, anim = {}, opts = {}){
   ensureSpriteCSS();
   const root = marker?.getElement();
@@ -141,20 +152,34 @@ export async function attachSpriteToMarker(marker, anim = {}, opts = {}){
   if (classNameExtra) el.classList.add(classNameExtra);
   wrap.appendChild(el);
 
-  let frame = 0, stopped = false, timer = null;
+  // ▶ RAF 루프 (setTimeout → RAF): 잔상/티어 최소화
+  let frame = 0, stopped = false, rafId = 0;
   const period = 1000 / Math.max(1, fps);
-  const tick = ()=>{
+  let last = performance.now();
+
+  function loop(now){
     if (stopped) return;
-    el.style.backgroundPosition = `${-(frame * frameW)}px 0px`;
-    frame++;
-    if (frame >= frames){
-      if (once){ stop(); return; }
-      frame = 0;
+    const dt = now - last;
+    if (dt >= period){
+      el.style.backgroundPosition = `${-(frame * frameW)}px 0px`;
+      frame++;
+      last = now;
+      if (frame >= frames){
+        if (once){ stop(); return; }
+        frame = 0;
+      }
     }
-    timer = setTimeout(tick, period);
-  };
-  timer = setTimeout(tick, period);
-  function stop(){ if (stopped) return; stopped = true; clearTimeout(timer); try{ el.remove(); }catch{} }
+    rafId = requestAnimationFrame(loop);
+  }
+  rafId = requestAnimationFrame(loop);
+
+  function stop(){
+    if (stopped) return; stopped = true;
+    cancelAnimationFrame(rafId);
+    el.style.animation = 'none'; // 강제 플러시
+    void el.offsetWidth;
+    try{ el.remove(); }catch{}
+  }
   return { stop, element: el };
 }
 
@@ -166,15 +191,17 @@ export function ensureMonsterAniCSS(){
   .ani-sheet{
     position:absolute; left:50%; top:50%;
     width:200px; height:200px; pointer-events:none;
-    transform: translate(-50%, -50%) scale(var(--ani-scale, 1));
+    transform: translate3d(-50%, -50%, 0) scale(var(--ani-scale, 1));
     background-repeat:no-repeat; background-position:0 0;
     background-size:800px 200px;
     animation: ani4 var(--ani-dur, 420ms) steps(4) 1 both;
     image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;
+    will-change: transform, background-position; backface-visibility:hidden; contain: layout paint size;
   }
   @keyframes ani4 { from { background-position-x:0px; } to { background-position-x:-600px; } }
   .ani-wrap{ position:relative; width:0; height:0; }`;
   const style = document.createElement('style');
+  style.id = 'ani4-css';
   style.textContent = css; document.head.appendChild(style);
 }
 
