@@ -1,9 +1,13 @@
+// /geolocation/js/ui.js
 /* =================================================================
  * HUD & 코너 UI (안정판)
  *  - HUD 항목: 레벨 / 공격력 / 방어력 / 경험치바 / HP / 블록체인 포인트 / 이동거리
  *  - 레벨업 버튼 제거(자동 레벨업 정책)
  *  - 널가드/중복주입/숫자 변환 방어
+ *  - CP 표시: cp/chainPoint/chain 모두 수용(하위호환)
+ *  - HP/EXP 바: id + class 동시 부여(레거시 선택자 호환)
  * ================================================================= */
+
 export function injectCSS(){
   if (document.getElementById('ui-base-css')) return;
 
@@ -33,7 +37,7 @@ export function injectCSS(){
     position:fixed;
     right: calc(env(safe-area-inset-right, 0px) + 12px);
     top:   calc(env(safe-area-inset-top,   0px) + 12px);
-    background:rgba(17,24,39,.68); /* 더 투명하게 */
+    background:rgba(17,24,39,.68);
     color:#fff; padding:10px 12px;
     border-radius:12px; z-index:10040; min-width:220px;
     box-shadow:0 10px 30px rgba(0,0,0,.28); backdrop-filter: blur(8px);
@@ -121,17 +125,17 @@ export function ensureHUD(){
       <span class="label">경험치</span>
       <span id="hudExpText" class="val">0 / 20,000</span>
     </div>
-    <div class="bar exp"><i id="hudExpFill"></i></div>
+    <div class="bar exp"><i id="hudExpFill" class="hud-exp-fill"></i></div>
 
     <div class="row" style="margin-top:6px">
       <span class="label">HP</span>
-      <span id="hudHPText" class="val">0 / 0</span>
+      <span id="hudHPText" class="val hud-hp-text">0 / 0</span>
     </div>
-    <div class="bar"><i id="hudHPFill"></i></div>
+    <div class="bar"><i id="hudHPFill" class="hud-hp-fill"></i></div>
 
     <div class="row" style="margin-top:6px">
       <span class="label">블록체인 포인트</span>
-      <span id="hudChain" class="val">0</span>
+      <span id="hudChain" class="val hud-cp-text">0</span>
     </div>
 
     <div class="row" style="margin-top:2px">
@@ -172,8 +176,9 @@ export function setHUD(partial = {}){
     if ($('hudHPFill')) $('hudHPFill').style.width = pct.toFixed(1) + '%';
   }
 
-  // 체인 포인트
-  if (partial.chain != null && $('hudChain')) $('hudChain').textContent = String(partial.chain);
+  // 체인 포인트(cp 우선, 하위호환: chainPoint/chain)
+  const cpLike = (partial.cp ?? partial.chainPoint ?? partial.chain);
+  if (cpLike != null && $('hudChain')) $('hudChain').textContent = String(_num(cpLike, 0));
 
   // 이동거리
   if (partial.distanceM != null && $('hudDist')) $('hudDist').textContent = _distText(partial.distanceM);
@@ -242,3 +247,12 @@ export function mountCornerUI({ map, playerMarker, invUI } = {}){
     document.body.appendChild(b);
   }
 }
+
+export default {
+  injectCSS,
+  toast,
+  ensureHUD,
+  setHUD,
+  addStartGate,
+  mountCornerUI
+};

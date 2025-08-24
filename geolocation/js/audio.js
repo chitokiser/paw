@@ -1,20 +1,19 @@
 // /geolocation/js/audio.js
-
 /* ============================================================
  * Audio Core (정리본)
+ *  - 합성 임팩트 + mid별 mp3를 함께 사용 가능
  *  - 레벨업: /sounds/reward.mp3
  *  - 사망(플레이어): /sounds/death.mp3
- *  - 크리티컬: 기존 가장 강력한 합성(Death Synth) 재사용
- *  - 중복 함수 제거 및 일관된 export
+ *  - 크리티컬: 강한 합성(Death Synth) 재사용
+ *  - 캐싱/폴백/자동 resume 포함
  * ============================================================ */
 
 let audioCtx;
 
-/* ───────────────── 기본 유틸 ───────────────── */
-export function ensureAudio()
-{
+/* ─────────── 공통 ─────────── */
+export function ensureAudio(){
   audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch {} }
   return audioCtx;
 }
 
@@ -48,27 +47,7 @@ export function blip(freq=300, dur=0.07, type='square', startGain=0.35){
 }
 export const playHit = ()=>blip();
 
-/* ─────────────── 합성 실패/사망 효과(레거시) ───────────────
- *  - 이 강력한 합성 사운드는 이제 "크리티컬"에서 사용됩니다.
- *  - 플레이어 사망시에는 MP3를 재생합니다(아래 playDeathMP3).
- */
-export function playFail(){
-  const ac = ensureAudio(), t = ac.currentTime;
-  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
-  const g  = ac.createGain();
-  const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(1200, t);
-  o1.type='sawtooth'; o2.type='sawtooth';
-  o1.frequency.setValueAtTime(320, t); o2.frequency.setValueAtTime(320*0.98, t);
-  o1.frequency.exponentialRampToValueAtTime(70, t+0.7);
-  o2.frequency.exponentialRampToValueAtTime(65, t+0.7);
-  const nz = createNoise();
-  nz.connect(lp); o1.connect(g); o2.connect(g); lp.connect(g); g.connect(ac.destination);
-  applyADSR(g, t, {a:0.005, d:0.1, s:0.2, r:0.35, peak:0.9, sus:0.15});
-  o1.start(t); o2.start(t); nz.start(t);
-  o1.stop(t+0.75); o2.stop(t+0.75); nz.stop(t+0.5);
-}
-
-/* ⛔ 기존 “사망 합성” (아주 강력) —> 크리티컬 전용으로 재사용 */
+/* ─────────── 강한 합성(크리티컬 레이어) ─────────── */
 function _deathSynthStrong(){
   const ac = ensureAudio(), t = ac.currentTime;
   const freqs = [523.25, 659.25, 783.99];
@@ -95,7 +74,7 @@ function _deathSynthStrong(){
   lfo.start(t); lfo.stop(t+0.6);
 }
 
-/* ─────────────── 휘두름(선택) ─────────────── */
+/* ─────────── 휘두름 ─────────── */
 export function swordWhoosh(){
   const ac = ensureAudio(), t = ac.currentTime;
   const nz = createNoise();
@@ -108,7 +87,7 @@ export function swordWhoosh(){
   nz.start(t); nz.stop(t+0.18);
 }
 
-/* ───────────────── 임팩트(플레이어/몬스터) ───────────────── */
+/* ─────────── 임팩트 합성 ─────────── */
 function _impactCore(kind = 'player', { intensity = 1.0, includeWhoosh = false } = {}) {
   const ac = ensureAudio();
   const t  = ac.currentTime;
@@ -185,29 +164,26 @@ function _impactCore(kind = 'player', { intensity = 1.0, includeWhoosh = false }
 export function playPlayerAttackImpact(opts = {}) { _impactCore('player', opts); }
 export function playMonsterAttackImpact(opts = {}) { _impactCore('monster', opts); }
 
-/* ──────── 크리티컬(강화판) ────────
- * 요청: “지금 죽을때 나오던 가장 강력한 사운드”를 크리티컬에 사용
- */
+/* 크리티컬 (강화판) */
 export function playCriticalImpact({ intensity = 1.0, includeWhoosh = true } = {}) {
-  try { _deathSynthStrong(); } catch {}                // 강력한 레이어
+  try { _deathSynthStrong(); } catch {}
   _impactCore('player', { intensity: Math.max(1, 1.2*intensity), includeWhoosh });
 }
 
-/* 하위 호환(critical 플래그) */
+/* 하위 호환 */
 export function playAttackImpact(opts = {}) {
   const { critical = false, ...rest } = opts || {};
   if (critical) return playCriticalImpact(rest);
   return playPlayerAttackImpact(rest);
 }
 
-/* ───────────── 번개/천둥 FX ───────────── */
+/* ─────────── 번개/천둥 ─────────── */
 export function playLightning(){
   try{
     const ac = ensureAudio();
     const dur = 0.6;
     const buffer = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
     const data = buffer.getChannelData(0);
-    // 브라운 노이즈풍
     let lastOut = 0;
     for (let i=0;i<data.length;i++){
       const white = Math.random()*2 - 1;
@@ -270,58 +246,80 @@ export function playLightningImpact({ intensity = 1.0, withBoom = true, delayMs 
   }
 }
 
-/* ─────────────── 사운드 파일 객체 ─────────────── */
-const deathSound  = new Audio('/sounds/death.mp3');
-const rewardSound = new Audio('/sounds/reward.mp3');
-const critSound   = new Audio('/sounds/crit.mp3');
-
-
-
-/* ─────────────── 간단 MP3 재생 ─────────────── */
-export function playMp3(url, { volume = 1.0 } = {}) {
-  try { ensureAudio(); } catch {}
-  const a = new Audio(url);
-  a.volume = Math.max(0, Math.min(1, volume));
-  a.currentTime = 0;
-  a.play().catch(()=>{});
+/* ─────────── MP3 헬퍼 ─────────── */
+const _cache = new Map();
+function _getCachedAudio(url){
+  let a = _cache.get(url);
+  if (!a) { a = new Audio(url); a.preload = 'auto'; _cache.set(url, a); }
   return a;
 }
 
-/* ─────────────── 효과음 (MP3) ─────────────── */
-export function playDeath() {
+export function playMp3(url, { volume = 1.0 } = {}) {
+  try { ensureAudio(); } catch {}
   try {
-    deathSound.currentTime = 0;
-    deathSound.play();
-  } catch (e) { console.warn('death sound play failed', e); }
+    const a = _getCachedAudio(url);
+    a.volume = Math.max(0, Math.min(1, volume));
+    a.currentTime = 0;
+    a.play().catch(()=>{});
+    return a;
+  } catch { return null; }
 }
 
-export function playReward() {
+/* ─────────── 효과음 (MP3) ─────────── */
+const deathSound  = _getCachedAudio('/sounds/death.mp3');
+const rewardSound = _getCachedAudio('/sounds/reward.mp3');
+const critSound   = _getCachedAudio('/sounds/crit.mp3');
+
+export function playDeath() { try { deathSound.currentTime = 0; deathSound.play(); } catch {} }
+export function playReward(){ try { rewardSound.currentTime = 0; rewardSound.play(); } catch {} }
+export function playCrit()   { try { critSound.currentTime = 0;   critSound.play();   } catch {} }
+
+/* ─────────── MID 기반 사운드 ─────────── */
+export function playMonsterHitForMid(mid, { volume = 0.95 } = {}) {
+  if (mid == null) return;
   try {
-    rewardSound.currentTime = 0;
-    rewardSound.play();
-  } catch (e) { console.warn('reward sound play failed', e); }
+    const url = `/sounds/hit/${encodeURIComponent(mid)}.mp3`;
+    const a = _getCachedAudio(url);
+    a.volume = Math.max(0, Math.min(1, volume));
+    a.currentTime = 0;
+    a.play().catch(() => {
+      try {
+        const f = _getCachedAudio('/sounds/hit/default.mp3');
+        f.volume = a.volume;
+        f.currentTime = 0;
+        f.play().catch(()=>{});
+      } catch {}
+    });
+  } catch (e) { console.warn('[audio] playMonsterHitForMid fail', e); }
 }
 
-export function playCrit() {
-  try {
-    critSound.currentTime = 0;
-    critSound.play();
-  } catch (e) { console.warn('crit sound play failed', e); }
-}
-
-// /geolocation/js/audio.js
-export function playDeathForMid(mid){
+export function playDeathForMid(mid, { volume = 0.9 } = {}){
+  if (mid == null) return;
   try {
     const url = `/sounds/death/${encodeURIComponent(mid)}.mp3`;
-    const audio = new Audio(url);
-    audio.volume = 0.9;
-    audio.play().catch(()=>{});
-  } catch(e){
-    console.warn('[audio] playDeathForMid fail', e);
-    try { } catch {}
-  }
+    const a = _getCachedAudio(url);
+    a.volume = Math.max(0, Math.min(1, volume));
+    a.currentTime = 0;
+    a.play().catch(()=>{});
+  } catch(e){ console.warn('[audio] playDeathForMid fail', e); }
+}
+// /geolocation/js/audio.js
+export function playFail(){
+  const ac = ensureAudio(), t = ac.currentTime;
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+  const g  = ac.createGain();
+  const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(1200, t);
+  o1.type='sawtooth'; o2.type='sawtooth';
+  o1.frequency.setValueAtTime(320, t); o2.frequency.setValueAtTime(320*0.98, t);
+  o1.frequency.exponentialRampToValueAtTime(70, t+0.7);
+  o2.frequency.exponentialRampToValueAtTime(65, t+0.7);
+  const nz = createNoise();
+  nz.connect(lp); o1.connect(g); o2.connect(g); lp.connect(g); g.connect(ac.destination);
+  applyADSR(g, t, {a:0.005, d:0.1, s:0.2, r:0.35, peak:0.9, sus:0.15});
+  o1.start(t); o2.start(t); nz.start(t);
+  o1.stop(t+0.75); o2.stop(t+0.75); nz.stop(t+0.5);
 }
 
-/* 레벨업/사망 MP3 래퍼 (경로 직접 호출용) */
+/* 레벨업/사망 MP3 직접 호출용 */
 export const playRewardMP3 = (v=1)=> playMp3('/sounds/reward.mp3', { volume:v });
 export const playDeathMP3  = (v=1)=> playMp3('/sounds/death.mp3',  { volume:v });

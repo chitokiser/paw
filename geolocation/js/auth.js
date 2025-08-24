@@ -60,7 +60,6 @@ export async function ensureUserDoc(uid, email=''){
     exp: 0,
     attack: level,
     defense: 10,
-    chainPoint: 0,
     distanceM: 0,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

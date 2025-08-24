@@ -1,6 +1,6 @@
 // /geolocation/js/monstersRT.js
 import { collection, query, where, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-import { makeAniFirstFrameIcon, attachSpriteToMarker } from './fx.js'; // ✅ 첫 프레임 + 스프라이트 오버레이
+import { makeAniFirstFrameIcon, attachSpriteToMarker, getAniBase } from './fx.js'; // ✅ ANI_BASE 공유
 
 /* ===============================
  * 로컬 쿨다운 유틸
@@ -27,11 +27,10 @@ function makeStaticIcon(url, sizePx){
 }
 
 /* ===============================
- * mid 기반 시트 URL
+ * mid 기반 시트 URL (fx.js의 ANI_BASE 사용)
  * =============================== */
-let ANI_BASE = 'https://puppi.netlify.app/images/ani/';
 function buildAniSheetURL(mid){
-  return `${ANI_BASE}${encodeURIComponent(mid)}.png`;
+  return `${getAniBase()}${encodeURIComponent(mid)}.png`;
 }
 
 /* ===============================
@@ -57,7 +56,7 @@ function makeMonsterIconFromData(d, sizePx, fallbackUrl){
   // 4) mid가 있으면 시트 첫 프레임 아이콘
   if (mid) {
     try {
-      return makeAniFirstFrameIcon(mid, { size: s, frames: 4, basePath: ANI_BASE });
+      return makeAniFirstFrameIcon(mid, { size: s, frames: 4, basePath: getAniBase() });
     } catch { /* 폴백 아래로 */ }
   }
 
@@ -293,7 +292,7 @@ export class RealTimeMonsters {
       return;
     }
 
-    // 위치 보정(아이콘은 “제자리 프레임 전환”이라 위치 변화 없음)
+    // 위치 보정
     try{
       const cur = rec.marker.getLatLng();
       const dist = this.map.distance(cur, L.latLng(d.lat, d.lon));
@@ -320,7 +319,7 @@ export class RealTimeMonsters {
       rec.bound = true;
     }
 
-    // 매 프레임(폴링/이동 시) 거리 기반 애니 갱신
+    // 거리 기반 애니 갱신
     this._updateAnimState(rec);
   }
 
@@ -375,7 +374,7 @@ export class RealTimeMonsters {
         this._playAnim(rec, { fps: targetFPS, frames, frameW, frameH });
         rec.animState = 'playing';
       } else {
-        // 이미 재생 중이면 FPS만 맞춰줌
+        // 단순 리타이밍: 재부착
         this._retimeAnim(rec, targetFPS);
       }
       return;
@@ -384,7 +383,6 @@ export class RealTimeMonsters {
     // 2) 멀어짐 → 정지 또는 슬로우 유지
     if (dist >= nearStopM){
       if (stopHalfway && fpsFar > 0){
-        // 슬로우 루프 유지
         if (rec.animState !== 'slowed' || !rec.animHandle){
           this._playAnim(rec, { fps: Math.max(1, fpsFar|0), frames, frameW, frameH });
           rec.animState = 'slowed';
@@ -392,13 +390,12 @@ export class RealTimeMonsters {
           this._retimeAnim(rec, Math.max(1, fpsFar|0));
         }
       } else {
-        // 완전 정지(첫 프레임 상태 유지)
         this._stopAnim(rec);
       }
       return;
     }
 
-    // 3) 히스테리시스 사이(nearStartM < d < nearStopM): 현재 상태 유지
+    // 3) 히스테리시스 사이: 유지
   }
 
   _getUserLatLng(){
@@ -426,7 +423,6 @@ export class RealTimeMonsters {
     const targetW  = Number(iconSize[0]) || frameW;
     const scale    = targetW / frameW;
 
-    // attachSpriteToMarker는 마커 내부에 절대배치되고, background-position만 바뀜 → “자리 고정”
     const url = buildAniSheetURL(mid);
     rec.animHandle = attachSpriteToMarker(
       rec.marker,
@@ -436,7 +432,6 @@ export class RealTimeMonsters {
   }
 
   _retimeAnim(rec, nextFPS){
-    // 간단 버전: FPS 변경 시 재부착
     if (!rec?.animHandle) return;
     try { rec.animHandle.stop(); } catch {}
     rec.animHandle = null;
@@ -464,6 +459,5 @@ export class RealTimeMonsters {
       rec.animHandle = null;
     }
     rec.animState = 'stopped';
-    // 아이콘은 그대로(첫 프레임). 위치도 그대로.
   }
 }

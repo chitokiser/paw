@@ -3,10 +3,17 @@
 
 /* ========================= 전역(기본 프로덕션 경로) ========================= */
 let ANI_BASE = 'https://puppi.netlify.app/images/ani/';
-export function getAniBase(){ return ANI_BASE; }           // ← 추가: 외부에서 기본 경로 조회
+export function getAniBase(){ return ANI_BASE; }           // ✅ 외부에서 기본 경로 조회
 export function setAniBase(url){
   if (!url) return;
   ANI_BASE = String(url).replace(/\/+$/,'') + '/';
+}
+// === 추가: GSAP 로더 =========================================
+let _gsapMod = null;
+async function ensureGSAP(){
+  if (_gsapMod) return _gsapMod;
+  _gsapMod = await import('https://cdn.skypack.dev/gsap@3.12.5');
+  return _gsapMod;
 }
 
 /* ================== 임팩트 FX + HP Bar CSS (공통) ================== */
@@ -45,8 +52,8 @@ export function ensureImpactCSS() {
     height:100%; width:100%;
     background: linear-gradient(90deg,#22c55e,#f59e0b,#ef4444);
     transition: width .18s ease;
-    will-change: width;            /* 잔상 감소 */
-    contain: paint;                /* 불필요한 리페인트 차단 */
+    will-change: width;
+    contain: paint;
   }
   .mon-hp-text{position:absolute; left:0; right:0; top:-16px; font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6); pointer-events:none;}
   `;
@@ -106,12 +113,12 @@ function ensureSpriteCSS(){
     pointer-events:none;
     will-change: transform, background-position;
     backface-visibility:hidden;
-    contain: layout paint size;
+    contain: paint style layout size;
   }`;
   const s = document.createElement('style'); s.id = 'spritefx-css'; s.textContent = css;
   document.head.appendChild(s);
 }
-function createSpriteElem({ url, frameW, frameH, scale = 1, frames = 4 }){
+function createSpriteElem({ url, frameW, frameH, scale = 1 }){
   const el = document.createElement('div');
   el.className = 'sprite-anim';
   el.style.width  = `${frameW}px`;
@@ -123,7 +130,7 @@ function createSpriteElem({ url, frameW, frameH, scale = 1, frames = 4 }){
   return el;
 }
 
-/** 마커 위에 4컷 스프라이트(일회/반복) 부착 — requestAnimationFrame 기반 */
+/** ✅ GSAP steps 기반 스프라이트 애니 (잔상 최소화 + 속도정확) */
 export async function attachSpriteToMarker(marker, anim = {}, opts = {}){
   ensureSpriteCSS();
   const root = marker?.getElement();
@@ -132,57 +139,77 @@ export async function attachSpriteToMarker(marker, anim = {}, opts = {}){
 
   const {
     url, frames = 4, frameW = 200, frameH = 200,
-    once = true, fps  = 12
+    once = false, fps  = 8   // ← 기본 8fps (너무 빠르다는 피드백 반영)
   } = anim;
-
-  let { scale } = opts;
-  const { classNameExtra = '' } = opts;
   if (!url || !frames) return { stop:()=>{}, element:null };
 
+
+   // ✅ 원하는 픽셀 고정: opts.targetPx > .ani-first width > iconSize 순으로 결정
+  let { scale, targetPx, classNameExtra = '' } = opts;
+  function _getTargetW(){
+    if (Number(targetPx)) return Math.max(8, Math.round(Number(targetPx)));
+    const el = wrap.querySelector('.ani-first, .ani-size-ref, .leaflet-marker-icon');
+    const wFromEl = el?.clientWidth;
+    if (wFromEl) return Math.round(wFromEl);
+    const iconSize = marker?.options?.icon?.options?.iconSize || [];
+    if (iconSize[0]) return Math.round(iconSize[0]);
+    return frameW; // fallback
+  }
   if (scale == null) {
-    const iconSize = marker?.options?.icon?.options?.iconSize || [frameW, frameH];
-    const targetW  = Number(iconSize[0]) || frameW;
+    const targetW = _getTargetW();
     scale = targetW / frameW;
   }
+  // 🔎 스케일 스냅 제거: 정확히 요청한 픽셀을 우선함
+  scale = Math.max(0.25, scale);
+
 
   const cs = window.getComputedStyle(wrap);
   if (cs.position === 'static') wrap.style.position = 'relative';
 
-  const el = createSpriteElem({ url, frameW, frameH, scale, frames });
+  const el = createSpriteElem({ url, frameW, frameH, scale });
   if (classNameExtra) el.classList.add(classNameExtra);
   wrap.appendChild(el);
 
-  // ▶ RAF 루프 (setTimeout → RAF): 잔상/티어 최소화
-  let frame = 0, stopped = false, rafId = 0;
-  const period = 1000 / Math.max(1, fps);
-  let last = performance.now();
+  // ▶ GSAP steps 이징으로 정확히 프레임 스냅
+  const { gsap } = await ensureGSAP();
+  const state = { f: 0 };
+  const duration = Math.max(0.001, frames / Math.max(1, fps)); // 한 사이클 시간(초)
 
-  function loop(now){
-    if (stopped) return;
-    const dt = now - last;
-    if (dt >= period){
+  const tl = gsap.timeline({
+    repeat: once ? 0 : -1,
+    paused: false
+  });
+
+  tl.to(state, {
+    f: frames - 1,
+    duration,
+    ease: `steps(${frames})`,
+    onUpdate(){
+      // 정수 프레임만 적용 → 잔상 방지
+      const frame = (state.f | 0);
       el.style.backgroundPosition = `${-(frame * frameW)}px 0px`;
-      frame++;
-      last = now;
-      if (frame >= frames){
-        if (once){ stop(); return; }
-        frame = 0;
-      }
     }
-    rafId = requestAnimationFrame(loop);
-  }
-  rafId = requestAnimationFrame(loop);
+  });
 
+  // 페이지 비가시성 시 자동 일시정지 → 배터리/열/티어링 감소
+  const visHandler = () => {
+    try {
+      if (document.hidden) tl.pause();
+      else tl.resume();
+    } catch {}
+  };
+  document.addEventListener('visibilitychange', visHandler);
+
+  let stopped = false;
   function stop(){
     if (stopped) return; stopped = true;
-    cancelAnimationFrame(rafId);
-    el.style.animation = 'none'; // 강제 플러시
-    void el.offsetWidth;
-    try{ el.remove(); }catch{}
+    try { tl.kill(); } catch {}
+    try { el.remove(); } catch {}
+    document.removeEventListener('visibilitychange', visHandler);
   }
+
   return { stop, element: el };
 }
-
 /* ============== 4컷 mid 전용(Idle/Hit) - CSS/유틸 ============== */
 let _aniCSSInjected = false;
 export function ensureMonsterAniCSS(){

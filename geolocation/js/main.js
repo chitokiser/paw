@@ -1,9 +1,8 @@
 // /geolocation/js/main.js
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { auth, db } from './firebase.js';
 import {
   ensureAudio, playFail, playDeath, playAttackImpact,
-  playThunderBoom, playLightningImpact
+  playThunderBoom, playLightningImpact, playReward, playCrit
 } from './audio.js';
 import { injectCSS, toast, ensureHUD, setHUD, addStartGate, mountCornerUI } from './ui.js';
 import { makePlayerDivIcon, getChallengeDurationMs, getGuestId, haversineM } from './utils.js';
@@ -28,16 +27,32 @@ import { Inventory } from './inventory.js';
 import { InventoryUI } from './inventoryUI.js';
 import { Treasures } from './treasures.js';
 import { Shops } from './shops.js';
+import { ensureUserDoc } from './auth.js';
 
-/* -------------------- 공통 CSS -------------------- */
 injectCSS();
 ensureImpactCSS();
 ensureMonsterAniCSS();
-setAniBase('https://puppi.netlify.app/images/ani/'); // ✅ 프로덕션 시트
+setAniBase('https://puppi.netlify.app/images/ani/');
 
-/* ------------------------- 전역 ------------------------- */
 let map, playerMarker;
 let userLat = null, userLon = null;
+
+/* ──────────────────────────────────────────────────────────────
+ * CP DOM 폴백 갱신(레거시 HUD 지원)
+ * ────────────────────────────────────────────────────────────── */
+function __updateCPDom(cpValue) {
+  const v = Number(cpValue ?? 0);
+  const selectors = [
+    '.hud-cp-text',   // 신규
+    '#hudCPText',     // 과거 id
+    '#hud .cp-text',  // 다른 테마
+    '#hud .bp-text',  // “블록체인 포인트”를 bp로 표기했던 테마
+  ];
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el) el.textContent = String(v);
+  }
+}
 
 /* =============================== 메인 =============================== */
 export async function main() {
@@ -47,38 +62,63 @@ export async function main() {
     return;
   }
 
-  // 1) 프로필 1회 로드(읽기 최소화) → HUD 세팅
-  try {
-    const ref = doc(db, 'users', uid);
-    const snap = await getDoc(ref); // ✅ 단일 읽기
-    const profile = snap.exists() ? (snap.data() || {}) : {};
+  // 0) 사용자 문서 보장(없으면 생성)
+  try { await ensureUserDoc(uid, auth.currentUser?.email || ''); }
+  catch (e) { console.warn('[ensureUserDoc] failed (non-fatal)', e); }
 
-    setHUD({
-      level: profile.level ?? 1,
-      hp: profile.hp ?? Math.max(1000, (profile.level ?? 1) * 1000),
-      exp: profile.exp ?? 0,
-      attack: profile.attack ?? (profile.level ?? 1),
-      defense: profile.defense ?? 10,
-      distanceM: profile.distanceM ?? 0
-    });
-  } catch (e) {
-    console.warn('[profile load] failed:', e);
-    setHUD({ level: 1, hp: 1000, exp: 0, attack: 1, defense: 10, distanceM: 0 });
-  }
-
-  // 2) Score/HUD/인벤 세팅 (HUD는 Score가 로컬 상태로 계속 갱신)
+  // 1) Score 초기화 & HUD 연결 — Score가 단일 SoT
+  const hud = ensureHUD();
   try {
     await Score.init({ db, getGuestId, toast, playFail });
-    Score.attachToHUD(ensureHUD());
-    setHUD({ chain: Score.getChainTotal() });
+  } catch (e) {
+    console.warn('[Score.init] fail 1st', e);
+    try {
+      await ensureUserDoc(uid, auth.currentUser?.email || '');
+      await Score.init({ db, getGuestId, toast, playFail });
+    } catch (e2) {
+      console.error('[Score.init] fail 2nd', e2);
+    }
+  }
+
+  try {
+    Score.attachToHUD(hud);
+
+    // ✅ HUD는 Score 값만 반영 (hpMax 포함) + cp/chainPoint 동시 전달 + DOM 폴백
+    const syncHUD = (s) => {
+      const hpMax = Number(s.maxHp ?? s.hpMax ?? (s.level ? s.level * 1000 : 1000));
+      const hp    = Math.max(0, Math.min(Number(s.hp ?? 0), hpMax));
+      const cp    = Number(s.cp ?? 0);
+
+      setHUD({
+        level    : s.level ?? 1,
+        hp       : hp,
+        hpMax    : hpMax,
+        hpPct    : hpMax > 0 ? Math.max(0, Math.min(100, (hp / hpMax) * 100)) : 0,
+        exp      : s.exp ?? 0,
+        attack   : s.attack ?? (s.level ?? 1),
+        defense  : s.defense ?? 10,
+        distanceM: s.distanceM ?? 0,
+        cp       : cp,   // 표준 키
+        chainPoint: cp,  // 하위호환 키(레거시 HUD 지원)
+      });
+
+      // HUD 구현이 setHUD의 cp를 무시해도 DOM 직접 갱신(레거시 선택자 포함)
+      __updateCPDom(cp);
+    };
+
+    // 초기 1회 + 상태 변경 시마다 동기화
+    try { syncHUD(Score.getStats?.() || {}); } catch {}
+    Score.onChange(syncHUD);
+
+    // 레거시 훅(있으면만)
     Score.updateEnergyUI?.();
     Score.wireRespawn?.();
-  } catch(e){ console.warn('[Score.init] fail', e); }
+  } catch(e){ console.warn('[Score HUD setup] fail', e); }
 
-  // 3) 인벤토리
+  // 2) 인벤토리
   const guestId = getGuestId();
   const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
-  try { await inv.load({ autoListen:true }); } // 인벤은 자체 정책 유지(필요 시만 구독)
+  try { await inv.load({ autoListen:true }); }
   catch(e){ console.warn('[Inventory.load] fail', e); }
 
   const invUI = new InventoryUI({
@@ -87,18 +127,18 @@ export async function main() {
     onUseItem: async (id) => {
       if (id === 'red_potion') {
         try {
-          const stats = Score.getStats?.() || {};
-          const curHP = Number(stats.hp ?? 0);
-          const maxHP = Number(stats.level ? stats.level * 1000 : 1000);
-          const newHP = Math.min(maxHP, curHP + 10);
-          if (typeof Score.setHP === 'function') await Score.setHP(newHP);
-          else if (Score.getStats) Score.getStats().hp = newHP;
+          const s = Score.getStats?.() || {};
+          const hpMax = Number(s.maxHp ?? 1000);
+          const newHP = Math.min(hpMax, Number(s.hp ?? 0) + 10);
+          await Score.setHP?.(newHP);
           Score.updateHPUI?.();
           toast?.('빨간약 사용! (+10 HP)');
-        } catch (e) { console.warn('[use red_potion] hp add failed', e); }
+        } catch (e) {
+          console.warn('[use red_potion] hp add failed', e);
+        }
       }
 
-      // ⚡ 벼락 소환
+      // ⚡ 벼락 소환 아이템
       if (id === 'lightning_summon' || id === 'lightning_talisman' || id === '벼락소환') {
         try {
           ensureAudio();
@@ -130,7 +170,7 @@ export async function main() {
   try { invUI.mount(); }
   catch (e) { console.error('[InventoryUI] mount failed:', e); }
 
-  /* ===== Map ===== */
+  // 3) 지도
   map = L.map('map', { maxZoom: 22 }).setView([37.5665, 126.9780], 16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
@@ -144,7 +184,7 @@ export async function main() {
   });
   if (userLat == null) { userLat = 37.5665; userLon = 126.9780; }
 
-  /* ===== Player (방향전환 + idle) ===== */
+  // 플레이어 마커
   playerMarker = L.marker([userLat, userLon], {
     icon: makePlayerDivIcon('../images/user/1.png', 38)
   }).addTo(map);
@@ -157,33 +197,26 @@ export async function main() {
     setFacingByLatLng(map, playerMarker, L.latLng(cur.lat, cur.lng + 0.00001), 'right');
   } catch {}
 
-  // idle(숨쉬기)
+  // idle(숨쉬기) 효과
   (function ensurePlayerIdleCSS() {
     if (document.getElementById('player-idle-css')) return;
     const css = `
-      .player-idle img{
-        animation:playerBreath 1.4s ease-in-out infinite;
-        transform-origin:50% 85%;
-      }
+      .player-idle img{ animation:playerBreath 1.4s ease-in-out infinite; transform-origin:50% 85%; }
       @keyframes playerBreath{ 0%{transform:scale(1)} 50%{transform:scale(1.025)} 100%{transform:scale(1)} }
     `;
-    const s = document.createElement('style');
-    s.id = 'player-idle-css';
-    s.textContent = css;
-    document.head.appendChild(s);
+    const s = document.createElement('style'); s.id = 'player-idle-css'; s.textContent = css; document.head.appendChild(s);
   })();
 
-  /* ===== 코너 UI ===== */
+  // 코너 UI
   try { mountCornerUI?.({ map, playerMarker, invUI }); } catch {}
 
-  /* ===== Dog follower ===== */
+  // 강아지 동행
   const dog = new DogCompanion({
     map, lat: userLat, lon: userLon,
     dogUrl: '../images/user/dog.png', dogSize: 26, offsetM: 0.5,
     barkUrl: '../sounds/puppybark.mp3', barkVolume: 0.9
   });
 
-  // 클릭 방향 바라보기 (유저/개)
   map.on('click', (e) => {
     try {
       const { lat: uLat, lng: uLng } = playerMarker?.getLatLng?.() ?? { lat: userLat, lng: userLon };
@@ -194,7 +227,7 @@ export async function main() {
     }
   });
 
-  /* ===== 이동 경로 + HUD ===== */
+  // 이동 경로 + HUD(거리) — 거리 표시는 UI 전용, 적립은 Score가 처리
   const walkPath = L.polyline([[userLat, userLon]], { weight: 3, opacity: 0.9 }).addTo(map);
   let lastLat = userLat, lastLon = userLon;
   let totalWalkedM = Number(localStorage.getItem('ui_total_walk_m') || 0);
@@ -212,7 +245,7 @@ export async function main() {
         if (seg >= 0.5) {
           totalWalkedM += seg;
           localStorage.setItem('ui_total_walk_m', String(totalWalkedM));
-          setHUD({ distanceM: totalWalkedM });
+          setHUD({ distanceM: totalWalkedM }); // 시각값만, 적립은 Score가 별도 로직으로
         }
       }
       lastLat = userLat; lastLon = userLon;
@@ -224,7 +257,7 @@ export async function main() {
     el.classList.remove('player-hit'); void el.offsetWidth; el.classList.add('player-hit');
   };
 
-  /* ===== Towers ===== */
+  // 타워
   const towers = new TowerGuard({
     map, db,
     iconUrl: 'https://puppi.netlify.app/images/mon/tower.png',
@@ -246,7 +279,7 @@ export async function main() {
   });
   towers.setUserReady(true);
 
-  /* ===== Monsters (auto) ===== */
+  // 몬스터 가드
   const monstersGuard = new MonsterGuard({
     map, db,
     rangeDefault: 50, fireCooldownMs: 1800,
@@ -267,7 +300,7 @@ export async function main() {
     useTiles: true
   });
 
-  /* ===== Battle binder ===== */
+  // 전투 바인더
   const attachMonsterBattle = createAttachMonsterBattle({
     db, map, playerMarker, dog, Score, toast,
     ensureAudio, setFacingByLatLng, attackOnceToward,
@@ -277,7 +310,7 @@ export async function main() {
     monstersGuard, setHUD, attachSpriteToMarker
   });
 
-  /* ===== Real-time monsters ===== */
+  // 실시간 몬스터
   const rtMon = new RealTimeMonsters({ db, map, attachMonsterBattle, monstersGuard });
   rtMon.start();
   try { window.__rtMon = rtMon; } catch {}
@@ -296,7 +329,7 @@ export async function main() {
     try { ensureAudio(); towers.setUserReady?.(true); monstersGuard.setUserReady?.(true); } catch {}
   });
 
-  /* ===== 보물 & 상점 ===== */
+  // 보물 & 상점
   new Treasures({
     db, map, playerMarker, toast,
     attachHPBar, spawnImpactAt, shakeMap, playAttackImpact,
@@ -333,12 +366,10 @@ function setupLightningQuickUse({ map, inv, toast }) {
 
     if (!ctrl || ctrl.isDead?.()) { toast?.('대상이 없습니다. 몬스터를 먼저 공격하세요'); return; }
 
-    // 인벤 수량 확인
     const all = (typeof inv.getAll === 'function' ? inv.getAll() : (inv.items || {})) || {};
     const cnt = Number(all.lightning_summon?.qty || 0);
     if (cnt <= 0) { toast?.('벼락소환 아이템이 없습니다'); return; }
 
-    // 이펙트 + 사운드
     try {
       const { lat, lng } = ctrl.getLatLng?.() || {};
       if (lat != null && lng != null) {
@@ -347,7 +378,6 @@ function setupLightningQuickUse({ map, inv, toast }) {
       }
     } catch {}
 
-    // 피해 + 소비
     await ctrl.hit(1000, { lightning: true, crit: true });
     await inv.dropItem('lightning_summon', 1);
 
@@ -355,7 +385,6 @@ function setupLightningQuickUse({ map, inv, toast }) {
     refreshBadge();
   }
 
-  // 데스크탑: L 키
   document.addEventListener('keydown', (e) => {
     if (!e || e.repeat) return;
     if (isTypingElement(e.target)) return;
@@ -365,7 +394,6 @@ function setupLightningQuickUse({ map, inv, toast }) {
     triggerLightning();
   }, { capture: true });
 
-  // 모바일: 플로팅 버튼
   let btn = null, badge = null;
   if (hasTouch) {
     btn = document.createElement('button');
@@ -400,7 +428,6 @@ function setupLightningQuickUse({ map, inv, toast }) {
     badge.style.display = cnt > 0 ? 'block' : 'none';
   }
 
-  // 인벤 변경 시 배지 갱신
   try {
     const prev = inv._onChange;
     inv._onChange = (items) => { try { prev?.(items); } catch {} refreshBadge(); };

@@ -1,5 +1,5 @@
 // /geolocation/js/shops.js
-// 상점 구독/마커/모달 UI/거래 (CP 통화 전용, Firestore 트랜잭션 폴백 포함)
+// 상점 구독/마커/모달 UI/거래 (CP 통화 전용, Firestore 트랜잭션 일원화)
 import {
   collection, query, where, onSnapshot, doc, runTransaction,
   serverTimestamp, getDocs, updateDoc, increment
@@ -237,135 +237,70 @@ export class Shops {
     }catch{ return true; }
   }
 
-  /** Firestore 트랜잭션으로 직접 CP 차감 (Score 실패/부재 시 폴백) */
-  async _directSpendCP(pay){
-    const uid = this._getUid();
-    if (!uid) throw new Error('no_uid');
-    const uref = doc(this.db, 'users', uid);
-    await runTransaction(this.db, async (tx)=>{
-      const ss = await tx.get(uref);
-      if (!ss.exists()) throw new Error('user_missing');
-      const data = ss.data()||{};
-      const cur = Number(data.chainPoint ?? data.cp ?? 0);
-      if (!Number.isFinite(cur)) throw new Error('cp_invalid');
-      if (cur < pay) throw Object.assign(new Error('insufficient_cp'), { code:'insufficient_cp' });
-      tx.update(uref, {
-        chainPoint: cur - pay,
-        updatedAt: serverTimestamp()
-      });
-    });
-    return true;
-  }
-
-  /** Firestore 트랜잭션으로 직접 CP 지급 */
-  async _directAwardCP(amount){
-    const uid = this._getUid();
-    if (!uid) throw new Error('no_uid');
-    const uref = doc(this.db, 'users', uid);
-    await runTransaction(this.db, async (tx)=>{
-      const ss = await tx.get(uref);
-      const data = ss.exists() ? (ss.data()||{}) : {};
-      const cur = Number(data.chainPoint ?? data.cp ?? 0);
-      const next = Math.max(0, cur + Math.max(0, amount|0));
-      tx.set(uref, { chainPoint: next, updatedAt: serverTimestamp() }, { merge:true });
-    });
-    return true;
-  }
-
-  /** 결제: Score 구현 차이를 흡수 + 트랜잭션 폴백 */
-  async _spendCP(pay, lat, lon){
-    if (pay <= 0) return true;
-
-    // 1) Score.spendCP(boolean?) 우선
-    if (typeof this.Score?.spendCP === 'function') {
-      try {
-        const res = await this.Score.spendCP(pay, { lat, lon, reason: 'shop_buy' });
-        if (typeof res === 'boolean') return res;
-        if (res && typeof res === 'object' && 'ok' in res) return !!res.ok;
-        // 반환값이 모호해도 예외 없으면 성공으로 간주
-        return true;
-      } catch (e) {
-        const msg = (e && (e.code || e.message || e.toString())).toString().toLowerCase();
-        if (msg.includes('insufficient') || msg.includes('not enough') || e?.code === 'insufficient_cp') {
-          return false;
-        }
-        // 구현 에러면 폴백 진행
-      }
-    }
-
-    // 2) Score.deductCP(void) 시도
-    if (typeof this.Score?.deductCP === 'function') {
-      try { await this.Score.deductCP(pay, lat, lon); return true; }
-      catch(e){ /* 폴백 진행 */ }
-    }
-
-    // 3) Score.addCP(-pay) 시도
-    if (typeof this.Score?.addCP === 'function') {
-      try { await this.Score.addCP(-pay, lat, lon); return true; }
-      catch(e){ /* 폴백 진행 */ }
-    }
-
-    // 4) 최종 폴백: Firestore 트랜잭션으로 직접 차감
-    return this._directSpendCP(pay);
-  }
-
-  /** 보상: Score 우선 + 트랜잭션 폴백 */
-  async _awardCP(amount, lat, lon){
-    if (amount <= 0) return;
-    if (typeof this.Score?.addCP === 'function') { try { await this.Score.addCP(amount, lat, lon); return; } catch(e){} }
-    if (typeof this.Score?.awardCP === 'function') { try { await this.Score.awardCP(amount, lat, lon); return; } catch(e){} }
-    // 레거시 호환: awardGP가 CP로 리다이렉트된 프로젝트도 있음
-    if (typeof this.Score?.awardGP === 'function') { try { await this.Score.awardGP(amount, lat, lon); return; } catch(e){} }
-    // 최종 폴백
-    await this._directAwardCP(amount);
-  }
-
-  // 구매
+  // 구매 (단일 트랜잭션 내 재고/가격/CP 차감 동시 처리)
   async _buy(shop, item, qty = 1){
-    // 0) 거리 체크
     if (!this._inTradeRange(shop)) {
       this.toast?.('거래 가능 거리 밖입니다.');
       throw new Error('out_of_range');
     }
 
-    const ref = doc(this.db, `shops/${shop.id}/items`, item.id);
-    let unitPrice = 0;
+    const uid = this._getUid();
+    if (!uid) {
+      this.toast?.('로그인 상태를 확인해 주세요.');
+      throw new Error('no_auth');
+    }
 
-    // 1) 트랜잭션: 활성/재고/가격을 서버 기준으로 검증
+    const userRef = doc(this.db, 'users', uid);
+    const itemRef = doc(this.db, `shops/${shop.id}/items`, item.id);
+
+    let nextCPAfterTx = null;
+
     await runTransaction(this.db, async (tx) => {
-      const s = await tx.get(ref);
+      // ─ 아이템 문서
+      const s = await tx.get(itemRef);
       if (!s.exists()) throw new Error('gone');
-
       const d = s.data() || {};
       if (d.active === false) throw new Error('inactive');
 
-      // 💰 가격: CP 우선, 없으면 기존 GP 폴백
-      unitPrice = Number(d.buyPriceCP ?? d.priceCP ?? d.buyPriceGP ?? d.priceGP ?? 0) || 0;
+      // 서버 가격 확정
+      const unitPrice = Number(
+        d.buyPriceCP ?? d.priceCP ??
+        d.buyPriceGP ?? d.priceGP ?? 0
+      ) || 0;
+      const pay = Math.max(0, unitPrice * qty);
 
-      // ✅ 재고정책: stock이 숫자일 때만 재고 관리 / null 또는 미존재는 무제한
-      const managesStock = typeof d.stock === 'number';
-      if (managesStock) {
-        const cur = Number(d.stock);
-        if (!Number.isFinite(cur)) throw new Error('stock_invalid');
-        if (cur < qty) throw new Error('soldout');
-        tx.update(ref, { stock: cur - qty, updatedAt: serverTimestamp() });
-      } else {
-        tx.update(ref, { updatedAt: serverTimestamp() });
-      }
-    });
-
-    // 2) CP 차감
-    const pay = Math.max(0, (unitPrice|0) * (qty|0));
-    if (pay > 0) {
-      const pos = this.playerMarker?.getLatLng?.() || { lat: shop.lat, lng: shop.lon };
-      const ok = await this._spendCP(pay, pos.lat, pos.lng);
-      if (!ok) {
-        this.toast?.('CP 부족');
+      // ─ 유저 CP 확인/차감
+      const uss = await tx.get(userRef);
+      if (!uss.exists()) throw new Error('user_missing');
+      const udata = uss.data() || {};
+      const curCP = Number(udata.chainPoint ?? udata.cp ?? 0);
+      if (!Number.isFinite(curCP)) throw new Error('cp_invalid');
+      if (curCP < pay) {
+        this.toast?.('CP가 부족합니다.');
         throw new Error('insufficient_cp');
       }
-    }
+      const nextCP = curCP - pay;
 
-    // 3) 인벤 지급 (무기 스펙/타입 보존)
+      // ─ 재고 정책: stock이 숫자일 때만 감소
+      if (typeof d.stock === 'number') {
+        const curStock = Number(d.stock);
+        if (!Number.isFinite(curStock)) throw new Error('stock_invalid');
+        if (curStock < qty) throw new Error('soldout');
+        tx.update(itemRef, { stock: curStock - qty, updatedAt: serverTimestamp() });
+      } else {
+        tx.update(itemRef, { updatedAt: serverTimestamp() });
+      }
+
+      // ─ CP 차감 (두 필드 동시 유지)
+      tx.update(userRef, {
+        cp: nextCP,
+        updatedAt: serverTimestamp()
+      });
+
+      nextCPAfterTx = nextCP;
+    });
+
+    // 인벤 지급 (트랜잭션 성공 후)
     try {
       await this.inv.addItems([{
         id: item.itemId || item.id,
@@ -382,7 +317,15 @@ export class Shops {
       throw e;
     }
 
-    this.toast?.('구매 완료! (CP 사용)');
+    // 로컬 HUD 즉시 반영(스냅샷 반영 전 UX 보정)
+    try {
+      if (this.Score?.setCP && Number.isFinite(nextCPAfterTx)) {
+        await this.Score.setCP(nextCPAfterTx);
+      }
+    } catch {}
+
+    this.toast?.('구매 완료!');
+    return true;
   }
 
   // 판매
@@ -403,7 +346,17 @@ export class Shops {
     const reward = Math.max(0, Number((item.sellPriceCP ?? item.sellPriceGP) || 0)) * qty;
     const pos = this.playerMarker?.getLatLng?.() || {lat:shop.lat,lng:shop.lon};
     try {
-      await this._awardCP(reward, pos.lat, pos.lng);
+      if (this.Score?.addCP) await this.Score.addCP(reward);
+      else {
+        // 폴백: 직접 지급 트랜잭션
+        const uid = this._getUid(); if (!uid) throw new Error('no_uid');
+        const uref = doc(this.db, 'users', uid);
+        await runTransaction(this.db, async (tx)=>{
+          const ss = await tx.get(uref);
+          const cur = Number((ss.data()||{}).chainPoint ?? 0);
+          tx.update(uref, { chainPoint: cur + reward, cp: cur + reward, updatedAt: serverTimestamp() });
+        });
+      }
     } catch(e){ console.warn('[shop] addCP fail', e); this.toast?.(`CP 지급 실패(로그 확인).`); }
 
     this._buildInvSnapshot();
