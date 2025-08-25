@@ -1,13 +1,6 @@
 // /geolocation/js/monstersRT.js
-// - 타일 기반 로드(쿼리 in tiles)
-// - 거리 기반 애니메이션(가까우면 재생/멀면 정지 또는 슬로우)
-// - 로컬 쿨다운/레거시 숨김 조건 준수
-// - ✅ 죽은 몬스터(또는 쿨다운 중) 완전 차단: isMonsterDead() 사용
-// - ✅ (옵션) AI 공격 틱: __applyPlayerDamage 호출 시에도 죽음/쿨다운/거리 체크
-
 import { collection, query, where, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-import { makeAniFirstFrameIcon, attachSpriteToMarker, getAniBase } from './fx.js';
-import { isMonsterDead } from './battle.js';
+import { makeAniFirstFrameIcon, attachSpriteToMarker, getAniBase } from './fx.js'; // ✅ ANI_BASE 공유
 
 /* ===============================
  * 로컬 쿨다운 유틸
@@ -34,7 +27,7 @@ function makeStaticIcon(url, sizePx){
 }
 
 /* ===============================
- * mid 기반 시트 URL
+ * mid 기반 시트 URL (fx.js의 ANI_BASE 사용)
  * =============================== */
 function buildAniSheetURL(mid){
   return `${getAniBase()}${encodeURIComponent(mid)}.png`;
@@ -74,6 +67,8 @@ function makeMonsterIconFromData(d, sizePx, fallbackUrl){
 
 /* ===============================
  * RealTimeMonsters
+ *  - ✅ “제자리 고정 프레임 전환” 애니메이션
+ *  - ✅ 거리 기반 재생/정지 + FPS 옵션
  * =============================== */
 export class RealTimeMonsters {
   constructor({
@@ -82,7 +77,7 @@ export class RealTimeMonsters {
     attachMonsterBattle,
     monstersGuard,
 
-    // 로딩/타일
+    // ── 로딩/타일
     pollMs = 3000,
     tileSizeDeg = 0.01,
     maxDocs = 60,
@@ -91,25 +86,17 @@ export class RealTimeMonsters {
     moveDebounceMs = 400,
     epsilonM = 0.3,
 
-    // 🎞 애니메이션 정책(거리 기반)
+    // ── 🎞 애니메이션 정책(거리 기반 트리거)
+    // 가까워지면 start, 멀어지면 stop. stopHalfway=true면 멀어질 때 절반 FPS로 슬로우 재생.
     anim = {
-      frames: 4,
+      frames: 4,             // 시트 프레임 수(가로 4컷)
       frameW: 200,
       frameH: 200,
-      nearStartM: 10,      // 이내면 재생
-      nearStopM:  20,      // 바깥이면 정지/슬로우
-      fpsNear:    10,
-      fpsFar:     0,       // 0=정지
-      stopHalfway: false   // 멀어졌을 때 슬로우 유지
-    },
-
-    // 🧠 (선택) AI 공격 틱
-    ai = {
-      enable: false,
-      attackRangeM: 2.4,
-      cooldownMs: 1400,
-      baseDamage: 3,
-      maxPerTick: 6     // 한 틱에서 공격 처리 상한
+      nearStartM: 10,        // 이 거리 이내면 재생 시작
+      nearStopM: 20,         // 이 거리 바깥이면 정지(히스테리시스)
+      fpsNear: 10,           // 가까울 때 FPS
+      fpsFar: 0,             // 멀 때 FPS(0=정지)
+      stopHalfway: false     // 멀어질 때 fpsFar>0으로 슬로우 유지
     }
   }){
     this.db = db;
@@ -118,7 +105,6 @@ export class RealTimeMonsters {
     this.attachMonsterBattle = (marker, id, d)=> attachMonsterBattle?.(marker, id, d || {});
     this.monstersGuard = monstersGuard;
 
-    // 로딩/타일
     this.pollMs = Math.max(800, pollMs|0 || 3000);
     this.tileSizeDeg = Math.max(0.0025, tileSizeDeg || 0.01);
     this.maxDocs = Math.max(10, maxDocs|0 || 60);
@@ -129,9 +115,9 @@ export class RealTimeMonsters {
 
     // 🎞 애니 정책
     this.anim = {
-      frames:   Math.max(1, anim.frames|0 || 4),
-      frameW:   Math.max(1, anim.frameW|0 || 200),
-      frameH:   Math.max(1, anim.frameH|0 || 200),
+      frames: Math.max(1, anim.frames|0 || 4),
+      frameW: Math.max(1, anim.frameW|0 || 200),
+      frameH: Math.max(1, anim.frameH|0 || 200),
       nearStartM: Math.max(1, Number(anim.nearStartM ?? 18)),
       nearStopM:  Math.max(1, Number(anim.nearStopM  ?? 22)),
       fpsNear:    Math.max(0, Number(anim.fpsNear    ?? 10)),
@@ -139,26 +125,15 @@ export class RealTimeMonsters {
       stopHalfway: !!anim.stopHalfway
     };
 
-    // 🧠 AI 정책
-    this.ai = {
-      enable: !!ai.enable,
-      attackRangeM: Math.max(0.5, Number(ai.attackRangeM ?? 2.4)),
-      cooldownMs:   Math.max(400, Number(ai.cooldownMs   ?? 1400)),
-      baseDamage:   Math.max(1,   Number(ai.baseDamage   ?? 3)),
-      maxPerTick:   Math.max(1,   Number(ai.maxPerTick   ?? 6))
-    };
-
-    this.reg = new Map();               // id -> { marker, data, sizePx, bound, animHandle, animState, lastHitAt }
+    this.reg = new Map();               // id -> { marker, data, sizePx, bound, animHandle, animState }
     this._pollTid = null;
     this._moveTid = null;
-    this._aiTid = null;
     this._started = false;
     this._lastTilesKey = '';
     this._lastIdsInView = new Set();
 
     this._onMoveEnd = this._onMoveEnd.bind(this);
     this._onZoomEnd = this._onZoomEnd.bind(this);
-    this._aiTick = this._aiTick.bind(this);
   }
 
   /** 현재 보이는 몬스터 id/data 목록 */
@@ -185,11 +160,6 @@ export class RealTimeMonsters {
     } catch {}
     this._fetchOnce(true).catch(()=>{});
     this._pollTid = setInterval(()=> this._fetchOnce().catch(()=>{}), this.pollMs);
-
-    // 🧠 AI 틱 시작(옵션)
-    if (this.ai.enable){
-      this._aiTid = setInterval(this._aiTick, Math.min(400, this.ai.cooldownMs));
-    }
   }
 
   stop(){
@@ -197,7 +167,6 @@ export class RealTimeMonsters {
     this._started = false;
     if (this._pollTid) clearInterval(this._pollTid);
     if (this._moveTid) clearTimeout(this._moveTid);
-    if (this._aiTid) clearInterval(this._aiTid);
     try { this.map.off('moveend', this._onMoveEnd); this.map.off('zoomend', this._onZoomEnd); } catch {}
     this.reg.forEach(rec=>{
       // 🎞 애니 제거
@@ -274,8 +243,7 @@ export class RealTimeMonsters {
       const d  = ds.data() || {};
       if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) return;
 
-      // ✅ 이미 죽었거나 로컬 쿨다운이면 노출 차단
-      if (isMonsterDead(id)) return;
+      // 로컬 쿨다운 (DB 쓰기 없이 숨김)
       if (getLocalCooldownUntil(id) > now) return;
 
       // 레거시 숨김 조건
@@ -300,12 +268,6 @@ export class RealTimeMonsters {
   }
 
   _ensureShownOrUpdate(id, d){
-    // 사망/쿨다운 재확인
-    if (isMonsterDead(id) || getLocalCooldownUntil(id) > Date.now()) {
-      this._ensureHidden(id);
-      return;
-    }
-
     const sizePx = this._sizeOf(d.size);
     let rec = this.reg.get(id);
 
@@ -318,16 +280,12 @@ export class RealTimeMonsters {
         data:d,
         sizePx,
         bound:false,
-        animHandle:null,
-        animState:'stopped',
-        lastHitAt: 0
+        animHandle:null,          // ⚡ 현재 재생 중인 애니 핸들(attachSpriteToMarker 반환)
+        animState:'stopped'       // 'playing' | 'slowed' | 'stopped'
       };
       this.reg.set(id, rec);
-
-      // attach battle (죽은 상태면 바인딩 생략)
-      if (!isMonsterDead(id)) {
-        try { this.attachMonsterBattle(marker, id, d); rec.bound = true; } catch {}
-      }
+      this.attachMonsterBattle(marker, id, d);
+      rec.bound = true;
 
       // 최초 상태에 맞춰 애니 갱신
       this._updateAnimState(rec);
@@ -356,8 +314,9 @@ export class RealTimeMonsters {
     }
     rec.data = d;
 
-    if (!rec.bound && !isMonsterDead(id)){
-      try { this.attachMonsterBattle(rec.marker, id, d); rec.bound = true; } catch {}
+    if (!rec.bound){
+      this.attachMonsterBattle(rec.marker, id, d);
+      rec.bound = true;
     }
 
     // 거리 기반 애니 갱신
@@ -390,6 +349,8 @@ export class RealTimeMonsters {
 
   /* =========================================
    * 🎞 거리 기반 애니메이션 상태 갱신
+   *  - 마커는 고정, 내부 스프라이트 프레임만 전환
+   *  - attachSpriteToMarker(once:false) 루프 사용
    * ========================================= */
   _updateAnimState(rec){
     if (!rec?.marker || !rec?.data) return;
@@ -413,6 +374,7 @@ export class RealTimeMonsters {
         this._playAnim(rec, { fps: targetFPS, frames, frameW, frameH });
         rec.animState = 'playing';
       } else {
+        // 단순 리타이밍: 재부착
         this._retimeAnim(rec, targetFPS);
       }
       return;
@@ -497,46 +459,5 @@ export class RealTimeMonsters {
       rec.animHandle = null;
     }
     rec.animState = 'stopped';
-  }
-
-  /* =========================================
-   * 🧠 (옵션) AI 공격 틱
-   *  - 죽은 몬스터/쿨다운/거리 등 모든 조건을 만족할 때만
-   *    window.__applyPlayerDamage(id, dmg) 호출
-   *  - battle.js에서 __applyPlayerDamage는 추가 가드를 갖고 있음
-   * ========================================= */
-  _aiTick(){
-    if (!this._started || !this.ai.enable) return;
-    const userLL = this._getUserLatLng(); if (!userLL) return;
-
-    const now = Date.now();
-    let fired = 0;
-
-    for (const [id, rec] of this.reg){
-      if (fired >= this.ai.maxPerTick) break;
-      if (!rec?.marker || !rec?.data) continue;
-
-      // ✅ 죽은 몬스터/로컬 쿨다운은 스킵
-      if (isMonsterDead(id)) { this._ensureHidden(id); continue; }
-      if (getLocalCooldownUntil(id) > now) continue;
-
-      // 거리 체크
-      const mLL = rec.marker.getLatLng();
-      const dist = this.map.distance(userLL, mLL);
-      if (dist > this.ai.attackRangeM) continue;
-
-      // 자체 쿨다운
-      const last = Number(rec.lastHitAt || 0);
-      if (now - last < this.ai.cooldownMs) continue;
-
-      // 글로벌 데미지 엔트리 (battle.js에서 한 번 더 가드)
-      try {
-        if (typeof window.__applyPlayerDamage === 'function'){
-          window.__applyPlayerDamage(id, this.ai.baseDamage);
-          rec.lastHitAt = now;
-          fired++;
-        }
-      } catch {}
-    }
   }
 }

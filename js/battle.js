@@ -16,22 +16,6 @@ import {
   playAttackImpact as importedPlayAttackImpact,
   playCrit, playDeathForMid, playDeath, playMonsterHitForMid
 } from './audio.js';
-// 죽은 몬스터 전역 레지스트리 + 헬퍼
-window.__pf_deadMonsters = window.__pf_deadMonsters || new Set();
-
-export const markMonsterDead = (id) => {
-  try { window.__pf_deadMonsters.add(id); } catch {}
-};
-
-export const isMonsterDead = (id) => {
-  try {
-    if (window.__pf_deadMonsters.has(id)) return true;
-    // (쿨다운 TTL도 죽은 것으로 간주)
-    const ttl = Number(localStorage.getItem('mon_cd:'+id) || 0);
-    return ttl > Date.now();
-  } catch { return false; }
-};
-
 
 export function createAttachMonsterBattle({
   db, map, playerMarker, dog, Score, toast,
@@ -128,7 +112,6 @@ export function createAttachMonsterBattle({
     };
 
     const setDead = () => {
-      markMonsterDead(monsterId);
       try { marker.options.interactive = false; marker.off('click'); marker._pf_dead = true; } catch {}
       try { monstersGuard?.stopAttacksFrom?.(monsterId); } catch {}
       try {
@@ -174,7 +157,7 @@ export function createAttachMonsterBattle({
 
     marker.options.interactive = true;
     marker.on('click', async () => {
-      if (marker._pf_dead || isMonsterDead(monsterId)) return;
+      if (marker._pf_dead) return;
       try { ensureAudio?.(); } catch {}
       if (attachMonsterBattle._busy) return;
       attachMonsterBattle._busy = true;
@@ -257,7 +240,6 @@ export function createAttachMonsterBattle({
 
           /** 몬스터가 플레이어를 타격 */
           hitPlayer(amount = 1) {
-             if (marker._pf_dead || isMonsterDead(monsterId)) return; 
             const dmg = Math.max(1, Math.floor(amount));
             try { ensureAudio?.(); } catch {}
             try {
@@ -280,14 +262,8 @@ export function createAttachMonsterBattle({
             return (c && c.isDead && c.isDead()) ? null : c;
           });
           window.__applyPlayerDamage = (fromId, dmg) => {
-   try {
-    // 컨트롤러가 없거나 이미 사망이면 무시
-    if (isMonsterDead(fromId)) return;
-    const c = window.__battleCtrlById?.get(fromId);
-    if (!c || c.isDead?.()) return;
-    c.hitPlayer?.(Math.max(1, Math.floor(dmg)));
-  } catch {}
-};
+            try { window.__battleCtrlById?.get(fromId)?.hitPlayer?.(dmg); } catch {}
+          };
         } catch {}
 
         // 플레이어 → 몬스터 HP 감소

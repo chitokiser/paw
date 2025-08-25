@@ -1,9 +1,14 @@
 // /geolocation/js/inventoryTransfer.js
+// 인벤토리 지급/이전/소비 유틸 (지갑주소 기반 inventories/wa:<address> 문서 사용)
+
 import {
-  doc, runTransaction, increment, deleteField
+  doc, getDoc, setDoc, updateDoc, runTransaction,
+  increment, serverTimestamp, FieldPath, deleteField
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+
 import { rollDrops } from './loot.js';
 import { safeWrite } from './dbGuard.js';
+import { ensureInventoryDoc } from './identity.js'; // 반드시 inventories/wa:<address> 반환하도록 구현
 
 /* =========================================================
  * 공통 유틸
@@ -13,37 +18,26 @@ const DEFAULT_DROP = [
   { id: 'bone_fragment', name: 'Bone Fragment', qty: 3, rarity: 'common' }
 ];
 
-function sanitizeItems(arr){
-  return (arr||[])
-    .filter(it => it && it.id)
-    .map(it => ({
-      id: String(it.id),
-      name: String(it.name || it.id),
-      qty: Math.max(1, Number(it.qty || 1)),
-      rarity: String(it.rarity || 'common')
-    }));
-}
+const sanitizeItems = (arr) => (arr||[])
+  .filter(it => it && it.id)
+  .map(it => ({
+    id: String(it.id),
+    name: String(it.name || it.id),
+    qty: Math.max(1, Number(it.qty || 1)),
+    rarity: String(it.rarity || 'common')
+  }));
 
-/** 인벤 합치기: items 맵({ id: {name, qty, rarity} })로 누적 */
-function mergeIntoMap(baseMap, arr){
-  const out = { ...(baseMap || {}) };
-  for (const it of (arr || [])){
-    if (!it?.id) continue;
-    const key = String(it.id);
-    const prev = out[key] || { name: it.name || key, qty: 0, rarity: it.rarity || 'common' };
-    out[key] = {
-      name: prev.name || it.name || key,
-      qty: Number(prev.qty||0) + Math.max(1, Number(it.qty||1)),
-      rarity: prev.rarity || it.rarity || 'common'
-    };
-  }
-  return out;
-}
+// FieldPath helpers
+const fpItem   = (id) => new FieldPath('items', String(id));
+const fpQty    = (id) => new FieldPath('items', String(id), 'qty');
+const fpName   = (id) => new FieldPath('items', String(id), 'name');
+const fpRarity = (id) => new FieldPath('items', String(id), 'rarity');
 
 /* =========================================================
- * 지급(상점/보상) — 스냅샷 병합
+ * 상점/보상 지급: 트랜잭션으로 안전 병합
+ * guestId = inventories 문서 ID(보통 "wa:<address>")
  * ======================================================= */
-async function _grantItemsDirect(db, guestId, items){
+export async function grantItemsDirect(db, { guestId, items }) {
   const invRef = doc(db, 'inventories', String(guestId));
 
   const out = await safeWrite(`grant-${guestId}`, () =>
@@ -51,15 +45,23 @@ async function _grantItemsDirect(db, guestId, items){
       const grant = sanitizeItems(items);
       if (!grant.length) return [];
 
-      const invSnap = await tx.get(invRef);
-      const invData = invSnap.exists() ? (invSnap.data() || {}) : {};
-      const merged = mergeIntoMap(invData.items || {}, grant);
-      const updatedAt = Date.now();
+      // 문서 보장
+      const snap = await tx.get(invRef);
+      if (!snap.exists()) {
+        tx.set(invRef, {
+          items: {}, owner: String(guestId), createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
 
-      if (!invSnap.exists()) {
-        tx.set(invRef, { items: merged, updatedAt, owner: String(guestId) });
-      } else {
-        tx.update(invRef, { items: merged, updatedAt });
+      // 각 아이템 병합 (FieldPath 페어 나열형)
+      for (const it of grant) {
+        tx.update(
+          invRef,
+          fpQty(it.id),    increment(it.qty),
+          fpName(it.id),   it.name,
+          fpRarity(it.id), it.rarity,
+          'updatedAt',     serverTimestamp()
+        );
       }
       return grant;
     })
@@ -71,70 +73,72 @@ async function _grantItemsDirect(db, guestId, items){
 
 /* =========================================================
  * 전리품 이전(몬스터 → 인벤)
- *  - cooldownUntil 예약만 (dead/alive/timer는 건드리지 않음)
- *  - items → lootTable → DEFAULT
- *  - 빨간약(red_potion) 보장(원본 유지)
+ *  - 몬스터 쿨다운 예약만 반영(dead/alive/resawnAt은 존중)
+ *  - items / lootTable / DEFAULT 순서로 드롭 산출
+ *  - 빨간약 1개 보장
+ *  - inventories/wa:<address> 문서에 병합
  * ======================================================= */
-async function _transferFromMonster(db, { monsterId, guestId }){
-  const monRef = doc(db, 'monsters', String(monsterId));
-  const invRef = doc(db, 'inventories', String(guestId));
+export async function transferMonsterInventory(db, { monsterId, guestId }) {
+  // 현재 지갑 세션 기준 인벤 문서 보장(주소 기반)
+  const invRef = await ensureInventoryDoc(db);
+  if (!invRef) throw new Error('인벤 문서를 찾을 수 없습니다');
 
-  const out = await safeWrite(`loot-transfer-${monsterId}-${guestId}`, () =>
+  const monRef = doc(db, 'monsters', String(monsterId));
+
+  const out = await safeWrite(`loot-${monsterId}`, () =>
     runTransaction(db, async (tx) => {
-      // 몬스터 읽기
       const monSnap = await tx.get(monRef);
       if (!monSnap.exists()) throw new Error('monster doc not found');
       const mon = monSnap.data() || {};
 
       const now = Date.now();
-      const cooldownUntil = Number(mon.cooldownUntil || 0);
+      const cdUntil = Number(mon.cooldownUntil || 0);
+      const legacyDead = (mon.dead === true) || (mon.alive === false);
+      const legacyResp = Number(mon.respawnAt || 0);
       const cooldownMs = Math.max(1_000, Number(mon.cooldownMs ?? mon.respawnMs ?? 600_000));
 
-      // 레거시(죽음/리스폰) 우선 존중
-      const legacyDead = (mon.dead === true) || (mon.alive === false);
-      const legacyRespawnAt = Number(mon.respawnAt || 0);
-      if (legacyDead && legacyRespawnAt > now) {
-        const err = Object.assign(new Error('on cooldown'), { code: 'cooldown' });
-        throw err;
-      }
-
-      // 쿨다운 중이면 차단
-      if (now < cooldownUntil) {
+      if ((legacyDead && legacyResp > now) || now < cdUntil) {
         const err = Object.assign(new Error('on cooldown'), { code: 'cooldown' });
         throw err;
       }
 
       // 드롭 산출
       let drops = [];
-      if (Array.isArray(mon.items) && mon.items.length > 0) {
+      if (Array.isArray(mon.items) && mon.items.length) {
         drops = sanitizeItems(mon.items);
-      } else if (Array.isArray(mon.lootTable) && mon.lootTable.length > 0) {
+      } else if (Array.isArray(mon.lootTable) && mon.lootTable.length) {
         drops = sanitizeItems(rollDrops(mon.lootTable));
       }
-      if (!drops || drops.length === 0) drops = sanitizeItems(DEFAULT_DROP);
+      if (!drops.length) drops = sanitizeItems(DEFAULT_DROP);
 
-      // 빨간약 보장(상점지급에는 미적용)
-      const hasRed = drops.some(it => it.id === 'red_potion' || it.name === '빨간약');
-      if (!hasRed) drops = [{ id:'red_potion', name:'빨간약', qty:1, rarity:'common' }, ...drops];
-
-      // 인벤 병합
-      const invSnap = await tx.get(invRef);
-      const invData = invSnap.exists() ? (invSnap.data() || {}) : {};
-      const merged = mergeIntoMap(invData.items || {}, drops);
-      const updatedAt = now;
-
-      if (!invSnap.exists()) {
-        tx.set(invRef, { items: merged, updatedAt, owner: String(guestId) });
-      } else {
-        tx.update(invRef, { items: merged, updatedAt });
+      // 빨간약 보장
+      if (!drops.some(it => it.id === 'red_potion' || it.name === '빨간약')) {
+        drops.unshift({ id:'red_potion', name:'빨간약', qty:1, rarity:'common' });
       }
 
-      // 몬스터: 쿨다운 예약
+      // 인벤 문서 보장
+      const invSnap = await tx.get(invRef);
+      if (!invSnap.exists()) {
+        tx.set(invRef, { items:{}, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
+      }
+
+      // 병합
+      for (const it of drops) {
+        tx.update(
+          invRef,
+          fpQty(it.id),    increment(it.qty),
+          fpName(it.id),   it.name,
+          fpRarity(it.id), it.rarity,
+          'updatedAt',     serverTimestamp()
+        );
+      }
+
+      // 몬스터 쿨다운 예약
       tx.update(monRef, {
         cooldownUntil: now + cooldownMs,
-        lastKilledAt: now,
-        lastKilledBy: String(guestId),
-        killSeq: increment(1)
+        lastKilledAt:  now,
+        lastKilledBy:  String(guestId || 'unknown'),
+        killSeq:       increment(1)
       });
 
       return drops;
@@ -146,7 +150,7 @@ async function _transferFromMonster(db, { monsterId, guestId }){
 }
 
 /* =========================================================
- * 조회/소비(-1) — 스키마 혼용(숫자형/객체형) 모두 지원
+ * 조회/소비(-1) — 숫자형/객체형 스키마 모두 지원
  * ======================================================= */
 
 /** 현재 수량 조회: { kind: 'object'|'number'|'none', qty } */
@@ -154,15 +158,14 @@ export async function getItemQty(db, { guestId, itemId }) {
   const invRef = doc(db, 'inventories', String(guestId));
   const snap = await getDoc(invRef);
   if (!snap.exists()) return { kind: 'none', qty: 0 };
-  const data = snap.data() || {};
-  const items = data.items || {};
+  const items = (snap.data() || {}).items || {};
   const cur = items[itemId];
   if (cur == null) return { kind: 'none', qty: 0 };
 
   if (typeof cur === 'number') {
     return { kind: 'number', qty: Number.isFinite(cur) ? cur : 0 };
   }
-  if (typeof cur === 'object' && cur) {
+  if (typeof cur === 'object') {
     const q = Number(cur.qty);
     return { kind: 'object', qty: Number.isFinite(q) ? q : 0 };
   }
@@ -187,41 +190,37 @@ export async function consumeItemOnce(db, { guestId, itemId }) {
       const snap = await tx.get(invRef);
       if (!snap.exists()) throw new Error('NO_STOCK');
 
-      const data = snap.data() || {};
-      const items = data.items || {};
+      const items = (snap.data() || {}).items || {};
       const cur = items[itemId];
-      const now = Date.now();
 
-      // (숫자형) items.<id> = number
+      // 숫자형: items.<id> = number
       if (typeof cur === 'number') {
         const curQty = Number.isFinite(cur) ? cur : 0;
         if (curQty <= 0) throw new Error('NO_STOCK');
 
         if (curQty - 1 <= 0) {
-          tx.update(invRef, { ['items.' + itemId]: deleteField(), updatedAt: now });
+          tx.update(invRef, fpItem(itemId), deleteField(), 'updatedAt', serverTimestamp());
           return 0;
         } else {
-          tx.update(invRef, { ['items.' + itemId]: increment(-1), updatedAt: now });
+          tx.update(invRef, fpItem(itemId), increment(-1), 'updatedAt', serverTimestamp());
           return curQty - 1;
         }
       }
 
-      // (객체형) items.<id> = { name, qty, rarity }
+      // 객체형: items.<id> = { name, qty, rarity }
       if (typeof cur === 'object' && cur) {
-        const curQty = Number(cur.qty);
-        const safeCur = Number.isFinite(curQty) ? curQty : 0;
-        if (safeCur <= 0) throw new Error('NO_STOCK');
+        const curQty = Number.isFinite(Number(cur.qty)) ? Number(cur.qty) : 0;
+        if (curQty <= 0) throw new Error('NO_STOCK');
 
-        if (safeCur - 1 <= 0) {
-          tx.update(invRef, { ['items.' + itemId]: deleteField(), updatedAt: now });
+        if (curQty - 1 <= 0) {
+          tx.update(invRef, fpItem(itemId), deleteField(), 'updatedAt', serverTimestamp());
           return 0;
         } else {
-          tx.update(invRef, { ['items.' + itemId + '.qty']: safeCur - 1, updatedAt: now });
-          return safeCur - 1;
+          tx.update(invRef, fpQty(itemId), curQty - 1, 'updatedAt', serverTimestamp());
+          return curQty - 1;
         }
       }
 
-      // 없음
       throw new Error('NO_STOCK');
     })
   );
@@ -231,22 +230,30 @@ export async function consumeItemOnce(db, { guestId, itemId }) {
 }
 
 /* =========================================================
- * 공개 API — 통합 진입점(원본 호환 + 상점지급 오버로드)
+ * 편의: 현재 세션 인벤 문서에 간단 지급(필드 경로 문자열 버전)
+ *  - 상점 등 “트랜잭션 필요 없음” 케이스용
  * ======================================================= */
-export async function transferMonsterInventory(db, arg1, arg2){
-  // (2) 상점/직접 지급: (db, guestId:string, items:Array)
-  if (typeof arg1 === 'string' && Array.isArray(arg2)){
-    const guestId = arg1;
-    const items   = arg2;
-    return _grantItemsDirect(db, guestId, items);
-  }
+export async function grantToCurrentInventory(db, items) {
+  const invRef = await ensureInventoryDoc(db);
+  if (!invRef) throw new Error('인벤 문서를 찾을 수 없습니다');
 
-  // (1) 몬스터 전리품: (db, {monsterId, guestId})
-  if (arg1 && typeof arg1 === 'object' && arg1.monsterId && arg1.guestId){
-    return _transferFromMonster(db, arg1);
-  }
+  const grant = sanitizeItems(items);
+  if (!grant.length) return [];
 
-  throw new Error('Invalid arguments for transferMonsterInventory');
+  const payload = { updatedAt: serverTimestamp() };
+  for (const it of grant) {
+    payload[`items.${it.id}.qty`]    = increment(it.qty);
+    payload[`items.${it.id}.name`]   = it.name;
+    payload[`items.${it.id}.rarity`] = it.rarity;
+  }
+  await updateDoc(invRef, payload);
+  return grant;
 }
 
-export default transferMonsterInventory;
+export default {
+  grantItemsDirect,
+  transferMonsterInventory,
+  getItemQty,
+  consumeItemOnce,
+  grantToCurrentInventory
+};

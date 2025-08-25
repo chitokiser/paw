@@ -1,0 +1,153 @@
+<!-- geohunt.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>GeoHunt · Home</title>
+  <link rel="shortcut icon" href="../images/logo.png"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    :root{ --bg:#0b0d14; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12); --text:#e9eefc; --muted:#a9b1c7; --grad:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%); --radius:18px; }
+    body{ background:var(--bg); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }
+    .wrap{ width:min(1100px,100%); }
+    .cardx{ background:var(--card); border:1px solid var(--border); border-radius:calc(var(--radius) + 2px); padding:18px; backdrop-filter:blur(8px); }
+    .h5{ font-weight:800; }
+    .tiny{ font-size:12px; color:var(--muted); }
+    .btn-grad{ background:var(--grad); color:#fff; font-weight:800; border:none; border-radius:14px; padding:10px 14px; }
+    .btn-outline-light{ border:1px solid #60a5fa; color:#e9eefc; border-radius:14px; }
+    .display-6{ font-weight:800; }
+    .badge-mode{ display:inline-block; font-weight:800; font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); background:rgba(255,255,255,.06); }
+    a.link-light{ color:#93c5fd; text-decoration:underline; }
+  </style>
+  <!-- ethers.js -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <!-- Firebase core in /geolocation/js/firebase.js -->
+  <script type="module" src="./js/firebase.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="mb-3 text-center">
+      <img src="../images/logo.png" width="44" height="44" alt="logo"/>
+      <h1 class="h4 mt-2 mb-1">GeoHunt Home</h1>
+      <div id="modeBadge" class="badge-mode">Mode: —</div>
+    </header>
+
+    <div class="row g-3">
+      <!-- 좌: 모드/지갑 -->
+      <div class="col-12 col-lg-5">
+        <div class="p-3 cardx">
+          <h2 class="h5">모드</h2>
+          <div class="mb-2">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="mode" id="modeGuest" value="guest">
+              <label class="form-check-label" for="modeGuest">게스트 모드</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="mode" id="modeWallet" value="wallet">
+              <label class="form-check-label" for="modeWallet">지갑 연결 모드</label>
+            </div>
+          </div>
+
+          <div id="walletBox" class="p-3 cardx" style="display:none">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="tiny">지갑 주소</div>
+                <div id="addr" class="fw-bold">-</div>
+              </div>
+              <button id="btnConnect" class="btn btn-sm btn-grad">지갑 연결</button>
+            </div>
+            <hr/>
+            <div class="tiny">멤버 레벨</div>
+            <div id="levelView" class="fw-bold">-</div>
+            <div id="levelGate" class="mt-2 tiny"></div>
+          </div>
+
+          <div class="mt-3 tiny">
+            • 게스트: DB 저장 없음, 로그아웃/닫기 시 리셋<br/>
+            • 지갑: 최초 연결 시 회원 DB 생성, CP/EXP 저장<br/>
+            • 레벨 1 이상만 연결 허가 (미달 시 <a class="link-light" href="../memberjoin.html">회원가입</a> )
+          </div>
+        </div>
+      </div>
+
+      <!-- 우: 진행/적립 -->
+      <div class="col-12 col-lg-7">
+        <div class="p-3 cardx">
+          <h2 class="h5">오늘의 진행</h2>
+          <div class="row g-2">
+            <div class="col-6">
+              <div class="p-3 cardx h-100">
+                <div class="tiny">오늘 CP</div>
+                <div class="display-6" id="cpToday">0</div>
+                <div class="tiny">(걷기, 사냥, 상점 등 합산)</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="p-3 cardx h-100">
+                <div class="tiny">블록체인 적립</div>
+                <div id="chainStatus" class="fw-bold">조건: 레벨1 & 오늘 5000CP 이상</div>
+                <button id="btnSync" class="btn btn-sm btn-grad mt-2" disabled>체인으로 적립</button>
+                <div class="tiny mt-1">버튼은 조건 충족 시 활성화됩니다.</div>
+              </div>
+            </div>
+          </div>
+
+          <hr/>
+          <div class="d-flex gap-2">
+            <button id="btnStartGame" class="btn btn-grad">게임시작</button>
+            <button id="btnResetGuest" class="btn btn-outline-light">게스트 데이터 리셋</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 상태 연동 스크립트 -->
+ <script type="module" src="./js/firebase.js"></script>
+<script type="module" src="./js/cp-sync.js"></script>
+<script type="module" src="./js/geohunt.js"></script>
+  <script>
+    // 모드 라디오 초기화 + 게임시작 라우팅
+    (function initModeRadios(){
+      function currentMode(){
+        return sessionStorage.getItem('GH_MODE') || localStorage.getItem('pf_mode') || 'guest';
+      }
+      function setBadge(m){
+        document.getElementById('modeBadge').textContent = 'Mode: ' + (m==='wallet' ? 'Wallet' : 'Guest');
+      }
+      function syncWalletBox(m){
+        const box = document.getElementById('walletBox');
+        box.style.display = (m==='wallet') ? '' : 'none';
+      }
+      function setStartLabel(m){
+        document.getElementById('btnStartGame').textContent = (m==='wallet') ? '게임시작(지갑 모드)' : '게임시작(게스트)';
+      }
+      function routeStart(m){
+        // app.js가 레벨1 게이트를 담당 → 여기서는 라우팅만
+        location.href = (m === 'wallet') ? './play2.html' : './play.html';
+      }
+
+      const m = currentMode();
+      document.getElementById('modeGuest').checked  = (m === 'guest');
+      document.getElementById('modeWallet').checked = (m === 'wallet');
+      setBadge(m); syncWalletBox(m); setStartLabel(m);
+
+      document.querySelectorAll('input[name="mode"]').forEach(r=>{
+        r.addEventListener('change', ()=>{
+          const v = r.value;
+          sessionStorage.setItem('GH_MODE', v);
+          localStorage.setItem('pf_mode', v);
+          setBadge(v); syncWalletBox(v); setStartLabel(v);
+          // cp-sync.js가 실시간 반영하도록 이벤트 송출
+          window.dispatchEvent(new CustomEvent('pf:modeChanged', { detail:{ mode:v } }));
+        });
+      });
+
+      document.getElementById('btnStartGame').addEventListener('click', ()=>{
+        routeStart(currentMode());
+      });
+    })();
+  </script>
+</body>
+</html>
