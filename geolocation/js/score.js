@@ -1,6 +1,9 @@
 // /geolocation/js/score.js
+// SSOT: Firestore 문서 키 = wallet(lower) > uid > guest:xxxx
 import { auth, db } from './firebase.js';
-import { doc, setDoc, updateDoc, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import {
+  doc, getDoc, setDoc, updateDoc, serverTimestamp, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { playReward, playDeath } from './audio.js';
 
 export const Score = (() => {
@@ -9,11 +12,38 @@ export const Score = (() => {
 
   // 세션 로컬 상태
   let _stats = {
-    uid:null, level:1, hp:1000, exp:0, attack:1, defense:10,
+    key:null, level:1, hp:1000, exp:0, attack:1, defense:10,
     distanceM:0, maxHp:1000, cp:0
   };
 
-  /* ───────── 내부 유틸 ───────── */
+  /* ───────── 키/레퍼런스 유틸 ───────── */
+  const _lower = (s)=>String(s||'').toLowerCase();
+  const _today = ()=> new Date().toISOString().slice(0,10);
+
+  function _ensureGuestId(){
+    let gid = localStorage.getItem('guest_id');
+    if (!gid){ gid = 'guest:' + Math.random().toString(36).slice(2); localStorage.setItem('guest_id', gid); }
+    return gid;
+  }
+  async function _passiveWallet(){
+    try{
+      if (window.ethereum?.selectedAddress) return _lower(window.ethereum.selectedAddress);
+      const a = await window.ethereum?.request?.({ method:'eth_accounts' }) || [];
+      return _lower(a[0]||'') || null;
+    }catch{ return null; }
+  }
+  async function _resolveKey(){
+    const s = sessionStorage.getItem('GH_WALLET'); if (s) return _lower(s);
+    const w = await _passiveWallet(); if (w){ sessionStorage.setItem('GH_WALLET', w); return w; }
+    const uid = auth?.currentUser?.uid; if (uid) return uid;
+    return _ensureGuestId();
+  }
+  function _userRef(){
+    const key = _stats.key || sessionStorage.getItem('GH_WALLET') || auth?.currentUser?.uid || _ensureGuestId();
+    return doc(db,'users', _lower(key));
+  }
+
+  /* ───────── 내부 뷰 유틸 ───────── */
   const _maxHP = () => {
     const explicit = Number(_stats.maxHp);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
@@ -50,27 +80,32 @@ export const Score = (() => {
   };
 
   const _save = async (partial) => {
-    const uid = auth.currentUser?.uid; if (!uid) return;
     try {
-      await updateDoc(doc(db,'users',uid), { ...partial, updatedAt: serverTimestamp() });
+      await updateDoc(_userRef(), { ...partial, updatedAt: serverTimestamp() });
     } catch {
       try {
-        await setDoc(doc(db,'users',uid), { ...partial, uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
+        await setDoc(_userRef(), {
+          ...partial,
+          key:_stats.key, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+        }, { merge:true });
       } catch (e2){ console.warn('[Score] save fail', e2); }
     }
   };
 
   /* ───────── DB 구독 ───────── */
-  const _subscribeUser = () => {
-    const uid = auth.currentUser?.uid; if (!uid) return; _stats.uid = uid;
-    const ref = doc(db,'users',uid); if (_unsub) { try{_unsub();}catch{} _unsub=null; }
+  const _subscribeUser = async () => {
+    const key = await _resolveKey();
+    _stats.key = key;
+
+    const ref = _userRef();
+    if (_unsub) { try{_unsub();}catch{} _unsub=null; }
 
     _unsub = onSnapshot(ref, async (ss)=>{
       if (!ss.exists()){
         await setDoc(ref, {
-          uid,
+          key,
           level:1, hp:1000, exp:0, attack:1, defense:10,
-          maxHp:1000, distanceM:0, cp:0,
+          maxHp:1000, distanceM:0, cp:0, lastDate:_today(),
           createdAt: serverTimestamp(), updatedAt: serverTimestamp()
         }, { merge:true });
         return;
@@ -90,27 +125,31 @@ export const Score = (() => {
       const dbHp  = Number(p.hp);
       _stats.hp   = Number.isFinite(dbHp) ? dbHp : (_stats.hp ?? _stats.maxHp);
 
-      // ✅ CP 단일 진실: cp가 존재하면 **값이 0이어도** cp를 그대로 사용
-      //    cp가 아예 없을(null/undefined) 때만 chainPoint로 1회 보정
-      if (p.hasOwnProperty('cp')) {
+      // CP: cp가 정의되어 있으면 그대로, 없으면 chainPoint로 1회 보정
+      if (Object.prototype.hasOwnProperty.call(p, 'cp')) {
         _stats.cp = Math.max(0, Number(p.cp) || 0);
       } else {
         const legacy = Number(p.chainPoint);
         _stats.cp = Number.isFinite(legacy) ? Math.max(0, legacy) : 0;
-        // 1회 마이그레이션(cp 필드로 정규화)
-        try { await _save({ cp: _stats.cp }); } catch (e) { console.warn('[Score] cp migrate(save) fail', e); }
+        try { await _save({ cp:_stats.cp }); } catch (e) { console.warn('[Score] cp migrate(save) fail', e); }
       }
 
       _syncHUD();
     }, (e)=>console.warn('[Score] onSnapshot error', e));
   };
 
+  // 지갑/체인 변경 시 재구독
+  if (window.ethereum?.on){
+    window.ethereum.on('accountsChanged', ()=>{ _subscribeUser(); });
+    window.ethereum.on('chainChanged',    ()=>{ _subscribeUser(); });
+  }
+
   /* ───────── 공개 API ───────── */
   return {
     async init({ toast, playFail } = {}) {
       if (typeof toast === 'function') _toast = toast;
       if (typeof playFail === 'function') _playFail = playFail;
-      _subscribeUser();
+      await _subscribeUser();
       _syncHUD();
     },
 
@@ -132,12 +171,8 @@ export const Score = (() => {
       await this.setHP(after);
 
       if (_stats.hp <= 0){
-        // ✅ 사망 패널티: CP 즉시 0 (HUD/DB 반영)
-        try {
-          await this.setCP(0); // cp=0 저장 + HUD 갱신
-        } catch (e) {
-          console.warn('[Score] death cp reset fail', e);
-        }
+        // 사망 패널티: CP 즉시 0
+        try { await this.setCP(0); } catch (e) { console.warn('[Score] death cp reset fail', e); }
 
         try { playDeath(); } catch {}
         try { _playFail?.(); } catch {}
@@ -161,7 +196,6 @@ export const Score = (() => {
       if (newExp >= need){
         _stats.level += 1;
         _stats.attack = _stats.level;
-        // maxHp는 DB 값을 유지(정책상 별도 로직으로 조정 가능)
         _stats.hp = _maxHP();
         newExp = 0;
         leveled = true;
@@ -179,7 +213,7 @@ export const Score = (() => {
     async setCP(next){
       _stats.cp = Math.max(0, Math.floor(Number(next||0)));
       _syncHUD();
-      // 호환성 위해 chainPoint도 같이 0으로 맞춰 저장(다른 모듈이 chainPoint 참조할 수 있음)
+      // 호환성: chainPoint도 동일값으로 저장
       await _save({ cp:_stats.cp, chainPoint:_stats.cp });
     },
 

@@ -1,7 +1,5 @@
-// SPDX-License-Identifier: MIT  
-// ver1.0
-
-pragma solidity >=0.7.0 <0.9.0;
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.8.17;
 
 interface IpupBank {
     function depoup(address user, uint256 depo) external;
@@ -33,136 +31,79 @@ contract GeoHunt {
     IWithPuppy public puppy;
     IpupBank public pupbank;
     address public admin;
-    uint public mid;
-    uint public fee;
-    uint public jack;
-    mapping(address => mapping(uint => bool)) public myprey;
-    mapping(uint256 => monster) public mons;
-    mapping(address => uint256) public mypoint;
-    mapping(uint256 => uint256) private password;
-    mapping(address => uint[]) public mymons;  //유저가 잡은 몬스터 리스트 
-    event GameStarted(address indexed user, uint256 pay, uint256 nonce);
-    event GameRewarded(address indexed user, uint256 reward);
-    event Lost(address indexed user, uint256 enemyPower, uint256 myPower);
-    event RewardGiven(address indexed user, uint256 rewardAmount);
-    event Bonus(address indexed user, uint256 bonusAmount, uint256 baseStat);
+
+    uint private pass;     // 서버가 보관하는 간단 패스워드
+    uint256 public jack;   // 누적 적립
+    uint256 public pay;    // 1일 적립 한도(GP), 기본 5000
+
+    mapping(address => uint256) public allowt; // 유저별 마지막 적립 시각
+
+    event ScoreClaimed(address indexed user, uint256 gpAdded, uint256 expAdded, uint256 when);
+    event PassUpdated(address indexed admin, uint256 when);
+    event PayUpdated(uint256 newPay, uint256 when);
 
     modifier onlyOwner() {
         require(msg.sender == admin, "Not admin");
         _;
     }
 
-    constructor(address _puppy, address _pupbank) {
+    constructor(address _puppy, address _pupbank, uint _pass) {
         puppy = IWithPuppy(_puppy);
         pupbank = IpupBank(_pupbank);
         admin = msg.sender;
-        fee = 10;
+        pass = _pass;
+        pay = 5000;
     }
 
-    struct monster {
-        string name;
-        uint mid;
-        uint power;
-        
+    function passup(uint _pass) external onlyOwner {
+        pass = _pass;
+        emit PassUpdated(msg.sender, block.timestamp);
     }
 
-    function createmon(string memory _name, uint _power,uint pass) external onlyOwner {
-        mons[mid].name =_name;
-        mons[mid].power =_power;
-        mons[mid].mid = mid;
-        password[mid] = pass;
-        mid += 1;
+    // ✅ 버그 수정: pay 변경
+    function setPay(uint256 _pay) external onlyOwner {
+        pay = _pay;
+        emit PayUpdated(_pay, block.timestamp);
     }
 
-    function editemon(uint _mid, string memory name, uint power) external onlyOwner {
-        mons[_mid].name = name;
-        mons[_mid].power = power;
-   
+    // 기존: 유저가 직접 호출(패스워드 노출 위험 有)
+    function claimScore(uint _pass) external {
+        require(pass == _pass, "bad pass");
+        _claimFor(msg.sender);
     }
 
-     function editpass(uint _mid,uint pass) external onlyOwner {
-         password[_mid] = pass;
-   
+    // ✅ 신규: 서버가 대신 호출 (패스워드 프론트 미노출)
+    function claimOnBehalf(address user, uint _pass) external onlyOwner {
+        require(pass == _pass, "bad pass");
+        _claimFor(user);
     }
 
-    
-     function feeup(uint _fee) external onlyOwner {
-         fee = _fee;
-   
+    function _claimFor(address user) internal {
+        require(pupbank.getlevel(user) >= 1, "no member");
+
+        uint256 last = allowt[user];
+        require(block.timestamp >= last + 1 days, "once per day");
+
+        allowt[user] = block.timestamp;
+        pupbank.depoup(user, pay);
+        pupbank.expup(user, 1000);
+
+        jack += pay;
+        emit ScoreClaimed(user, pay, 1000, block.timestamp);
     }
 
-   
-
-    function hunt(uint _mid,uint pass ) external {
-        uint256 enemy = mons[_mid].power;
-        require(password[_mid] == pass, "Not an official monster");
-        require(puppy.myPuppy(msg.sender) != 0, "No Puppy");
-        require(pupbank.g9(msg.sender) >= fee, "Not enough GP");
-        require(myprey[msg.sender][_mid] == false, "Already caught");
-
-        uint256 mypid = puppy.myPuppyid(msg.sender);
-        uint256 mypower = getmypower(mypid,msg.sender) + puppy.myPuppy(msg.sender);
-
-        if (enemy > mypower) {
-            mypoint[msg.sender] += 1;
-            jack += 1;
-            emit Lost(msg.sender, enemy, mypower);
-        } else {
-            mypoint[msg.sender] += (enemy + 1);
-            jack += enemy+1;
-            myprey[msg.sender][_mid] = true; // 사냥 성공 기록
-            mymons[msg.sender].push(_mid);
-            emit RewardGiven(msg.sender, enemy);
-        }
-    }
-
-    function claimScore() public {
-    uint256 score = mypoint[msg.sender] * getlevel(msg.sender);
-    require(score > 0, "No score to claim");
-    mypoint[msg.sender] = 0; // 점수 초기화
-    pupbank.depoup(msg.sender, score); // GP 적립
-    pupbank.expup(msg.sender, score); // 경험치 적립
-}
-
-
- 
-
-    function getlevel(address user) public view returns (uint256) {
+    function getlevel(address user) external view returns (uint256) {
         return pupbank.getlevel(user);
     }
 
-    function attack() public view returns (uint8) {
-        uint256 rand = uint256(
-            keccak256(
-                abi.encodePacked(
-                    block.prevrandao,
-                    block.timestamp,
-                    block.number,
-                    gasleft()
-                )
-            )
-        );
-        return uint8(rand % 100);
+    function getpass() external view onlyOwner returns (uint256) {
+        return pass;
     }
 
-    function getmypower(uint256 pid, address user) public view returns (uint256) {
-        uint256 power1 = uint256(puppy.geti(pid)) + uint256(puppy.getc(pid)) + uint256(puppy.gets(pid))
+    function getmydefense(address user) external view returns (uint256) {
+        uint pid = puppy.myPuppyid(user);
+        uint256 power = uint256(puppy.geti(pid)) + uint256(puppy.getc(pid)) + uint256(puppy.gets(pid))
             + uint256(puppy.geta(pid)) + uint256(puppy.gete(pid)) + uint256(puppy.getf(pid));
-        uint256 power2 = uint256(attack());
-        uint256 power3 = pupbank.getlevel(user);
-        return power3 * (power1 + power2);
+        return power;
     }
-
-    function getPassword(uint256 id) external view onlyOwner returns (uint256) {
-    return password[id];
-}
-
-       function getbreed(uint256 pid) external view  returns (uint256) {
-       return mons[pid].power;
-       }
-
-      function getmymon(address user) external view returns (uint256[] memory) {
-       return mymons[user];
-}
-
 }

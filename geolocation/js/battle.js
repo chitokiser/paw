@@ -100,6 +100,7 @@ export function createAttachMonsterBattle({
 
     // HP Bar
     let hpLeft = Math.max(1, Number(data.hp ?? data.power));
+    const hpMax0 = hpLeft; // 처치 보상 산정 기준(스폰 시 체력/파워)
     let hpUI = { set: () => {} };
     setTimeout(() => { try { hpUI = attachHPBar(marker, hpLeft) || { set: () => {} }; hpUI.set(hpLeft); } catch {} }, 0);
 
@@ -126,14 +127,21 @@ export function createAttachMonsterBattle({
       setDead();
       try { if (data.mid) playDeathForMid(data.mid); else playDeath?.(); } catch {}
 
-      // EXP 보상
+      // === EXP & CP 보상 (기존 구조 준수) ===
       try {
-        const cpGain = Math.max(0, Math.floor(Number(data.power || 0) / 10));
+        // 경험치: 스폰 시 체력(hpMax0)에 비례 (밸런스는 추후 조정)
+        const expGain = Math.max(1, Math.round(hpMax0 * 0.5));   // 예: 체력의 50%
+        const cpGain  = Math.max(0, Math.floor(hpMax0 / 10));    // 예: 체력의 10% (정수)
+
+        if (typeof Score?.addExp === 'function') {
+          await Score.addExp(expGain);
+          toast?.(`EXP +${expGain}`);
+        }
         if (cpGain > 0 && typeof Score?.addCP === 'function') {
           await Score.addCP(cpGain);
           toast?.(`+${cpGain} CP (처치 보상)`);
         }
-      } catch (e) { console.warn('[battle] addCP fail', e); }
+      } catch (e) { console.warn('[battle] EXP/CP reward fail', e); }
 
       // 전리품 이동
       try {
