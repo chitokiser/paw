@@ -1,10 +1,6 @@
 // /geolocation/js/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-import {
-  getAuth, setPersistence, browserLocalPersistence
-} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-
 /* 1) Firebase Web App 설정 (항상 최상단) */
 const firebaseConfig = {
   apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
@@ -19,7 +15,7 @@ const firebaseConfig = {
 /* 2) 앱 초기화 + export */
 export const app  = initializeApp(firebaseConfig);
 export const db   = getFirestore(app);
-export const auth = getAuth(app);
+
 
 /* 3) 로그인 세션을 로컬에 유지 (권장) */
 try {

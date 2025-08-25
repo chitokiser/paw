@@ -1,5 +1,5 @@
 // /geolocation/js/main.js
-import { auth, db } from './firebase.js';
+import {  db } from './firebase.js';
 import {
   ensureAudio, playFail, playDeath, playAttackImpact,
   playThunderBoom, playLightningImpact, playReward, playCrit
@@ -27,7 +27,7 @@ import { Inventory } from './inventory.js';
 import { InventoryUI } from './inventoryUI.js';
 import { Treasures } from './treasures.js';
 import { Shops } from './shops.js';
-import { ensureUserDoc } from './auth.js';
+
 
 injectCSS();
 ensureImpactCSS();
@@ -56,11 +56,8 @@ function __updateCPDom(cpValue) {
 
 /* =============================== 메인 =============================== */
 export async function main() {
-  const uid = auth.currentUser?.uid;
-  if (!uid) {
-    console.warn('[main] no auth user; abort');
-    return;
-  }
+   const addr = await Score.bindWallet();   // 지갑 주소로 구독/생성
+   if (!addr) { alert('지갑을 먼저 연결해 주세요'); return; }
 
   // 0) 사용자 문서 보장(없으면 생성)
   try { await ensureUserDoc(uid, auth.currentUser?.email || ''); }

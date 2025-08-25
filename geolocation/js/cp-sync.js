@@ -9,6 +9,7 @@ import {
   doc, getDoc, setDoc, updateDoc,
   increment, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { CLAIM_PASS } from './pass.js';
 
 /* ------------ 설정 ------------ */
 const AUTO_BACKFILL_CP_TODAY = false; // true로 바꾸면 cpToday가 0일 때 cp로 DB 채워넣음(1회)
@@ -20,7 +21,7 @@ const addrEl        = $('addr');
 const levelViewEl   = $('levelView');     // 표기용
 const levelGateEl   = $('levelGate');
 const btnConnect    = $('btnConnect');
-const btnSync       = $('btnSync');
+const btnSync       = $('btnSync');       // geohome.html 버튼과 연결
 const chainStatusEl = $('chainStatus');
 const btnResetGuest = $('btnResetGuest');
 const walletBox     = $('walletBox');
@@ -40,15 +41,18 @@ window.addEventListener('pf:modeChanged', async (e)=>{
 const { ethers } = window;
 const contractAddress = {
   pupbank: "0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D",
-  gp:       "0x35f7cfD9D3aE6Fdf1c080C3dd725EC68EB017caE"
+  // gp: "0x35f7cfD9D3aE6Fdf1c080C3dd725EC68EB017caE",   // ❌ 사용 안 함(요청)
+  claim:  "0x94472d875EE776496EcE59aC41A1F8292AfE7FBe" // ✅ 이번에 사용할 컨트랙트
 };
 const pupbankAbi = [
   "function myinfo(address) view returns(uint256,uint256,uint256,address,uint256)",
   "function getlevel(address) view returns(uint)"
 ];
-const gpAbi = [ "function charge(uint _pay) public" ];
 
-let provider=null, signer=null, userAddress=null, pupbank=null, gp=null;
+// ✅ 오늘 1회 적립용 함수 (패스 필요)
+const claimAbi = [ "function claimScore(uint256 _pass) external" ];
+
+let provider=null, signer=null, userAddress=null, pupbank=null, claimC=null;
 
 async function ensureProvider(){
   if (signer) return;
@@ -66,7 +70,7 @@ async function ensureProvider(){
   signer = provider.getSigner();
   userAddress = (await signer.getAddress()).toLowerCase();
   pupbank = new ethers.Contract(contractAddress.pupbank, pupbankAbi, signer);
-  gp      = new ethers.Contract(contractAddress.gp, gpAbi, signer);
+  claimC  = new ethers.Contract(contractAddress.claim,   claimAbi,   signer);
   if (addrEl) addrEl.textContent = userAddress;
 }
 
@@ -136,7 +140,6 @@ async function ensureDailyReset(address){
 
 /* ------------ CP read/write ------------ */
 async function getTodayCP(){
-  // 지갑 모드면 주소부터 패시브로 확보
   if (mode === 'wallet'){
     if (!userAddress) await hydrateAddressFromSessionOrWallet();
     if (userAddress){
@@ -147,7 +150,6 @@ async function getTodayCP(){
       const last = String(data.lastDate || '');
       const total = Number(data.cp || 0) | 0;
 
-      // Fallback: 오늘인데 daily=0이고 total>0이면 total을 "표시"로 사용
       if (daily === 0 && last === todayStr() && total > 0){
         if (AUTO_BACKFILL_CP_TODAY){
           try{
@@ -160,10 +162,9 @@ async function getTodayCP(){
       }
       return daily;
     }
-    // 아직 주소가 없으면 임시로 로컬 값을 보여줌
     return Number(localStorage.getItem('cp_today') || 0) | 0;
   }
-  // 게스트 모드
+  // 게스트
   return Number(localStorage.getItem('cp_today') || 0) | 0;
 }
 
@@ -183,7 +184,7 @@ async function addTodayCP(delta){
   }
   await refreshCPUI();
 }
-window.__cp_addToday = addTodayCP; // geohunt.js 등에서 사용
+window.__cp_addToday = addTodayCP;
 
 /* ------------ Level 표기/버튼 상태 ------------ */
 async function fetchLevel(address){
@@ -242,6 +243,7 @@ async function connectWallet(){
 }
 
 /* ------------ Chain sync (5000CP per batch) ------------ */
+// ✅ 요청 반영: claimScore(pass)를 호출, 성공 시 cpToday는 -5000으로 고정 저장
 async function syncOnChain(){
   try{
     if (mode !== 'wallet') throw new Error('지갑 모드가 아닙니다');
@@ -257,17 +259,22 @@ async function syncOnChain(){
     const batches = Math.floor(cp / 5000);
     if (batches <= 0) throw new Error('오늘 5000CP 이상 필요');
 
-    const tx = await gp.charge(batches);
+    // 1) 체인 트랜잭션 (가스는 유저 지갑에서 지출)
+    const tx = await claimC.claimScore(ethers.BigNumber.from(CLAIM_PASS));
     await tx.wait();
 
+    // 2) Firestore 업데이트
     const used = batches * 5000;
+
+    // - 총합 cp는 사용량만큼 차감 (원 설계 유지)
+    // - 오늘 cpToday는 0 대신 -5000으로 고정(요청)
     await updateDoc(userRef(userAddress), {
-      cpToday: increment(-used),
       cp: increment(-used),
+      cpToday: -5000,
       updatedAt: serverTimestamp()
     });
 
-    alert(`블록체인 적립 완료: ${batches} × 5000CP`);
+    alert(`블록체인 적립 완료: ${batches} × 5000CP (오늘 CP = -5000)`);
     await refreshCPUI();
   }catch(e){
     console.error(e);
@@ -289,6 +296,6 @@ btnResetGuest?.addEventListener('click', ()=>{
 /* ------------ Boot ------------ */
 (async function boot(){
   renderModeBox();
-  await hydrateAddressFromSessionOrWallet(); // 지갑 미연결이어도 주소 수화 시도
-  await refreshCPUI();                       // 첫 화면에서 cpToday(또는 cp fallback) 즉시 반영
+  await hydrateAddressFromSessionOrWallet();
+  await refreshCPUI();
 })();
