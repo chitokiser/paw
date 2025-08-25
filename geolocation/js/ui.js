@@ -6,6 +6,7 @@
  *  - 널가드/중복주입/숫자 변환 방어
  *  - CP 표시: cp/chainPoint/chain 모두 수용(하위호환)
  *  - HP/EXP 바: id + class 동시 부여(레거시 선택자 호환)
+ *  - ⬅ 좌측 상단에 geohome.html로 돌아가는 버튼 추가 (Leaflet 기본 ± 숨김)
  * ================================================================= */
 
 export function injectCSS(){
@@ -56,6 +57,10 @@ export function injectCSS(){
 
   :root{ --gap:12px; --fab-size:52px; --fab-radius:16px; }
 
+  /* Leaflet 기본 ± 줌 컨트롤 숨김 */
+  .leaflet-control-zoom{ display:none !important; }
+
+  /* (참고) 좌측 상단 컨테이너 위치 보정 유지 */
   .leaflet-top.leaflet-left{
     top:  calc(env(safe-area-inset-top,  0px) + var(--gap));
     left: calc(env(safe-area-inset-left, 0px) + var(--gap));
@@ -75,6 +80,12 @@ export function injectCSS(){
   .fab:hover{ transform: translateY(-1px); }
   .fab:active{ transform: translateY(1px) scale(.98); }
   .fab svg{ width:28px; height:28px; }
+
+  /* 좌측 상단: 지오홈으로 */
+  #btn-back{
+    left: calc(env(safe-area-inset-left,  0px) + var(--gap));
+    top:  calc(env(safe-area-inset-top,   0px) + var(--gap));
+  }
 
   #btn-home{
     left:   calc(env(safe-area-inset-left,  0px) + var(--gap));
@@ -204,6 +215,23 @@ export function addStartGate(onStart){
 export function mountCornerUI({ map, playerMarker, invUI } = {}){
   injectCSS();
   ensureHUD();
+
+  // 좌측 상단: 지오홈(geohome.html)으로 돌아가기 버튼
+  if (!document.getElementById('btn-back')){
+    const b = document.createElement('button');
+    b.id = 'btn-back'; b.className = 'fab'; b.title = '지오홈으로';
+    b.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    b.addEventListener('click', ()=>{
+      try{
+        const url = (window.__GEOHOME_URL || 'geohome.html');
+        window.location.href = url;
+      }catch{ window.location.assign('geohome.html'); }
+    });
+    document.body.appendChild(b);
+  }
 
   // 홈 버튼
   if (!document.getElementById('btn-home')){

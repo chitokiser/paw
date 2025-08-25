@@ -1,28 +1,74 @@
-<!-- geohunt.html -->
+<!-- geohunt.html (모바일 최적화 버전) -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
   <title>GeoHunt · Home</title>
   <link rel="shortcut icon" href="../images/logo.png"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <style>
-    :root{ --bg:#0b0d14; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12); --text:#e9eefc; --muted:#a9b1c7; --grad:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%); --radius:18px; }
-    body{ background:var(--bg); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }
+    :root{
+      --bg:#0b0d14; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12);
+      --text:#e9eefc; --muted:#a9b1c7; --grad:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%);
+      --radius:18px;
+    }
+    *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    body{
+      background:var(--bg); color:var(--text); min-height:100vh;
+      display:flex; align-items:center; justify-content:center; padding:16px;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Apple SD Gothic Neo,Malgun Gothic,sans-serif;
+    }
     .wrap{ width:min(1100px,100%); }
-    .cardx{ background:var(--card); border:1px solid var(--border); border-radius:calc(var(--radius) + 2px); padding:18px; backdrop-filter:blur(8px); }
-    .h5{ font-weight:800; }
+    .cardx{
+      background:var(--card); border:1px solid var(--border);
+      border-radius:calc(var(--radius) + 2px); padding:18px; backdrop-filter:blur(8px);
+    }
+    h1,h2,.h4,.h5{ font-weight:800; }
     .tiny{ font-size:12px; color:var(--muted); }
-    .btn-grad{ background:var(--grad); color:#fff; font-weight:800; border:none; border-radius:14px; padding:10px 14px; }
-    .btn-outline-light{ border:1px solid #60a5fa; color:#e9eefc; border-radius:14px; }
-    .display-6{ font-weight:800; }
+    .btn-grad{
+      background:var(--grad); color:#fff; font-weight:800; border:none; border-radius:14px; padding:12px 16px;
+    }
+    .btn-outline-light{ border:1px solid #60a5fa; color:#e9eefc; border-radius:14px; padding:12px 16px; }
+    .display-6{ font-weight:800; font-size: clamp(28px, 7vw, 44px); }
     .badge-mode{ display:inline-block; font-weight:800; font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); background:rgba(255,255,255,.06); }
     a.link-light{ color:#93c5fd; text-decoration:underline; }
+
+    /* 주소(지갑) 라인: 모바일 줄바꿈/말줄임 */
+    #addr{
+      max-width: 70vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: inline-block;
+      vertical-align: bottom;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 14px;
+    }
+    @media (max-width: 480px){
+      /* 아주 작은 화면에서는 줄바꿈 허용 */
+      #addr{
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-all;
+        max-width: 100%;
+      }
+      .form-check-label{ font-size:14px; }
+      .cardx{ padding:14px; }
+      .btn-grad, .btn-outline-light{ padding:12px 14px; font-size:15px; border-radius:12px; }
+    }
+
+    /* 카드 간격 보정(모바일) */
+    .g-3 > [class*="col-"]{ margin-bottom: 8px; }
+    @media (min-width: 992px){
+      .g-3 > [class*="col-"]{ margin-bottom: 0; }
+    }
   </style>
+
   <!-- ethers.js -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-  <!-- Firebase core in /geolocation/js/firebase.js -->
+  <!-- Firebase core (한 번만 로드) -->
   <script type="module" src="./js/firebase.js"></script>
 </head>
 <body>
@@ -50,12 +96,12 @@
           </div>
 
           <div id="walletBox" class="p-3 cardx" style="display:none">
-            <div class="d-flex align-items-center justify-content-between">
-              <div>
+            <div class="d-flex align-items-center justify-content-between gap-2">
+              <div class="flex-grow-1">
                 <div class="tiny">지갑 주소</div>
                 <div id="addr" class="fw-bold">-</div>
               </div>
-              <button id="btnConnect" class="btn btn-sm btn-grad">지갑 연결</button>
+              <button id="btnConnect" class="btn btn-sm btn-grad" style="white-space:nowrap;">지갑 연결</button>
             </div>
             <hr/>
             <div class="tiny">멤버 레벨</div>
@@ -95,8 +141,8 @@
 
           <hr/>
           <div class="d-flex gap-2">
-            <button id="btnStartGame" class="btn btn-grad">게임시작</button>
-            <button id="btnResetGuest" class="btn btn-outline-light">게스트 데이터 리셋</button>
+            <button id="btnStartGame" class="btn btn-grad flex-fill">게임시작</button>
+            <button id="btnResetGuest" class="btn btn-outline-light flex-fill">게스트 데이터 리셋</button>
           </div>
         </div>
       </div>
@@ -104,48 +150,67 @@
   </div>
 
   <!-- 상태 연동 스크립트 -->
- <script type="module" src="./js/firebase.js"></script>
-<script type="module" src="./js/cp-sync.js"></script>
-<script type="module" src="./js/geohunt.js"></script>
+  <script type="module" src="./js/cp-sync.js"></script>
+  <script type="module" src="./js/geohunt.js"></script>
+
   <script>
-    // 모드 라디오 초기화 + 게임시작 라우팅
+    // 모드 라디오 초기화 + 게임시작 라우팅(터치/클릭 대응, 모바일 안정화)
     (function initModeRadios(){
+      const $ = (id)=>document.getElementById(id);
+
       function currentMode(){
+        // 라디오 선택 우선 (모바일에서 저장소 동기 지연 이슈 방지)
+        const sel = document.querySelector('input[name="mode"]:checked');
+        if (sel?.value) return sel.value;
         return sessionStorage.getItem('GH_MODE') || localStorage.getItem('pf_mode') || 'guest';
       }
-      function setBadge(m){
-        document.getElementById('modeBadge').textContent = 'Mode: ' + (m==='wallet' ? 'Wallet' : 'Guest');
-      }
-      function syncWalletBox(m){
-        const box = document.getElementById('walletBox');
-        box.style.display = (m==='wallet') ? '' : 'none';
-      }
-      function setStartLabel(m){
-        document.getElementById('btnStartGame').textContent = (m==='wallet') ? '게임시작(지갑 모드)' : '게임시작(게스트)';
-      }
-      function routeStart(m){
-        // app.js가 레벨1 게이트를 담당 → 여기서는 라우팅만
-        location.href = (m === 'wallet') ? './play2.html' : './play.html';
-      }
+      function setBadge(m){ $('modeBadge').textContent = 'Mode: ' + (m==='wallet' ? 'Wallet' : 'Guest'); }
+      function syncWalletBox(m){ $('walletBox').style.display = (m==='wallet') ? '' : 'none'; }
+      function setStartLabel(m){ $('btnStartGame').textContent = (m==='wallet') ? '게임시작(지갑 모드)' : '게임시작(게스트)'; }
 
-      const m = currentMode();
-      document.getElementById('modeGuest').checked  = (m === 'guest');
-      document.getElementById('modeWallet').checked = (m === 'wallet');
-      setBadge(m); syncWalletBox(m); setStartLabel(m);
+      // 초기 상태 반영
+      const init = sessionStorage.getItem('GH_MODE') || localStorage.getItem('pf_mode') || 'guest';
+      $('modeGuest').checked  = (init === 'guest');
+      $('modeWallet').checked = (init === 'wallet');
+      setBadge(init); syncWalletBox(init); setStartLabel(init);
 
+      // 라디오 변경 시 저장 + 배지 업데이트
       document.querySelectorAll('input[name="mode"]').forEach(r=>{
         r.addEventListener('change', ()=>{
           const v = r.value;
-          sessionStorage.setItem('GH_MODE', v);
-          localStorage.setItem('pf_mode', v);
+          try{ sessionStorage.setItem('GH_MODE', v); localStorage.setItem('pf_mode', v); }catch{}
           setBadge(v); syncWalletBox(v); setStartLabel(v);
-          // cp-sync.js가 실시간 반영하도록 이벤트 송출
           window.dispatchEvent(new CustomEvent('pf:modeChanged', { detail:{ mode:v } }));
-        });
+        }, { passive:true });
       });
 
-      document.getElementById('btnStartGame').addEventListener('click', ()=>{
-        routeStart(currentMode());
+      // 라우팅: click + touchend 모두 처리 (중복 실행 방지)
+      const startBtn = $('btnStartGame');
+      let routed = false;
+      const routeStart = ()=>{
+        if (routed) return;
+        routed = true;
+        const m = currentMode();
+        const target = (m === 'wallet') ? './play2.html' : './play.html';
+        try { window.location.href = target; }
+        catch { window.location.assign(target); }
+        // 혹시 모를 케이스 대비 setTimeout 폴백
+        setTimeout(()=>{ try{ if (location.href.indexOf(target) === -1) location.assign(target); }catch{} }, 120);
+      };
+      startBtn.addEventListener('click', routeStart, { passive:false });
+      startBtn.addEventListener('touchend', routeStart, { passive:true });
+
+      // 게스트 리셋(모바일에서도 확실히 동작)
+      $('btnResetGuest').addEventListener('click', ()=>{
+        try{
+          localStorage.clear();
+          sessionStorage.removeItem('GH_MODE');
+          $('modeGuest').checked = true;
+          setBadge('guest'); syncWalletBox('guest'); setStartLabel('guest');
+          alert('게스트 데이터가 초기화되었습니다.');
+        }catch(e){
+          console.warn('[reset guest] fail', e);
+        }
       });
     })();
   </script>

@@ -6,7 +6,7 @@ import {
 } from './audio.js';
 import { injectCSS, toast, ensureHUD, setHUD, addStartGate, mountCornerUI } from './ui.js';
 import { makePlayerDivIcon, getChallengeDurationMs, getGuestId, haversineM } from './utils.js';
-
+import { getInventoryId } from './identity.js';
 import { TowerGuard } from './tower.js';
 import { Score } from './score.js';
 import { MonsterGuard } from './monster.js';
@@ -116,8 +116,10 @@ export async function main() {
   } catch(e){ console.warn('[Score HUD setup] fail', e); }
 
   // 2) 인벤토리
-  const guestId = getGuestId();
-  const inv = new Inventory({ db, guestId, onChange: (items)=>console.log('inv change', items) });
+  const invId = getInventoryId();
+  const inv = new Inventory({ db, guestId: invId, onChange: (items)=>console.log('inv change', items) });
+  try { await inv.load({ autoListen:true }); }
+  catch(e){ console.warn('[Inventory.load] fail', e); }
   try { await inv.load({ autoListen:true }); }
   catch(e){ console.warn('[Inventory.load] fail', e); }
 
