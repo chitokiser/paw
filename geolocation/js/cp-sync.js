@@ -1,10 +1,10 @@
 // /geolocation/js/cp-sync.js
 // - 게스트: localStorage로 오늘 CP 관리
-// - 지갑: users/{addressLower} 문서 cpToday/cp 읽기/쓰기
+// - 지갑: users/{auth.uid} 문서에 cpToday/cp 읽기/쓰기, address 필드에 지갑주소 저장
 // - 오늘 CP가 0이거나 미정의면, lastDate가 오늘일 때 cp를 "표시"용으로 Fallback
 //   (AUTO_BACKFILL_CP_TODAY=true로 켜면 DB의 cpToday도 cp로 1회 보정)
 
-import { db } from './firebase.js';
+import { db, auth, authReady } from './firebase.js';
 import {
   doc, getDoc, setDoc, updateDoc,
   increment, serverTimestamp
@@ -48,12 +48,25 @@ const pupbankAbi = [
   "function myinfo(address) view returns(uint256,uint256,uint256,address,uint256)",
   "function getlevel(address) view returns(uint)"
 ];
-
-// ✅ 오늘 1회 적립용 함수 (패스 필요)
 const claimAbi = [ "function claimScore(uint256 _pass) external" ];
 
 let provider=null, signer=null, userAddress=null, pupbank=null, claimC=null;
 
+/* ------------ Auth / Firestore helpers ------------ */
+const keyOf = (x)=> String(x||'').toLowerCase();
+function currentUid(){ return auth.currentUser?.uid || null; }
+function userDocRef(){
+  const uid = currentUid();
+  if (!uid) throw new Error('AUTH_REQUIRED');
+  return doc(db, 'users', uid);
+}
+async function ensureAuthReady(){
+  // 인증 완료까지 대기 (익명 로그인 포함)
+  await authReady;
+  if (!auth.currentUser) throw new Error('AUTH_REQUIRED');
+}
+
+/* ---------- Provider & Wallet ---------- */
 async function ensureProvider(){
   if (signer) return;
   if (!window.ethereum) throw new Error('지갑이 설치되어 있지 않습니다');
@@ -68,7 +81,7 @@ async function ensureProvider(){
   } catch(_) {}
   await provider.send("eth_requestAccounts", []);
   signer = provider.getSigner();
-  userAddress = (await signer.getAddress()).toLowerCase();
+  userAddress = keyOf(await signer.getAddress());
   pupbank = new ethers.Contract(contractAddress.pupbank, pupbankAbi, signer);
   claimC  = new ethers.Contract(contractAddress.claim,   claimAbi,   signer);
   if (addrEl) addrEl.textContent = userAddress;
@@ -77,16 +90,16 @@ async function ensureProvider(){
 /* ---------- 패시브 주소 수화(연결 없이도 주소/CP 표출) ---------- */
 async function getPassiveAddress(){
   try{
-    if (window.ethereum?.selectedAddress) return window.ethereum.selectedAddress.toLowerCase();
+    if (window.ethereum?.selectedAddress) return keyOf(window.ethereum.selectedAddress);
     const accts = await window.ethereum?.request?.({ method:'eth_accounts' }) || [];
-    return (accts[0] || '').toLowerCase() || null;
+    return keyOf(accts[0]||'') || null;
   }catch(_){ return null; }
 }
 async function hydrateAddressFromSessionOrWallet(){
   if (userAddress) return;
-  const s = sessionStorage.getItem('GH_WALLET');
+  const s = keyOf(sessionStorage.getItem('GH_WALLET') || '');
   if (s){
-    userAddress = s.toLowerCase();
+    userAddress = s;
     if (addrEl) addrEl.textContent = userAddress;
     return;
   }
@@ -97,14 +110,15 @@ async function hydrateAddressFromSessionOrWallet(){
   }
 }
 if (window.ethereum?.on){
-  window.ethereum.on('accountsChanged', async ()=>{ userAddress=null; await hydrateAddressFromSessionOrWallet(); await refreshCPUI(); });
+  window.ethereum.on('accountsChanged', async ()=>{
+    userAddress=null;
+    await hydrateAddressFromSessionOrWallet();
+    await refreshCPUI();
+  });
   window.ethereum.on('chainChanged',   async ()=>{ await refreshCPUI(); });
 }
 
-/* ------------ Firestore helpers (users/{address}) ------------ */
-const keyOf  = (address)=> String(address||'').toLowerCase();
-const userRef= (address)=> doc(db, 'users', keyOf(address));
-
+/* ------------ 공통 유틸 ------------ */
 function todayStr(){
   const d = new Date();
   const mm = String(d.getMonth()+1).padStart(2,'0');
@@ -112,24 +126,37 @@ function todayStr(){
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-async function ensureUserDoc(address, level=1){
-  const ref = userRef(address);
+/* ------------ Firestore: users/{auth.uid} ------------ */
+async function ensureUserDoc(addressLower, level=1){
+  await ensureAuthReady();
+  const ref = userDocRef();
   const snap = await getDoc(ref);
+  const lv = Math.max(1, Number(level||1));
   if (!snap.exists()){
     await setDoc(ref, {
-      address: keyOf(address),
-      level: level||1,
-      hp: 1000, exp: 0, attack: 1, defense: 10,
+      uid: currentUid(),
+      address: keyOf(addressLower||''),
+      level: lv,
+      // 파생값(레벨 기준)
+      hp: lv*1000, maxHp: lv*1000, attack: lv,
+      exp: 0, defense: 10,
+      // CP
       cp: 0, cpToday: 0, lastDate: todayStr(),
       createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     }, { merge: true });
   } else {
-    await updateDoc(ref, { level: level||1, updatedAt: serverTimestamp() });
+    // 주소/레벨 갱신
+    await updateDoc(ref, {
+      address: keyOf(addressLower||''),
+      level: lv,
+      updatedAt: serverTimestamp()
+    });
   }
 }
 
-async function ensureDailyReset(address){
-  const ref = userRef(address);
+async function ensureDailyReset(){
+  await ensureAuthReady();
+  const ref = userDocRef();
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
   const d = snap.data() || {};
@@ -141,10 +168,11 @@ async function ensureDailyReset(address){
 /* ------------ CP read/write ------------ */
 async function getTodayCP(){
   if (mode === 'wallet'){
+    await ensureAuthReady();
     if (!userAddress) await hydrateAddressFromSessionOrWallet();
     if (userAddress){
-      await ensureDailyReset(userAddress);
-      const snap = await getDoc(userRef(userAddress));
+      await ensureDailyReset();
+      const snap = await getDoc(userDocRef());
       const data = snap.exists() ? (snap.data()||{}) : {};
       let daily  = Number(data.cpToday || 0) | 0;
       const last = String(data.lastDate || '');
@@ -153,7 +181,7 @@ async function getTodayCP(){
       if (daily === 0 && last === todayStr() && total > 0){
         if (AUTO_BACKFILL_CP_TODAY){
           try{
-            await updateDoc(userRef(userAddress), { cpToday: total, updatedAt: serverTimestamp() });
+            await updateDoc(userDocRef(), { cpToday: total, updatedAt: serverTimestamp() });
             daily = total;
           }catch(e){ console.warn('[cp-sync] backfill failed', e); daily = total; }
         } else {
@@ -175,8 +203,9 @@ async function addTodayCP(delta){
     const cur = Number(localStorage.getItem('cp_today') || 0) | 0;
     localStorage.setItem('cp_today', String(cur + d));
   } else {
-    await ensureDailyReset(userAddress);
-    await updateDoc(userRef(userAddress), {
+    await ensureAuthReady();
+    await ensureDailyReset();
+    await updateDoc(userDocRef(), {
       cpToday: increment(d),
       cp: increment(d),
       updatedAt: serverTimestamp()
@@ -219,9 +248,10 @@ async function refreshCPUI(){
 async function connectWallet(){
   try{
     await ensureProvider();
+
+    // 체인 레벨 조회 → UI
     const level = await fetchLevel(userAddress);
     if (levelViewEl) levelViewEl.textContent = String(level);
-
     if (level < 1){
       if (levelGateEl) levelGateEl.innerHTML = `레벨 1 이상 필요 → <a class="link-light" href="../memberjoin.html">회원가입</a>`;
       throw new Error('레벨 1 미만');
@@ -229,13 +259,17 @@ async function connectWallet(){
       if (levelGateEl) levelGateEl.textContent = '연결 허가됨';
     }
 
+    // Firebase 인증 후 유저 문서 준비(문서키=auth.uid, address 필드=지갑주소)
+    await ensureAuthReady();
     await ensureUserDoc(userAddress, level);
-    await ensureDailyReset(userAddress);
+    await ensureDailyReset();
 
+    // 세션 상태 저장
     sessionStorage.setItem('GH_MODE', 'wallet');
     sessionStorage.setItem('GH_WALLET', userAddress);
 
     await refreshCPUI();
+    if (addrEl) addrEl.textContent = userAddress;
   }catch(e){
     console.error(e);
     alert(e?.message || '지갑 연결 실패');
@@ -253,7 +287,8 @@ async function syncOnChain(){
     if (level < 1) throw new Error('레벨 1 필요');
 
     await ensureProvider();
-    await ensureDailyReset(userAddress);
+    await ensureAuthReady();
+    await ensureDailyReset();
 
     const cp = await getTodayCP();
     const batches = Math.floor(cp / 5000);
@@ -263,13 +298,12 @@ async function syncOnChain(){
     const tx = await claimC.claimScore(ethers.BigNumber.from(CLAIM_PASS));
     await tx.wait();
 
-    // 2) Firestore 업데이트
+    // 2) Firestore 업데이트 (문서키=auth.uid)
     const used = batches * 5000;
-
-    // - 총합 cp는 사용량만큼 차감 (원 설계 유지)
-    // - 오늘 cpToday는 0 대신 -5000으로 고정(요청)
-    await updateDoc(userRef(userAddress), {
+    await updateDoc(userDocRef(), {
+      // 총합 cp는 사용량만큼 차감 (원 설계 유지)
       cp: increment(-used),
+      // 오늘 cpToday는 0 대신 -5000 고정(요청)
       cpToday: -5000,
       updatedAt: serverTimestamp()
     });
@@ -295,7 +329,14 @@ btnResetGuest?.addEventListener('click', ()=>{
 
 /* ------------ Boot ------------ */
 (async function boot(){
-  renderModeBox();
+  try{
+    renderModeBox();
+    // 인증 완료까지 미리 대기해 두면 초기 읽기에서 권한오류가 나지 않습니다.
+    await ensureAuthReady();
+  }catch(e){
+    // 개발 단계에서 authReady가 실패할 일은 거의 없지만, 방어적으로 처리
+    console.warn('[cp-sync] authReady failed or delayed', e);
+  }
   await hydrateAddressFromSessionOrWallet();
   await refreshCPUI();
 })();

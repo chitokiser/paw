@@ -1,23 +1,22 @@
 // /geolocation/js/cp-sync.js
-// - 게스트: localStorage로 오늘 CP 관리
-// - 지갑: users/{addressLower} 문서 cpToday/cp 읽기/쓰기
-// - 오늘 CP가 0이거나 미정의면, lastDate가 오늘일 때 cp를 "표시"용으로 Fallback
-//   (AUTO_BACKFILL_CP_TODAY=true로 켜면 DB의 cpToday도 cp로 1회 보정)
+// - No Firebase Auth dependency (wallet-only flow)
+// - English-only messages
+// - Firestore safe access with graceful fallbacks
+// - ethers v5 style (Web3Provider)
 
 import { db } from './firebase.js';
 import {
-  doc, getDoc, setDoc, updateDoc,
-  increment, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+  doc, getDoc, setDoc, updateDoc, increment, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-/* ------------ 설정 ------------ */
-const AUTO_BACKFILL_CP_TODAY = false; // true로 바꾸면 cpToday가 0일 때 cp로 DB 채워넣음(1회)
+/* ------------ Settings ------------ */
+const AUTO_BACKFILL_CP_TODAY = false; // if true: when cpToday is 0 but total cp>0 on same day, backfill DB once
 
 /* ------------ DOM refs ------------ */
 const $ = (id)=> document.getElementById(id);
 const cpTodayEl     = $('cpToday');
 const addrEl        = $('addr');
-const levelViewEl   = $('levelView');     // 표기용
+const levelViewEl   = $('levelView');
 const levelGateEl   = $('levelGate');
 const btnConnect    = $('btnConnect');
 const btnSync       = $('btnSync');
@@ -36,8 +35,8 @@ window.addEventListener('pf:modeChanged', async (e)=>{
   await refreshCPUI();
 });
 
-/* ------------ EVM (ethers) ------------ */
-const { ethers } = window;
+/* ------------ EVM (ethers v5) ------------ */
+const { ethers } = window || {};
 const contractAddress = {
   pupbank: "0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D",
   gp:       "0x35f7cfD9D3aE6Fdf1c080C3dd725EC68EB017caE"
@@ -52,25 +51,32 @@ let provider=null, signer=null, userAddress=null, pupbank=null, gp=null;
 
 async function ensureProvider(){
   if (signer) return;
-  if (!window.ethereum) throw new Error('지갑이 설치되어 있지 않습니다');
+  if (!window.ethereum) throw new Error('Wallet (MetaMask/Rabby) is required.');
+  if (!ethers?.providers?.Web3Provider) throw new Error('ethers v5 is required on this page.');
+
   provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+  // Optional: ensure opBNB
   try {
     await window.ethereum.request({
       method: "wallet_addEthereumChain",
-      params: [{ chainId:"0xCC", rpcUrls:["https://opbnb-mainnet-rpc.bnbchain.org"],
-        chainName:"opBNB", nativeCurrency:{ name:"BNB", symbol:"BNB", decimals:18 },
-        blockExplorerUrls:["https://opbnbscan.com"] }]
+      params: [{
+        chainId:"0xCC",
+        rpcUrls:["https://opbnb-mainnet-rpc.bnbchain.org"],
+        chainName:"opBNB",
+        nativeCurrency:{ name:"BNB", symbol:"BNB", decimals:18 },
+        blockExplorerUrls:["https://opbnbscan.com"]
+      }]
     });
   } catch(_) {}
   await provider.send("eth_requestAccounts", []);
   signer = provider.getSigner();
   userAddress = (await signer.getAddress()).toLowerCase();
   pupbank = new ethers.Contract(contractAddress.pupbank, pupbankAbi, signer);
-  gp      = new ethers.Contract(contractAddress.gp, gpAbi, signer);
+  gp      = new ethers.Contract(contractAddress.gp,      gpAbi,      signer);
   if (addrEl) addrEl.textContent = userAddress;
 }
 
-/* ---------- 패시브 주소 수화(연결 없이도 주소/CP 표출) ---------- */
+/* ---------- Passive address hydration (without explicit connect) ---------- */
 async function getPassiveAddress(){
   try{
     if (window.ethereum?.selectedAddress) return window.ethereum.selectedAddress.toLowerCase();
@@ -93,7 +99,11 @@ async function hydrateAddressFromSessionOrWallet(){
   }
 }
 if (window.ethereum?.on){
-  window.ethereum.on('accountsChanged', async ()=>{ userAddress=null; await hydrateAddressFromSessionOrWallet(); await refreshCPUI(); });
+  window.ethereum.on('accountsChanged', async ()=>{
+    userAddress=null;
+    await hydrateAddressFromSessionOrWallet();
+    await refreshCPUI();
+  });
   window.ethereum.on('chainChanged',   async ()=>{ await refreshCPUI(); });
 }
 
@@ -136,7 +146,6 @@ async function ensureDailyReset(address){
 
 /* ------------ CP read/write ------------ */
 async function getTodayCP(){
-  // 지갑 모드면 주소부터 패시브로 확보
   if (mode === 'wallet'){
     if (!userAddress) await hydrateAddressFromSessionOrWallet();
     if (userAddress){
@@ -147,7 +156,7 @@ async function getTodayCP(){
       const last = String(data.lastDate || '');
       const total = Number(data.cp || 0) | 0;
 
-      // Fallback: 오늘인데 daily=0이고 total>0이면 total을 "표시"로 사용
+      // Backfill or display-only fallback
       if (daily === 0 && last === todayStr() && total > 0){
         if (AUTO_BACKFILL_CP_TODAY){
           try{
@@ -155,15 +164,15 @@ async function getTodayCP(){
             daily = total;
           }catch(e){ console.warn('[cp-sync] backfill failed', e); daily = total; }
         } else {
-          daily = total; // 표시만
+          daily = total;
         }
       }
       return daily;
     }
-    // 아직 주소가 없으면 임시로 로컬 값을 보여줌
+    // no address yet => use local placeholder
     return Number(localStorage.getItem('cp_today') || 0) | 0;
   }
-  // 게스트 모드
+  // guest
   return Number(localStorage.getItem('cp_today') || 0) | 0;
 }
 
@@ -183,11 +192,12 @@ async function addTodayCP(delta){
   }
   await refreshCPUI();
 }
-window.__cp_addToday = addTodayCP; // geohunt.js 등에서 사용
+window.__cp_addToday = addTodayCP; // optional external use
 
-/* ------------ Level 표기/버튼 상태 ------------ */
+/* ------------ Level & buttons ------------ */
 async function fetchLevel(address){
   let lv = 0;
+  if (!address || !pupbank) return 0;
   try {
     const [_td,_bonus,l] = await pupbank.myinfo(address);
     lv = Number(l||0);
@@ -202,8 +212,8 @@ function updateSyncButtonState(level, cp){
   if (btnSync) btnSync.disabled = !eligible;
   if (chainStatusEl){
     chainStatusEl.textContent = eligible
-      ? `가능: ${Math.floor(Number(cp)/5000)}회(×5000CP) 적립`
-      : '조건: 레벨1 & 오늘 5000CP 이상';
+      ? `Eligible: ${Math.floor(Number(cp)/5000)} claim(s) (×5000 CP)`
+      : 'Req: Level 1 & 5000+ CP today';
   }
 }
 
@@ -222,10 +232,10 @@ async function connectWallet(){
     if (levelViewEl) levelViewEl.textContent = String(level);
 
     if (level < 1){
-      if (levelGateEl) levelGateEl.innerHTML = `레벨 1 이상 필요 → <a class="link-light" href="../memberjoin.html">회원가입</a>`;
-      throw new Error('레벨 1 미만');
+      if (levelGateEl) levelGateEl.innerHTML = `Level 1 required → <a class="link-light" href="../memberjoin.html">Sign up</a>`;
+      throw new Error('Level 1 required.');
     } else {
-      if (levelGateEl) levelGateEl.textContent = '연결 허가됨';
+      if (levelGateEl) levelGateEl.textContent = 'Ready to connect.';
     }
 
     await ensureUserDoc(userAddress, level);
@@ -235,27 +245,28 @@ async function connectWallet(){
     sessionStorage.setItem('GH_WALLET', userAddress);
 
     await refreshCPUI();
+    alert('Wallet connected.');
   }catch(e){
     console.error(e);
-    alert(e?.message || '지갑 연결 실패');
+    alert(e?.message || 'Failed to connect wallet.');
   }
 }
 
-/* ------------ Chain sync (5000CP per batch) ------------ */
+/* ------------ Chain sync (5000 CP per batch) ------------ */
 async function syncOnChain(){
   try{
-    if (mode !== 'wallet') throw new Error('지갑 모드가 아닙니다');
-    if (!userAddress) throw new Error('지갑을 먼저 연결하세요');
+    if (mode !== 'wallet') throw new Error('Wallet mode is required.');
+    if (!userAddress) throw new Error('Connect your wallet first.');
 
     const level = Number(levelViewEl?.textContent || 0) || 0;
-    if (level < 1) throw new Error('레벨 1 필요');
+    if (level < 1) throw new Error('Level 1 required.');
 
     await ensureProvider();
     await ensureDailyReset(userAddress);
 
     const cp = await getTodayCP();
     const batches = Math.floor(cp / 5000);
-    if (batches <= 0) throw new Error('오늘 5000CP 이상 필요');
+    if (batches <= 0) throw new Error('5000+ CP is required to claim.');
 
     const tx = await gp.charge(batches);
     await tx.wait();
@@ -267,11 +278,11 @@ async function syncOnChain(){
       updatedAt: serverTimestamp()
     });
 
-    alert(`블록체인 적립 완료: ${batches} × 5000CP`);
+    alert(`On-chain claim completed: ${batches} × 5000 CP`);
     await refreshCPUI();
   }catch(e){
     console.error(e);
-    alert(e?.message || '적립 실패');
+    alert(e?.message || 'Failed to claim on chain.');
   }
 }
 
@@ -279,16 +290,16 @@ async function syncOnChain(){
 btnConnect?.addEventListener('click', connectWallet);
 btnSync?.addEventListener('click', syncOnChain);
 btnResetGuest?.addEventListener('click', ()=>{
-  if (confirm('게스트 오늘 CP를 초기화할까요?')){
+  if (confirm('Reset guest CP for today?')){
     localStorage.removeItem('cp_today');
     refreshCPUI();
-    alert('게스트 데이터가 리셋되었습니다.');
+    alert('Guest data has been reset.');
   }
 });
 
 /* ------------ Boot ------------ */
 (async function boot(){
   renderModeBox();
-  await hydrateAddressFromSessionOrWallet(); // 지갑 미연결이어도 주소 수화 시도
-  await refreshCPUI();                       // 첫 화면에서 cpToday(또는 cp fallback) 즉시 반영
+  await hydrateAddressFromSessionOrWallet();
+  await refreshCPUI();
 })();

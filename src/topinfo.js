@@ -1,12 +1,12 @@
-// topinfo.js — StaticJsonRpcProvider fallback + 안정화(재선언 보호, 전역 오염 최소화)
+// topinfo.js — opBNB dashboard helper (fail-soft, collision-safe, v5/v6 ethers compatible)
 ;(function (g) {
   'use strict';
 
-  // 이미 초기화되어 있으면 재선언/중복 바인딩 방지
+  // Avoid double-initialization
   if (g.__TopInfoInit) return;
   g.__TopInfoInit = true;
 
-  /* ================== 상수/ABI ================== */
+  // ---------- Config / ABI ----------
   const cA = {
     cyadexAddr: "0xa100276E165895d09A58f7ea27321943F50e7E61",
     betgp:      "0x35f7cfD9D3aE6Fdf1c080C3dd725EC68EB017caE",
@@ -36,7 +36,7 @@
     ]
   };
 
-  /* ================== 유틸 ================== */
+  // ---------- Small utils ----------
   function shortError(e) {
     let msg = e?.data?.message || e?.error?.message || e?.message || "Unknown error";
     if (typeof msg === "string" && msg.includes("execution reverted:"))
@@ -47,49 +47,110 @@
     const el = g.document?.getElementById?.(id);
     if (el) el.textContent = text;
   }
+  function hasAxios(){ return typeof g.axios === "function" || typeof g.axios === "object"; }
 
-  /* ================== BNB 가격 ================== */
-  async function fetchBNBPrice() {
-    try {
-      const r = await axios.get("https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT", { timeout: 4000 });
-      const p = parseFloat(r.data?.price);
-      if (!isNaN(p) && p > 0) return p;
-    } catch {}
-    try {
-      const r2 = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd", { timeout: 4000 });
-      const p2 = parseFloat(r2.data?.binancecoin?.usd);
-      if (!isNaN(p2) && p2 > 0) return p2;
-    } catch {}
-    throw new Error("Failed to fetch BNB price");
+  async function httpGetJSON(url, params = {}, timeoutMs = 4000){
+    // Prefer axios if present (to keep behavior consistent with other pages)
+    if (hasAxios()){
+      const r = await g.axios.get(url, { params, timeout: timeoutMs });
+      return r.data;
+    }
+    // Fallback: fetch with AbortController
+    const ctrl = ("AbortController" in g) ? new AbortController() : null;
+    const t = ctrl ? setTimeout(()=>ctrl.abort(), timeoutMs) : null;
+    try{
+      const qs = Object.keys(params).length ? "?" + new URLSearchParams(params).toString() : "";
+      const res = await fetch(url + qs, { signal: ctrl?.signal });
+      if (!res.ok) throw new Error(String(res.status));
+      return await res.json();
+    } finally {
+      if (t) clearTimeout(t);
+    }
   }
 
-  /* ================== RPC 헬스체크 & Provider ================== */
-  // ⚠️ 전역 재선언 방지: OPBNB_RPCS를 파일 스코프로 한정 (전역에 올리지 않음)
+  // ---------- BNB price (fail-soft with cache) ----------
+  async function fetchBNBPrice() {
+    // 1) CoinGecko
+    try {
+      const d = await httpGetJSON(
+        "https://api.coingecko.com/api/v3/simple/price",
+        { ids: "binancecoin", vs_currencies: "usd" },
+        4000
+      );
+      const p = parseFloat(d?.binancecoin?.usd);
+      if (!isNaN(p) && p > 0) return p;
+    } catch {}
+
+    // 2) Binance
+    try {
+      const d2 = await httpGetJSON(
+        "https://api.binance.com/api/v3/ticker/price",
+        { symbol: "BNBUSDT" },
+        4000
+      );
+      const p2 = parseFloat(d2?.price);
+      if (!isNaN(p2) && p2 > 0) return p2;
+    } catch {}
+
+    // 3) Cached value (30 min)
+    try {
+      const cached = localStorage.getItem("__bnb_usd_cache");
+      if (cached){
+        const obj = JSON.parse(cached);
+        if (obj && Date.now() - obj.ts < 30 * 60 * 1000) {
+          const pc = Number(obj.usd);
+          if (!isNaN(pc) && pc > 0) return pc;
+        }
+      }
+    } catch {}
+
+    // Fail-soft: return null (never throw)
+    return null;
+  }
+
+  // ---------- Provider (v5/v6 compatible) ----------
   const OPBNB_RPCS = [
     "https://opbnb-mainnet-rpc.bnbchain.org",
     "https://opbnb-rpc.publicnode.com",
     "https://opbnb.blockpi.network/v1/rpc/public",
     "https://1rpc.io/opbnb"
   ];
+  const NET_V6 = { chainId: 204, name: "opbnb" };
+  const NET_V5 = { chainId: 204, name: "opbnb" };
+
+  function makeReadProvider(url, timeoutMs = 4000){
+    // ethers v6 first
+    if (g.ethers && typeof g.ethers.JsonRpcProvider === "function") {
+      const p = new g.ethers.JsonRpcProvider(url, NET_V6);
+      // patch: no built-in timeout; we will race in health check
+      return p;
+    }
+    // ethers v5 fallback
+    if (g.ethers && g.ethers.providers && typeof g.ethers.providers.StaticJsonRpcProvider === "function") {
+      return new g.ethers.providers.StaticJsonRpcProvider({ url, timeout: timeoutMs }, NET_V5);
+    }
+    throw new Error("ethers.js not found");
+  }
+
+  async function healthCheck(p, timeoutMs){
+    return Promise.race([
+      p.getBlockNumber(),
+      new Promise((_, rej)=>setTimeout(()=>rej(new Error("timeout")), timeoutMs))
+    ]);
+  }
 
   async function pickHealthyRpc(timeoutMs = 4000) {
     for (const url of OPBNB_RPCS) {
       try {
-        const p = new ethers.providers.StaticJsonRpcProvider(
-          { url, timeout: timeoutMs },
-          { chainId: 204, name: "opbnb" }
-        );
-        await Promise.race([
-          p.getBlockNumber(),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), timeoutMs))
-        ]);
+        const p = makeReadProvider(url, timeoutMs);
+        await healthCheck(p, timeoutMs);
         return p;
       } catch {}
     }
-    throw new Error("No healthy opBNB RPC found");
+    // Fail-soft: return null (topData will handle)
+    return null;
   }
 
-  // 싱글톤 캐시(전역 충돌 없이 window에만 저장)
   let __readProvider = null;
   async function getReadProvider() {
     if (__readProvider) return __readProvider;
@@ -97,11 +158,14 @@
     return __readProvider;
   }
 
-  /* ================== 지갑/사인 ================== */
-  let signer2;
+  // ---------- Wallet / Signer (v5/v6 compatible) ----------
   async function ensureOpBNB(userProvider) {
+    // v6 BrowserProvider: getNetwork(); v5 Web3Provider: getNetwork()
     const net = await userProvider.getNetwork();
-    if (Number(net.chainId) === 204) return;
+    const cid = Number(net?.chainId ?? net?.chainId?.toString?.());
+    if (cid === 204) return;
+
+    if (!g.ethereum) throw new Error("No wallet found");
     try {
       await g.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0xCC" }] });
     } catch {
@@ -118,16 +182,29 @@
     }
   }
 
+  let __signer = null;
   async function initializeProvider() {
-    if (!g.ethereum) throw new Error("No wallet");
-    const userProvider = new ethers.providers.Web3Provider(g.ethereum, "any");
-    await userProvider.send("eth_requestAccounts", []);
-    await ensureOpBNB(userProvider);
-    signer2 = userProvider.getSigner();
-    return signer2;
+    if (!g.ethereum) throw new Error("No wallet found");
+    // v6
+    if (g.ethers && typeof g.ethers.BrowserProvider === "function") {
+      const userProvider = new g.ethers.BrowserProvider(g.ethereum);
+      await userProvider.send("eth_requestAccounts", []);
+      await ensureOpBNB(userProvider);
+      __signer = await userProvider.getSigner();
+      return __signer;
+    }
+    // v5
+    if (g.ethers && g.ethers.providers && typeof g.ethers.providers.Web3Provider === "function") {
+      const userProvider = new g.ethers.providers.Web3Provider(g.ethereum, "any");
+      await userProvider.send("eth_requestAccounts", []);
+      await ensureOpBNB(userProvider);
+      __signer = userProvider.getSigner();
+      return __signer;
+    }
+    throw new Error("ethers.js not found");
   }
 
-  /* ================== UI 헬퍼 ================== */
+  // ---------- UI helpers ----------
   const tokenLogos = {
     PAW: "https://puppi.netlify.app/images/paw.png",
     PUP: "https://puppi.netlify.app/images/pup.png"
@@ -145,36 +222,53 @@
     }
   }
 
-  /* ================== 퍼블릭 함수 ================== */
+  // ---------- Public functions (fail-soft) ----------
   async function topData() {
     try {
+      // Price (fail-soft)
       const bnb = await fetchBNBPrice();
-      setText("bPrice", bnb.toFixed(2));
-      setText("cPrice2", (1 / bnb).toFixed(4));
+      if (typeof bnb === "number" && bnb > 0) {
+        setText("bPrice", bnb.toFixed(2));
+        setText("cPrice2", (1 / bnb).toFixed(4));
+        try { localStorage.setItem("__bnb_usd_cache", JSON.stringify({ usd: bnb, ts: Date.now() })); } catch {}
+      } else {
+        setText("bPrice", "-");
+        setText("cPrice2", "-");
+      }
 
+      // Read provider (fail-soft)
       const provider = await getReadProvider();
-      const cyadex  = new ethers.Contract(cA.cyadexAddr, cB.cyadex, provider);
-      const bank    = new ethers.Contract(cA.mutbankAddr, cB.mutbank, provider);
+      if (!provider) {
+        console.warn("[TopInfo] No healthy opBNB RPC found. Skipping on-chain reads.");
+        return;
+      }
 
-      const [dexBal, holders] = await Promise.all([cyadex.balance(), bank.sum()]);
-      setText("Tvl", (Number(dexBal) / 1e18).toFixed(2));
-      setText("Sum", holders.toString());
+      // On-chain reads
+      const cyadex  = new g.ethers.Contract(cA.cyadexAddr, cB.cyadex, provider);
+      const bank    = new g.ethers.Contract(cA.mutbankAddr, cB.mutbank, provider);
+
+      const [dexBal, holders] = await Promise.allSettled([cyadex.balance(), bank.sum()]);
+      if (dexBal.status === "fulfilled") setText("Tvl", (Number(dexBal.value) / 1e18).toFixed(2));
+      else setText("Tvl", "-");
+
+      if (holders.status === "fulfilled") setText("Sum", holders.value.toString());
+      else setText("Sum", "-");
     } catch (e) {
-      console.error("topData error:", e);
-      alert(`Error: ${shortError(e)}`);
+      // Do not alert; do not throw (avoid breaking other pages)
+      console.warn("[TopInfo] topData soft-fail:", shortError(e));
     }
   }
 
   async function Tmemberjoin() {
     try {
-      await initializeProvider();
-      const bank = new ethers.Contract(cA.mutbankAddr, cB.mutbank, signer2);
+      const signer = __signer || await initializeProvider();
+      const bank = new g.ethers.Contract(cA.mutbankAddr, cB.mutbank, signer);
       const mento = g.document?.getElementById?.("Maddress")?.value || "";
       const tx = await bank.memberjoin(mento);
       await tx.wait();
-      alert("Signup Success!");
+      alert("Signup success!");
     } catch (e) {
-      alert(`Error: ${shortError(e)}`);
+      alert("Error: " + shortError(e));
     }
   }
 
@@ -185,10 +279,10 @@
         method: "wallet_watchAsset",
         params: { type: "ERC20", options: { address: cA.erc20, symbol: "PAW", decimals: 18 } }
       });
-      alert("PAW Token has been added to your wallet!");
+      alert("PAW token has been added to your wallet!");
       showTokenLogo("PAW");
     } catch (e) {
-      console.error(e); alert("Failed to add PAW Token");
+      console.warn(e); alert("Failed to add PAW token.");
     }
   }
 
@@ -199,22 +293,33 @@
         method: "wallet_watchAsset",
         params: { type: "ERC20", options: { address: "0x147ce247Ec2B134713fB6De28e8Bf4cAA5B4300C", symbol: "PUP", decimals: 0 } }
       });
-      alert("PUP Token has been added to your wallet!");
+      alert("PUP token has been added to your wallet!");
       showTokenLogo("PUP");
     } catch (e) {
-      console.error(e); alert("Failed to add PUP Token");
+      console.warn(e); alert("Failed to add PUP token.");
     }
   }
 
-  /* ================== 전역 노출 (중복 바인딩 방지) ================== */
-  if (!g.topData)      g.topData      = topData;
-  if (!g.Tmemberjoin)  g.Tmemberjoin  = Tmemberjoin;
-  if (!g.addTokenPAW)  g.addTokenPAW  = addTokenPAW;
-  if (!g.addTokenPUP)  g.addTokenPUP  = addTokenPUP;
+  // ---------- Collision-safe exports ----------
+  const NS = "TopInfo";
+  const api = { topData, Tmemberjoin, addTokenPAW, addTokenPUP, getReadProvider, initializeProvider };
+  g[NS] = g[NS] || api; // attach namespace
+  // Backward-compatible aliases (only if NOT already defined)
+  if (!g.topData)     g.topData     = topData;
+  if (!g.Tmemberjoin) g.Tmemberjoin = Tmemberjoin;
+  if (!g.addTokenPAW) g.addTokenPAW = addTokenPAW;
+  if (!g.addTokenPUP) g.addTokenPUP = addTokenPUP;
 
-  // 자동 실행(있을 때만)
+  // ---------- Safe auto-run ----------
   g.addEventListener?.("load", () => {
-    if (g.document?.getElementById?.("bPrice")) topData();
+    // Only run if these IDs exist on the page
+    const need = g.document?.getElementById?.("bPrice")
+              || g.document?.getElementById?.("cPrice2")
+              || g.document?.getElementById?.("Tvl")
+              || g.document?.getElementById?.("Sum");
+    if (need) {
+      Promise.resolve().then(()=> topData()).catch((e)=>console.warn("[TopInfo] autorun failed:", shortError(e)));
+    }
   });
 
 })(window);

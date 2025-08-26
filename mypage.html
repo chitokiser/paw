@@ -2,105 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
-  />
-  <meta name="theme-color" content="#0b0d14"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="description" content="Paw DAO · My Page"/>
   <link rel="shortcut icon" href="../images/logo.png"/>
   <title>Paw DAO · My Page</title>
 
   <!-- Bootstrap (single) -->
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-    crossorigin="anonymous"
-  />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"/>
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Protest+Guerrilla&display=swap"
-    rel="stylesheet"
-  />
-
-  <!-- Base CSS -->
+  <!-- Site base CSS -->
   <link rel="stylesheet" href="/css/main.css"/>
 
-  <!-- Mobile tuning -->
+  <!-- ⚠️ Scoped styles: only affect .mypage-scope -->
   <style>
-    :root {
-      --bg: #0b0d14;
-      --text: #e9eefc;
-      --muted: #a9b1c7;
-      --card: rgba(255,255,255,.06);
-      --border: rgba(255,255,255,.14);
-      --radius: 16px;
-      --tap: 48px; /* min touch target */
-    }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      padding-bottom: env(safe-area-inset-bottom); /* iOS */
-    }
-    .container,
-    .container-fluid { max-width: 760px; }
+    .mypage-scope .card { border-radius: 16px; }
+    .mypage-scope .card-header { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+    .mypage-scope .list-group-item { font-size: 15px; }
+    .mypage-scope .btn { min-height: 44px; border-radius: 12px; font-weight: 600; }
+    .mypage-scope .progress { height: 12px; border-radius: 10px; }
+    .mypage-scope #LevelBar { transition: width .3s ease; }
 
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      backdrop-filter: blur(6px);
-    }
-    .card-header h5 {
-      margin: 0;
-      font-size: clamp(18px, 2.6vw, 22px);
-      letter-spacing: .2px;
-    }
-    .list-group-item {
-      background: transparent;
-      color: var(--text);
-      border-color: var(--border);
-      font-size: clamp(14px, 2.4vw, 16px);
-    }
-    .btn {
-      min-height: var(--tap);
-      border-radius: 14px;
-      font-weight: 600;
-    }
-    .btn + .btn { margin-left: .5rem; }
-    .progress { height: 14px; border-radius: 10px; }
-    #LevelBar { transition: width .35s ease; }
-    .fw-bold { letter-spacing: .1px; }
-
-    /* Bottom action block for small screens */
+    /* Mobile stack buttons */
     @media (max-width: 576px) {
-      .stack-sm > * { width: 100% !important; margin: .25rem 0 !important; }
-      .btn-lg-sm { padding: .875rem 1rem; font-size: 1rem; }
-    }
-
-    /* Improve taps / avoid accidental 2x tap zoom */
-    button, input, a { touch-action: manipulation; }
-
-    /* Dark mode preference */
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #0b0d14; --text: #eef3ff; }
+      .mypage-scope .stack-sm > * { width: 100% !important; margin: .25rem 0 !important; }
+      .mypage-scope .btn-lg-sm { padding: .9rem 1rem; font-size: 1rem; }
+      .mypage-scope .list-group-item { font-size: 14px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Dynamic header -->
+  <!-- header from dashboard.html -->
   <div id="menu-placeholder" class="mb-3"></div>
 
-  <div class="container py-3 px-3">
+  <div class="container mypage-scope py-3 px-3">
     <div class="card shadow-sm">
-      <div class="card-header text-center">
-        <h5>My Page</h5>
+      <div class="card-header text-center bg-light">
+        <h5 class="m-0">My Page</h5>
       </div>
       <div class="card-body text-center">
 
@@ -112,33 +50,17 @@
         </ul>
 
         <div class="mb-3">
-          <button class="btn btn-outline-success w-100 btn-lg-sm" onclick="MemberLogin()">
-            Wallet Connection
-          </button>
+          <button class="btn btn-outline-success w-100 btn-lg-sm" onclick="MemberLogin()">Wallet Connection</button>
         </div>
 
         <ul class="list-group mb-3 text-start">
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>MyPAW</span><span><strong id="Mypaw">-</strong> PAW</span>
-          </li>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>MyPUP</span><span><strong id="Mypup">-</strong> PUP</span>
-          </li>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>Level</span><span id="Mylev">-</span>
-          </li>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>Experience</span><span id="Exp">-</span>
-          </li>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>EXP to Level Up</span><span id="Expneeded">-</span>
-          </li>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>GamePoints</span><span id="Mypoint">-</span>
-          </li>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span>Mentor</span><span id="Mymento">-</span>
-          </li>
+          <li class="list-group-item d-flex justify-content-between"><span>MyPAW</span><span><strong id="Mypaw">-</strong> PAW</span></li>
+          <li class="list-group-item d-flex justify-content-between"><span>MyPUP</span><span><strong id="Mypup">-</strong> PUP</span></li>
+          <li class="list-group-item d-flex justify-content-between"><span>Level</span><span id="Mylev">-</span></li>
+          <li class="list-group-item d-flex justify-content-between"><span>Experience</span><span id="Exp">-</span></li>
+          <li class="list-group-item d-flex justify-content-between"><span>EXP to Level Up</span><span id="Expneeded">-</span></li>
+          <li class="list-group-item d-flex justify-content-between"><span>GamePoints</span><span id="Mypoint">-</span></li>
+          <li class="list-group-item d-flex justify-content-between"><span>Mentor</span><span id="Mymento">-</span></li>
 
           <li class="list-group-item">
             <div class="d-grid gap-2 d-md-flex align-items-center">
@@ -154,63 +76,46 @@
           </li>
         </ul>
 
-        <p class="text-warning fw-bold mb-3 text-start">
-          Pup Number of exchanges = GamePoint * level / 1000
-        </p>
+        <p class="text-danger fw-bold mb-3 text-start">Pup Number of exchanges = GamePoint * level / 1000</p>
 
         <div class="d-flex stack-sm justify-content-between mb-3">
-          <button class="btn btn-outline-success w-100 btn-lg-sm" onclick="Bonuswithdraw()">
-            Game point change (PUP Token)
-          </button>
-          <button class="btn btn-outline-primary w-100 btn-lg-sm" id="fetchAddresses" onclick="fetchAddresses()">
-            The member who recommended me
-          </button>
+          <button class="btn btn-outline-success w-100 btn-lg-sm" onclick="Bonuswithdraw()">Game point change (PUP Token)</button>
+          <button class="btn btn-outline-primary w-100 btn-lg-sm" id="fetchAddresses" onclick="fetchAddresses()">The member who recommended me</button>
         </div>
 
         <ul id="addressList" class="list-group text-start mb-4"></ul>
 
         <div class="mt-3">
-          <button class="btn btn-outline-warning w-100 btn-lg-sm" onclick="Buff()">
-            5000GP + 5000EXP Free (1 time)
-          </button>
+          <button class="btn btn-outline-warning w-100 btn-lg-sm" onclick="Buff()">5000GP + 5000EXP Free (1 time)</button>
         </div>
 
         <hr class="my-4"/>
 
         <h6 class="fw-bold text-start">Recharge game points</h6>
-        <input
-          type="number"
-          id="Amount"
-          class="form-control mb-2"
-          placeholder="Enter PAW token 1 PAW = 1000 GP"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          min="1"
-          step="1"
-          required
-        />
+        <input type="number" id="Amount" class="form-control mb-2"
+               placeholder="Enter PAW token 1 PAW = 1000 GP"
+               inputmode="numeric" pattern="[0-9]*" min="1" step="1" required/>
         <button id="chargeButton" class="btn btn-primary w-100 btn-lg-sm">Charge</button>
         <p id="resultMessage" class="mt-3 text-center text-success"></p>
 
-        <!-- Token logo injected by topinfo.js (optional) -->
         <div id="tokenLogoContainer" class="mt-3"></div>
       </div>
     </div>
   </div>
 
-  <!-- Footer -->
+  <!-- footer -->
   <div id="footer" class="container-fluid px-0 mt-4"></div>
 
-  <!-- Vendor libs (defer; order preserved) -->
+  <!-- scripts (single copies) -->
   <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
-  <!-- App scripts -->
+  <!-- app scripts -->
   <script defer src="../src/topinfo.js"></script>
   <script defer src="../src/mypage.js"></script>
 
-  <!-- Deferred header/footer fetch after DOM ready -->
+  <!-- fetch header/footer after DOM ready -->
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       fetch('dashboard.html')
@@ -224,7 +129,6 @@
         .catch(err => console.error('Error loading footer:', err));
     });
 
-    // Optionally run topData() after full load if present
     window.addEventListener('load', () => {
       if (typeof topData === 'function') topData();
     });

@@ -1,25 +1,43 @@
 // /geolocation/js/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+
+import {
+  getAuth, signInAnonymously, onAuthStateChanged,
+  setPersistence, browserLocalPersistence, inMemoryPersistence
+} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-/* 1) Firebase Web App 설정 (항상 최상단) */
-const firebaseConfig = {
-  apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
-  authDomain: "puppi-d67a1.firebaseapp.com",
-  projectId: "puppi-d67a1",
-  storageBucket: "puppi-d67a1.appspot.com",
-  messagingSenderId: "552900371836",
-  appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
-  measurementId: "G-9TZ81RW0PL"
+
+export const CFG = {
+  firebase: {
+    apiKey: "AIzaSyCoeMQt7UZzNHFt22bnGv_-6g15BnwCEBA",
+    authDomain: "puppi-d67a1.firebaseapp.com",
+    projectId: "puppi-d67a1",
+    storageBucket: "puppi-d67a1.appspot.com",
+    messagingSenderId: "552900371836",
+    appId: "1:552900371836:web:88fb6c6a7d3ca3c84530f9",
+    measurementId: "G-9TZ81RW0PL"
+  },
+  feature: {
+    guestMode: true,   // 게스트 허용 (쓰기 금지 정책은 Rules/가드에서 처리)
+  }
 };
 
-/* 2) 앱 초기화 + export */
-export const app  = initializeApp(firebaseConfig);
+export const app  = initializeApp(CFG.firebase);
+export const auth = getAuth(app);
 export const db   = getFirestore(app);
 
-
-/* 3) 로그인 세션을 로컬에 유지 (권장) */
-try {
-  await setPersistence(auth, browserLocalPersistence);
-} catch (e) {
-  console.warn('[firebase] setPersistence fail:', e);
+async function ensurePersistence(){
+  try { await setPersistence(auth, browserLocalPersistence); }
+  catch(e){ console.warn('[auth] localPersistence fail → inMemory', e?.code || e); await setPersistence(auth, inMemoryPersistence); }
 }
+
+export const authReady = (async () => {
+  await ensurePersistence();
+  if (!auth.currentUser && CFG.feature.guestMode) {
+    try { await signInAnonymously(auth); }
+    catch(e){ console.error('[auth] anon fail', e); }
+  }
+  await new Promise(res => {
+    const unsub = onAuthStateChanged(auth, () => { unsub?.(); res(); });
+  });
+})();

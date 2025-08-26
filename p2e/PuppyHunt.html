@@ -1,127 +1,442 @@
+  <!-- PuppyHunt.html -->
 <!DOCTYPE html>
 <html lang="en">
-<head> 
-<meta charset="UTF-8" /> 
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/> 
-<title>Puppy Hunter</title> 
-<script src="https://cdn.tailwindcss.com"></script>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Puppy Hunt · PAW DAO</title>
+
+  <!-- Bootstrap (single) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"/>
+
+  <style>
+    :root{
+      --bg:#0b0d14; --text:#eef3ff; --muted:#a9b1c7;
+      --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.14);
+      --radius:16px; --tap:48px;
+      --accent:#43d17a; --danger:#ff5b6e; --warn:#ffb25c; --info:#38bdf8;
+    }
+    body{ background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; }
+    .container{ max-width: 920px; }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); backdrop-filter: blur(6px); }
+    .card-header{ border-bottom:1px solid var(--border); }
+    .btn{ min-height:var(--tap); border-radius:14px; font-weight:600; }
+    .badge-soft{ background:rgba(255,255,255,.08); border:1px solid var(--border); }
+    .grid-5{ display:grid; grid-template-columns: repeat(5,1fr); gap:10px; }
+    .grid-2{ display:grid; grid-template-columns: repeat(2,1fr); gap:10px; }
+    @media (max-width: 576px){
+      .grid-5{ grid-template-columns: repeat(3,1fr); }
+      .grid-2{ grid-template-columns: 1fr; }
+      .stack-sm>*{ width:100%!important; margin:.25rem 0!important; }
+    }
+    #log{ max-height:220px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; background:rgba(0,0,0,.25); border-radius:12px; padding:10px; }
+    .mini{ font-size:12px; color:var(--muted); }
+    .puppy-img{ width:92px; height:92px; object-fit:contain; border-radius:12px; background: rgba(255,255,255,.05); }
+    .pill{ background:rgba(255,255,255,.08); border:1px solid var(--border); border-radius:999px; padding:.25rem .6rem; font-size:12px; }
+    .result-win{ color:#79ffa0; font-weight:800; }
+    .result-lose{ color:#ff8aa0; font-weight:800; }
+
+    /* Fullscreen hunt animation overlay */
+    #huntOverlay{
+      position: fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,.45); backdrop-filter: blur(2px); z-index: 9999;
+    }
+    #huntFrame{ width:min(70vw, 360px); height:auto; image-rendering:-webkit-optimize-contrast; }
+  </style>
 </head>
-<body class="bg-gray-100"> 
-<style> 
-#huntOverlay {
-  display: none;                  /* 기본 숨김 상태 */
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7); /* 어둡게 처리 */
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
+<body>
 
-#huntOverlay img {
-  width: 300px;
-  height: auto;
-}
+  <div class="container py-3">
 
-</style>
-  
-<audio id="huntSound" src="/sounds/huntSound.mp3" preload="auto"></audio>
+    <!-- Header / Stats -->
+    <div class="card mb-3">
+      <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+          <div class="mini">Global Jackpot (GP)</div>
+          <div class="h4 mb-0"><span id="jackValue">…</span></div>
+        </div>
+        <div class="stack-sm d-flex gap-2">
+          <!-- Home like PuppyWar -->
+          <a href="WithPuppy.html" class="btn btn-outline-info">🏠 Puppy Home</a>
+          <button id="btnConnect" class="btn btn-outline-light">🔌 Connect Wallet</button>
+          <button id="btnRefresh" class="btn btn-outline-secondary">↻ Refresh</button>
+        </div>
+      </div>
+    </div>
 
-<!-- Title --> 
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-6 p-4"> 
-<a href="WithPuppy.html" class="block w-full bg-gray-200 text-gray-700 text-center font-medium py-2 rounded-lg hover:bg-gray-300 transition">
-🏠 Puppy Home
-</a>
-<h1 class="text-2xl font-bold text-pink-500">🐾 Hunt(-100GP)</h1>
-<p class="text-xs text-gray-600">Try hunting with my pup</p>
-<span class="text-xs text-gray-500 ml-2">JackPot: <span id="jackValue">0</span>
-</div>
+    <!-- My Puppy -->
+    <div class="card mb-3">
+      <div class="card-header"><strong>My Puppy</strong></div>
+      <div class="card-body d-flex align-items-center gap-3">
+        <img id="myPuppyImg" class="puppy-img" src="/images/puppy/0.png" alt="My Puppy"/>
+        <div class="flex-grow-1">
+          <div class="mini">Breed</div>
+          <div id="myBreed" class="h5 mb-2">—</div>
+          <div class="mini">🐻 Bear</div>
+          <div id="mySp" class="h6 mb-0">0</div>
+        </div>
+      </div>
+    </div>
 
-<!-- My Puppy/My Info -->
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4 flex flex-col items-center">
-<img id="myPuppyImg" src="/images/puppy/0.png" class="w-16 h-16 rounded-full bg-gray-200" />
-<div class="mt-2 text-xs">My Puppy Breed: <span id="myBreed" class="font-bold">-</span></div> 
-<div class="text-xs text-gray-500">🐻 Bear: <span id="mySp" class="font-bold">0</span></div> 
-</div> 
+    <!-- Hunting -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <strong>Hunt (consumes 100 GP)</strong>
+        <span class="pill">Participation fee: <strong class="ms-1">100</strong> GP</span>
+      </div>
+      <div class="card-body">
+        <div class="mini mb-2">Collect animals. When you have <strong>10+</strong> of each of the 5 types, you can sell them all.</div>
 
-<!-- Hunting information and hunting --> 
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4"> 
-<div class="mb-2 text-xs text-gray-500">Participation fee (1 time): <span id="huntPay">1</span> GP</div> 
-<button onclick="hunting()" class="w-full bg-pink-500 text-white font-semibold py-2 rounded hover:bg-pink-600 transition mb-2">Hunt</button> 
-<div class="mt-2 text-xs text-gray-400">
-<span class="font-semibold text-pink-500">* All 5 types of animals can be sold if you have 10 or more</span>
-</div>
-<div class="grid grid-cols-5 gap-2 mt-4 text-xs">
-<div>
-<div class="font-bold">🐰 Rabbit</div>
-<span id="prey0">0</span>
-</div>
-<div>
-<div class="font-bold">🦝 Raccoon</div>
-<span id="prey1">0</span>
-</div>
-<div>
-<div class="font-bold">🦌 Deer</div>
-<span id="prey2">0</span>
-</div>
-<div>
-<div class="font-bold">🦊 Fox</div>
-<span id="prey3">0</span>
-</div>
-<div>
-<div class="font-bold">🐗 Boar</div>
-<span id="prey4">0</span>
-</div>
-</div>
-<!-- 애니메이션 출력 영역 -->
-<div id="huntOverlay">
-  <img id="huntFrame" src="/images/puppy/hunt/1.png" alt="Hunting Animation">
-</div>
+        <!-- Inventory -->
+        <div class="grid-5 text-center">
+          <div><div class="mini">🐰 Rabbit</div><div class="h5" id="prey0">0</div></div>
+          <div><div class="mini">🦝 Raccoon</div><div class="h5" id="prey1">0</div></div>
+          <div><div class="mini">🦌 Deer</div><div class="h5" id="prey2">0</div></div>
+          <div><div class="mini">🦊 Fox</div><div class="h5" id="prey3">0</div></div>
+          <div><div class="mini">🐗 Boar</div><div class="h5" id="prey4">0</div></div>
+        </div>
 
+        <div class="d-flex gap-2 mt-3 stack-sm">
+          <button id="btnHunt" class="btn btn-success w-100">🗡️ Hunt</button>
+          <button id="btnSellAnimals" class="btn btn-primary w-100">📦 Sell Animals</button>
+          <button id="btnSellBear" class="btn btn-warning w-100">🐻 Sell Bear</button>
+        </div>
 
-<button onclick="sellPrey()" class="mt-4 w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition">Sell Animals</button>
-<div class="mt-2 text-xs text-gray-400">
-<span class="font-semibold text-pink-500">*Can be sold when collecting 10 bears</span>
-</div>
-<button onclick="spWithdraw()" class="mt-2 w-full bg-yellow-500 text-white py-2 rounded hover:bg-yellow-600 transition">Sell Bear</button>
-</div>
+        <div class="mini mt-3 text-warning">* Bears can be sold when you collect 10 bears.</div>
+      </div>
+    </div>
 
-<!-- Jackpot and Reward Information -->
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4">
-<div class="font-bold text-pink-600 mb-2">Bear Price (10): <span id="jackpot">0</span> GP</div>
-<div class="grid grid-cols-2 gap-2 text-xs text-gray-700">
-<div>Rabbit Price (10): <span id="getprey1">-</span> GP</div>
-<div>Raccoon Price (10): <span id="getprey2">-</span> GP</div>
-<div>Deer Price (10): <span id="getprey3">-</span> GP</div>
-<div>Fox Price (10): <span id="getprey4">-</span> GP</div>
-<div>Boar Price (10): <span id="getprey5">-</span> GP</div>
-</div>
-<div class="mt-2 text-xs text-gray-500">* Rewards vary depending on the jackpot</div>
-</div>
+    <!-- Prices & Jackpot(10) -->
+    <div class="card mb-3">
+      <div class="card-header"><strong>Prices & Jackpot (per 10)</strong></div>
+      <div class="card-body">
+        <div class="h6">Bear Price (10): <span id="jackpot">0</span> GP</div>
+        <div class="grid-2 mt-2">
+          <div>Rabbit Price (10): <strong id="getprey1">-</strong> GP</div>
+          <div>Raccoon Price (10): <strong id="getprey2">-</strong> GP</div>
+          <div>Deer Price (10): <strong id="getprey3">-</strong> GP</div>
+          <div>Fox Price (10): <strong id="getprey4">-</strong> GP</div>
+          <div>Boar Price (10): <strong id="getprey5">-</strong> GP</div>
+        </div>
+        <div class="mini mt-2">* Rewards vary depending on the jackpot.</div>
+      </div>
+    </div>
 
-<!-- Game Log -->
-<div class="card-body text-left bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4">
-<h3 class="font-semibold text-md mb-2">📜 Game Log</h3>
-<div id="log" class="text-xs text-gray-500 max-h-32 overflow-auto"></div>
-</div>
+    <!-- Game Log -->
+    <div class="card mb-4">
+      <div class="card-header"><strong>Game Log</strong></div>
+      <div class="card-body">
+        <div id="log">Ready.</div>
+      </div>
+    </div>
 
-<!-- (Optional) Connect Wallet -->
-<div class="text-center mt-6 mb-10">
-<button onclick="connectWallet()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 text-sm px-4 py-2 rounded">Connect Wallet</button>
-</div>
+  </div>
 
-<!-- JS libraries (ethers, etc.) and main code -->
+  <!-- Hunt animation + sound -->
+  <div id="huntOverlay">
+    <img id="huntFrame" src="/images/puppy/hunt/1.png" alt="Hunt Animation"/>
+  </div>
+  <audio id="huntSound" src="/sounds/huntSound.mp3" preload="auto"></audio>
 
-</main>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script> 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js" integrity="sha384-..." crossorigin="anonymous"></script> 
+  <!-- Vendor scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script> 
-<script src="..\src\PuppyHunt.js"></script>
+  <!-- App -->
+  <script>
+  (function(g){
+    const { ethers } = g;
 
+    /* ---------- Contract: address & ABI ---------- */
+    const CONTRACT_ADDRESS = "0x27c00bEa1D140851b63598824FF7E98C11618289";
+    const ABI = [
+      "function myprey(address) view returns(uint[5] memory prey, uint8 sp, address owner)",
+      "function getPreyArr(address) view returns(uint[5] memory)",
+      "function getSp(address) view returns(uint8)",
+      "function getMyPreyOwner(address) view returns(address)",
+      "function getPreyAt(address,uint8) view returns(uint)",
+      "function getmypuppy(address) view returns(uint8)",
+      "function getjack(address) view returns(uint256)",
+      "function jack() view returns(uint256)",
+      "function getreward() view returns(uint256)",
+      "function getprey1() view returns(uint256)",
+      "function getprey2() view returns(uint256)",
+      "function getprey3() view returns(uint256)",
+      "function getprey4() view returns(uint256)",
+      "function getprey5() view returns(uint256)",
+      "function Hunting() external",
+      "function sellprey() external",
+      "function spWithdraw() external",
+      "event Bonus(address indexed user, uint256 amount, uint256 reward)",
+      "event RewardGiven(address indexed user, uint8 amount, uint8 kind)",
+      "event getdepo(uint256 pay)",
+      "event Sp(uint8 bear)"
+    ];
+
+    /* ---------- RPC fallback (read) ---------- */
+    const OPBNB_RPCS = [
+      "https://opbnb-mainnet-rpc.bnbchain.org",
+      "https://opbnb-rpc.publicnode.com",
+      "https://opbnb.blockpi.network/v1/rpc/public",
+      "https://1rpc.io/opbnb"
+    ];
+    let __readProvider=null, __readContract=null;
+
+    async function pickHealthyRpc(timeoutMs=4000){
+      for(const url of OPBNB_RPCS){
+        try{
+          const p = new ethers.providers.StaticJsonRpcProvider({url, timeout:timeoutMs}, {chainId:204, name:"opbnb"});
+          await Promise.race([p.getBlockNumber(), new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")), timeoutMs))]);
+          return p;
+        }catch{}
+      }
+      throw new Error("No healthy opBNB RPC found.");
+    }
+    async function getRead(){
+      if(__readProvider && __readContract) return {provider:__readProvider, contract:__readContract};
+      __readProvider = await pickHealthyRpc();
+      __readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, __readProvider);
+      return {provider:__readProvider, contract:__readContract};
+    }
+
+    /* ---------- Wallet (write) ---------- */
+    let signer=null, writeContract=null, userAddress=null;
+
+    async function ensureOpBNB(userProvider){
+      const net = await userProvider.getNetwork();
+      if (Number(net.chainId) === 204) return;
+      try{
+        await g.ethereum.request({ method:"wallet_switchEthereumChain", params:[{ chainId:"0xCC" }] });
+      }catch{
+        await g.ethereum.request({
+          method:"wallet_addEthereumChain",
+          params:[{
+            chainId:"0xCC",
+            rpcUrls:["https://opbnb-mainnet-rpc.bnbchain.org"],
+            chainName:"opBNB",
+            nativeCurrency:{ name:"BNB", symbol:"BNB", decimals:18 },
+            blockExplorerUrls:["https://opbnbscan.com"]
+          }]
+        });
+      }
+    }
+
+    async function connectWallet(){
+      if(!g.ethereum){ alert("Please install a wallet (MetaMask/Rabby)."); return null; }
+      const provider = new ethers.providers.Web3Provider(g.ethereum, "any");
+      await provider.send("eth_requestAccounts", []);
+      await ensureOpBNB(provider);
+      signer = provider.getSigner();
+      userAddress = await signer.getAddress();
+      writeContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      log("🔌 Connected: " + userAddress);
+      await refreshAll();
+      return userAddress;
+    }
+
+    /* ---------- Helpers ---------- */
+    function bnToStr(v){ try{ return ethers.BigNumber.isBigNumber(v) ? v.toString() : String(v); }catch{ return String(v); } }
+    function log(msg){
+      const box = document.getElementById("log");
+      box.innerHTML = `<div>${new Date().toLocaleTimeString()} ${msg}</div>` + box.innerHTML;
+    }
+    function shortError(e){
+      const m = e?.message || "Unknown";
+      if (m.includes("Requires 10 or more")) return "Not enough game items.";
+      if (m.includes("Special items are lacking")) return "Not enough special items.";
+      if (m.includes("No Puppy")) return "No puppy.";
+      if (m.includes("Not enough game points")) return "Not enough GP.";
+      return m.split("\\n")[0];
+    }
+
+    /* ---------- Renders ---------- */
+    async function updateJackValue(){
+      try{
+        const { contract } = await getRead();
+        const v = await contract.jack();
+        // Display as integer string (avoid unsafe Number overflow)
+        document.getElementById("jackValue").textContent = bnToStr(v);
+      }catch(e){
+        document.getElementById("jackValue").textContent = "Unknown";
+      }
+    }
+
+    async function renderUser(){
+      try{
+        if(!userAddress) return;
+        const { contract } = await getRead();
+        const breed = await contract.getmypuppy(userAddress);
+        document.getElementById("myBreed").textContent = bnToStr(breed);
+        document.getElementById("myPuppyImg").src = `/images/puppy/${Number(breed)}.png`;
+
+        const sp = await contract.getSp(userAddress);
+        document.getElementById("mySp").textContent = bnToStr(sp);
+
+        const arr = await contract.getPreyArr(userAddress);
+        for(let i=0;i<5;i++){
+          const el = document.getElementById("prey"+i);
+          if(el) el.textContent = bnToStr(arr[i]);
+        }
+      }catch(e){
+        for(let i=0;i<5;i++){ const el = document.getElementById("prey"+i); if(el) el.textContent = "?"; }
+        document.getElementById("mySp").textContent = "?";
+        log("⚠️ Failed to load my info.");
+      }
+    }
+
+    async function renderPreyPrices(){
+      try{
+        const { contract } = await getRead();
+        const p1 = await contract.getprey1();
+        const p2 = await contract.getprey2();
+        const p3 = await contract.getprey3();
+        const p4 = await contract.getprey4();
+        const p5 = await contract.getprey5();
+        document.getElementById("getprey1").textContent = bnToStr(p1);
+        document.getElementById("getprey2").textContent = bnToStr(p2);
+        document.getElementById("getprey3").textContent = bnToStr(p3);
+        document.getElementById("getprey4").textContent = bnToStr(p4);
+        document.getElementById("getprey5").textContent = bnToStr(p5);
+      }catch(e){
+        ["getprey1","getprey2","getprey3","getprey4","getprey5"].forEach(id=>document.getElementById(id).textContent="-");
+        log("⚠️ Failed to load animal prices.");
+      }
+    }
+
+    async function renderJackpot10(){
+      try{
+        if(!userAddress) return;
+        const { contract } = await getRead();
+        const j = await contract.getjack(userAddress);
+        document.getElementById("jackpot").textContent = bnToStr(j);
+      }catch(e){
+        document.getElementById("jackpot").textContent = "0";
+      }
+    }
+
+    /* ---------- Actions ---------- */
+    async function hunting(){
+      if(!writeContract) await connectWallet();
+      try{
+        log("⏳ Sending hunting transaction…");
+        const tx = await writeContract.Hunting();
+        await playHuntAnimation();
+        const receipt = await tx.wait();
+        log("✅ Hunting success! TX: " + tx.hash);
+        parseEvents(receipt);
+        await refreshAll();
+      }catch(e){
+        log("❌ Hunting failed: " + shortError(e));
+        alert("Hunting failed: " + shortError(e));
+      }
+    }
+
+    async function sellPrey(){
+      if(!writeContract) await connectWallet();
+      try{
+        log("⏳ Sending sell transaction…");
+        const tx = await writeContract.sellprey();
+        const receipt = await tx.wait();
+        log("✅ Sell success! TX: " + tx.hash);
+        parseEvents(receipt);
+        await refreshAll();
+      }catch(e){
+        log("❌ Sell failed: " + shortError(e));
+        alert("Sell failed: " + shortError(e));
+      }
+    }
+
+    async function spWithdraw(){
+      if(!writeContract) await connectWallet();
+      try{
+        log("⏳ Sending bear sell transaction…");
+        const tx = await writeContract.spWithdraw();
+        const receipt = await tx.wait();
+        log("✅ Bear sell success! TX: " + tx.hash);
+        parseEvents(receipt);
+        await refreshAll();
+      }catch(e){
+        log("❌ Bear sell failed: " + shortError(e));
+        alert("Bear sell failed: " + shortError(e));
+      }
+    }
+
+    /* ---------- Events parsing ---------- */
+    function parseEvents(receipt){
+      const iface = new ethers.utils.Interface(ABI);
+      const names = ["rabbit","raccoon","deer","fox","boar"];
+      for(const lg of receipt.logs){
+        try{
+          const parsed = iface.parseLog(lg);
+          if(parsed.name === "RewardGiven"){
+            const [, amount, kind] = parsed.args;
+            const label = names[Number(kind)] ?? String(kind);
+            log(`🎯 Hunting Result: ${bnToStr(amount)} (${label})`);
+          }
+          if(parsed.name === "Bonus"){
+            const [, amount, reward] = parsed.args;
+            log(`🎁 Bonus: ${bnToStr(amount)} GP (ability ${bnToStr(reward)})`);
+          }
+          if(parsed.name === "getdepo"){
+            log("💰 Reward GP paid!");
+          }
+          if(parsed.name === "Sp"){
+            const [bear] = parsed.args;
+            log(`🐻 ${bnToStr(bear)} bears!`);
+          }
+        }catch{}
+      }
+    }
+
+    /* ---------- Animation ---------- */
+    async function playHuntAnimation(){
+      const overlay = document.getElementById("huntOverlay");
+      const frame = document.getElementById("huntFrame");
+      overlay.style.display = "flex";
+      try{ const snd = document.getElementById("huntSound"); snd.currentTime=0; snd.play().catch(()=>{}); }catch{}
+      let cur=1, max=9;
+      await new Promise((resolve)=>{
+        const itv = setInterval(()=>{
+          frame.src = `/images/puppy/hunt/${cur}.png`;
+          cur++;
+          if(cur>max){
+            clearInterval(itv);
+            setTimeout(()=>{ overlay.style.display="none"; resolve(); }, 200);
+          }
+        }, 180);
+      });
+    }
+
+    /* ---------- Refresh all ---------- */
+    async function refreshAll(){
+      await updateJackValue();
+      await renderUser();
+      await renderPreyPrices();
+      await renderJackpot10();
+    }
+
+    /* ---------- Bindings ---------- */
+    document.getElementById("btnConnect").addEventListener("click", connectWallet);
+    document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+    document.getElementById("btnHunt").addEventListener("click", hunting);
+    document.getElementById("btnSellAnimals").addEventListener("click", sellPrey);
+    document.getElementById("btnSellBear").addEventListener("click", spWithdraw);
+
+    /* ---------- Boot ---------- */
+    g.addEventListener("load", async ()=>{
+      try{
+        await updateJackValue();
+        // light auto-connect if already selected
+        if (g.ethereum && g.ethereum.selectedAddress) await connectWallet();
+        else await refreshAll();
+        // keep header jackpot fresh
+        setInterval(updateJackValue, 3000);
+      }catch(e){ log("⚠️ Initial load failed."); }
+    });
+
+    // (Optional) expose for console
+    g.PHunt = { connectWallet, refreshAll, hunting, sellPrey, spWithdraw };
+  })(window);
+  </script>
 </body>
 </html>

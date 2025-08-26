@@ -1,11 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PuppyRescue</title>
   <style>
-    body { background: #cce7ff; display: flex; flex-direction: column; align-items: center; font-family: Arial, sans-serif; margin: 0; }
+    body {
+      background: #cce7ff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
     #scoreboard { margin: 10px; font-size: 18px; font-weight: bold; }
     canvas {
       position: relative;
@@ -15,7 +22,6 @@
       width: 90vw;
       max-width: 400px;
     }
-
     #startBtn, #restartBtn {
       margin: 10px;
       padding: 10px 20px;
@@ -54,10 +60,7 @@
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
       transition: background 0.1s, transform 0.1s;
     }
-    .controls .btn:active {
-      background: rgba(255, 255, 255, 1);
-      transform: scale(0.95);
-    }
+    .controls .btn:active { background: rgba(255, 255, 255, 1); transform: scale(0.95); }
 
     .up    { grid-column: 2; grid-row: 1; }
     .left  { grid-column: 1; grid-row: 2; }
@@ -67,10 +70,8 @@
     #flashOverlay {
       display: none;
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       background: white;
       opacity: 0;
       pointer-events: none;
@@ -80,18 +81,20 @@
 </head>
 <body>
   <a href="WithPuppy.html" class="block w-full bg-gray-200 text-gray-700 text-center font-medium py-2 rounded-lg hover:bg-gray-300 transition">🏠 Puppy Home</a>
-  <div id="scoreboard">Number of puppies saved: 0</div>
+
+  <div id="scoreboard">Rescues: 0</div>
+
   <select id="skinSelect">
     <option value="1">Puppy 1</option>
     <option value="2">Puppy 2</option>
     <option value="3">Puppy 3</option>
   </select>
 
-  <button id="startBtn">게임 시작</button>
-  <button id="restartBtn" style="display:none;">다시하기</button>
+  <button id="startBtn">Start Game</button>
+  <button id="restartBtn" style="display:none;">Restart</button>
 
   <canvas id="gameCanvas"></canvas>
-  <p>10 rescue mission completed (testing..)</p>
+  <p>Mission goal: rescue 10 puppies (testing)</p>
 
   <div class="controls">
     <button class="btn up" onclick="setDirection('UP')">&#9650;</button>
@@ -103,7 +106,7 @@
   <div id="flashOverlay"></div>
 
   <script>
-    // ---------------- 게임 전역 변수 ----------------
+    // ---------------- Globals ----------------
     let score = 0;
     let snake = [];
     let direction = null;
@@ -112,7 +115,7 @@
     let gameInterval = null;
     const MISSION_TARGET = 10;
 
-    // ---------------- 캔버스 초기화 ----------------
+    // ---------------- Canvas ----------------
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
     let box = 20;
@@ -124,10 +127,10 @@
       const size = Math.min(window.innerWidth * 0.9, 400);
       canvas.width = size;
       canvas.height = size;
-      box = size / 20;
+      box = size / 20; // 20x20 grid
     }
 
-    // ---------------- 스킨 선택 ----------------
+    // ---------------- Skins ----------------
     let selectedSkin = localStorage.getItem("dogSkin") || "1";
     document.getElementById("skinSelect").value = selectedSkin;
 
@@ -137,17 +140,17 @@
     const dogBodies = [];
 
     function loadHeadImage() {
-      dogHead.src = `/images/dogs/${selectedSkin}.png`;
+      dogHead.src = `../images/dogs/${selectedSkin}.png`;
     }
 
     function loadImages(callback) {
       loadHeadImage();
-      rescueDog.src = `/images/dogs/rescue.png`;
-      watcherImg.src = `/images/dogs/watcher.png`;
+      rescueDog.src = `../images/dogs/rescue.png`;
+      watcherImg.src = `../images/dogs/watcher.png`;
       dogBodies.length = 0;
       for (let i = 1; i <= 10; i++) {
         const img = new Image();
-        img.src = `/images/dogs/body_${i}.png`;
+        img.src = `../images/dogs/body_${i}.png`;
         dogBodies.push(img);
       }
       setTimeout(callback, 200);
@@ -159,7 +162,7 @@
       loadHeadImage();
     });
 
-    // ---------------- 방향 입력 ----------------
+    // ---------------- Input ----------------
     document.addEventListener("keydown", e => {
       if (e.key === "ArrowLeft" && direction !== "RIGHT") direction = "LEFT";
       else if (e.key === "ArrowUp" && direction !== "DOWN") direction = "UP";
@@ -167,7 +170,7 @@
       else if (e.key === "ArrowDown" && direction !== "UP") direction = "DOWN";
     });
 
-    // 터치 입력
+    // Touch swipe (mobile)
     let touchStartX = 0, touchStartY = 0;
     canvas.addEventListener("touchstart", e => {
       touchStartX = e.touches[0].clientX;
@@ -192,14 +195,14 @@
       else if (dir === "DOWN" && direction !== "UP") direction = "DOWN";
     }
 
-    // ---------------- 게임 로직 ----------------
+    // ---------------- Game Loop ----------------
     function startGame() {
       score = 0;
       snake = [{ x: 9 * box, y: 9 * box }];
       direction = null;
       watchers = [];
       placeFood();
-      document.getElementById("scoreboard").textContent = `Number of puppies saved: 0`;
+      document.getElementById("scoreboard").textContent = `Rescues: 0`;
       document.getElementById("restartBtn").style.display = "none";
       clearInterval(gameInterval);
       gameInterval = setInterval(draw, 160);
@@ -215,8 +218,12 @@
     function placeFood() {
       let valid = false;
       while (!valid) {
-        const pos = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
-        if (!snake.some(s => s.x === pos.x && s.y === pos.y) && !watchers.some(w => w.x === pos.x && w.y === pos.y)) {
+        const pos = {
+          x: Math.floor(Math.random() * 20) * box,
+          y: Math.floor(Math.random() * 20) * box
+        };
+        if (!snake.some(s => s.x === pos.x && s.y === pos.y) &&
+            !watchers.some(w => w.x === pos.x && w.y === pos.y)) {
           food = pos;
           valid = true;
         }
@@ -226,8 +233,13 @@
     function addWatcher() {
       let valid = false;
       while (!valid) {
-        const pos = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
-        if (!snake.some(s => s.x === pos.x && s.y === pos.y) && !(pos.x === food.x && pos.y === food.y) && !watchers.some(w => w.x === pos.x && w.y === pos.y)) {
+        const pos = {
+          x: Math.floor(Math.random() * 20) * box,
+          y: Math.floor(Math.random() * 20) * box
+        };
+        if (!snake.some(s => s.x === pos.x && s.y === pos.y) &&
+            !(pos.x === food.x && pos.y === food.y) &&
+            !watchers.some(w => w.x === pos.x && w.y === pos.y)) {
           watchers.push(pos);
           valid = true;
         }
@@ -236,10 +248,14 @@
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // head & body
       ctx.drawImage(dogHead, snake[0].x, snake[0].y, box, box);
       for (let i = 1; i < snake.length; i++) {
         ctx.drawImage(dogBodies[i % dogBodies.length], snake[i].x, snake[i].y, box, box);
       }
+
+      // rescue target & watchers
       ctx.drawImage(rescueDog, food.x, food.y, box, box);
       watchers.forEach(w => ctx.drawImage(watcherImg, w.x, w.y, box, box));
 
@@ -248,24 +264,28 @@
       const nx = snake[0].x + (direction === "LEFT" ? -box : direction === "RIGHT" ? box : 0);
       const ny = snake[0].y + (direction === "UP" ? -box : direction === "DOWN" ? box : 0);
 
-      if (nx < 0 || ny < 0 || nx >= canvas.width || ny >= canvas.height || snake.some(s => s.x === nx && s.y === ny)) {
-        endGame(`벽이나 몸에 부딪힘! 총 ${score}마리 구조`);
+      // wall / self collision
+      if (nx < 0 || ny < 0 || nx >= canvas.width || ny >= canvas.height ||
+          snake.some(s => s.x === nx && s.y === ny)) {
+        endGame(`You hit a wall or yourself! Total rescues: ${score}`);
         return;
       }
 
+      // watcher collision
       if (watchers.some(w => w.x === nx && w.y === ny)) {
-        endGame('Caught by the watcher! Game over');
+        endGame('Caught by a watcher! Game over.');
         return;
       }
 
+      // rescued!
       if (nx === food.x && ny === food.y) {
         score++;
-        document.getElementById("scoreboard").textContent = `Number of puppies saved: ${score}`;
+        document.getElementById("scoreboard").textContent = `Rescues: ${score}`;
         playBarkSound();
         flashEffect();
         addWatcher();
         if (score >= MISSION_TARGET) {
-          endGame(`Mission success! ${MISSION_TARGET} rescue completed!`);
+          endGame(`Mission success! ${MISSION_TARGET} rescues completed!`);
           return;
         }
         placeFood();
@@ -275,13 +295,12 @@
       snake.unshift({ x: nx, y: ny });
     }
 
-    // 사운드
+    // ---------------- FX ----------------
     function playBarkSound() {
       const bark = new Audio('../sounds/bark.mp3');
-      bark.play();
+      bark.play().catch(()=>{ /* ignore autoplay errors */ });
     }
 
-    // 플래시 효과
     function flashEffect() {
       const flash = document.getElementById('flashOverlay');
       flash.style.display = 'block';
@@ -292,11 +311,11 @@
       }, 100);
     }
 
-    // 버튼 이벤트
+    // ---------------- Bindings ----------------
     document.getElementById("startBtn").addEventListener("click", () => loadImages(startGame));
     document.getElementById("restartBtn").addEventListener("click", () => loadImages(startGame));
 
-    // 초기 이미지 로드
+    // preload
     loadImages(() => {});
   </script>
 </body>

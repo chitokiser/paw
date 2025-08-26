@@ -1,52 +1,161 @@
-// /geolocation/js/auth.js
-// 게스트 전용. Firebase 세션이 남아 있으면 강제 로그아웃해서 이메일이 안 들어가게 함.
+// /geolocation/js/geowallet-auth.js
+// Wallet Sign-In for geohome.html
+// - Tries SIWE → Firebase Custom Token (if backend is available)
+// - Falls back to wallet-only session if backend missing
+// - English-only messages
 
-const LS_KEY = "pup_guest_id";
-function makeId() {
-  if (crypto?.getRandomValues) {
-    const b = new Uint8Array(16); crypto.getRandomValues(b);
-    return Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join("");
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`;
-}
-export function getGuestId() {
-  let id = localStorage.getItem(LS_KEY);
-  if (!id) { id = makeId(); localStorage.setItem(LS_KEY, id); }
-  return id;
-}
+import { auth, authReady, db } from './firebase.js';
+import {
+  doc, setDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// ✅ 남아있는 Firebase 세션이 있으면 정리 (있어도 없어도 에러 없이 지나감)
-(async function killFirebaseAuthIfAny(){
-  try {
-    const mod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-    const { getAuth, signOut } = mod;
-    const auth = getAuth();
-    if (auth?.currentUser) { await signOut(auth); }
-    // Firebase가 남긴 localStorage 캐시도 정리(키 접두사)
-    Object.keys(localStorage).forEach(k=>{
-      if (k.startsWith("firebase:authUser:")) localStorage.removeItem(k);
+const HAS_ETH = () => !!window.ethereum;
+const $ = (id)=> document.getElementById(id);
+
+function toast(msg){
+  try{
+    const el = document.createElement('div');
+    el.textContent = msg;
+    Object.assign(el.style, {
+      position:'fixed',left:'50%',bottom:'24px',transform:'translateX(-50%)',
+      background:'rgba(0,0,0,.8)',color:'#fff',padding:'10px 14px',
+      borderRadius:'12px',zIndex:9999,fontWeight:'700'
     });
-  } catch (_) { /* Firebase 미로딩이면 여기로 옴 */ }
-})();
-
-// 기존 인터페이스 유지
-export function onAuth(cb) {
-  const user = { uid: getGuestId(), isGuest: true };
-  window.GH_MODE = "guest";           // ← 전역 플래그
-  window.GH_UID  = user.uid;
-  queueMicrotask(()=>cb(user));
-}
-export async function loginWithGooglePopup() {
-  throw new Error("이제 Google 로그인은 사용하지 않습니다. 게스트로 진행하세요.");
-}
-export function currentUser(){ return { uid: getGuestId(), isGuest:true }; }
-export async function ensureUserDoc(_data = {}) {
-  return {
-    uid: getGuestId(),
-    isGuest: true,
-    saved: false,          // 서버에 저장 안 됨
-  };
+    document.body.appendChild(el); setTimeout(()=>el.remove(), 1800);
+  }catch{}
 }
 
-/** (선택) main.js에서 사용할 수 있도록 간단한 헬퍼도 내보내기 */
-export function isGuest() { return true; }
+async function ensureChain(chainIdHex="0xCC"){
+  try {
+    await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainIdHex }] });
+  } catch {
+    await window.ethereum.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: chainIdHex,
+        rpcUrls:["https://opbnb-mainnet-rpc.bnbchain.org"],
+        chainName:"opBNB",
+        nativeCurrency:{ name:"BNB", symbol:"BNB", decimals:18 },
+        blockExplorerUrls:["https://opbnbscan.com"]
+      }]
+    });
+  }
+}
+
+async function siweSignIn({
+  getNonceUrl="/api/siwe/nonce",
+  createTokenUrl="/api/siwe/createCustomToken",
+  chainIdHex="0xCC"
+} = {}) {
+  if (!HAS_ETH()) throw new Error("Wallet (MetaMask/Rabby) is required.");
+
+  // network (optional)
+  try { await ensureChain(chainIdHex); } catch {}
+
+  // request account
+  const [address] = await window.ethereum.request({ method:"eth_requestAccounts" });
+  if (!address) throw new Error("Wallet address is empty.");
+
+  // nonce
+  const nonceRes = await fetch(getNonceUrl, { credentials: "include" });
+  if (!nonceRes.ok) throw new Error("Failed to fetch nonce endpoint.");
+  const { nonce } = await nonceRes.json();
+
+  // message (EIP-4361-lite)
+  const domain = location.host;
+  const uri = location.origin;
+  const now = new Date().toISOString();
+  const message =
+`Sign-In With Wallet
+
+Address: ${address}
+Domain: ${domain}
+URI: ${uri}
+Issued At: ${now}
+Nonce: ${nonce}`;
+
+  // sign
+  const signature = await window.ethereum.request({
+    method: "personal_sign",
+    params: [message, address]
+  });
+
+  // get custom token
+  const tokenRes = await fetch(createTokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ address, message, signature })
+  });
+  if (!tokenRes.ok) {
+    const t = await tokenRes.text();
+    throw new Error("Failed to create custom token: " + t);
+  }
+  const { customToken } = await tokenRes.json();
+  if (!customToken) throw new Error("Custom token missing.");
+
+  // sign in to Firebase
+  await authReady;
+  const { signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+  await signInWithCustomToken(auth, customToken);
+
+  // ensure profile
+  const uid = address.toLowerCase();
+  await setDoc(doc(db, "users", uid), { addr: uid, lastLoginAt: serverTimestamp() }, { merge: true });
+
+  return address;
+}
+
+/** Wallet-only fallback (no Firebase Auth) */
+async function walletOnlyConnect(chainIdHex="0xCC"){
+  if (!HAS_ETH()) throw new Error("Wallet (MetaMask/Rabby) is required.");
+  try { await ensureChain(chainIdHex); } catch {}
+  const [address] = await window.ethereum.request({ method:"eth_requestAccounts" });
+  if (!address) throw new Error("Wallet address is empty.");
+  const addr = address.toLowerCase();
+  sessionStorage.setItem("GH_MODE", "wallet");
+  sessionStorage.setItem("GH_WALLET", addr);
+  return addr;
+}
+
+/** Wire geohome UI */
+export function wireGeohomeWallet({
+  btnId="btnConnect", addrId="addr", levelId="levelView", levelGateId="levelGate",
+  endpoints = { nonce:"/api/siwe/nonce", token:"/api/siwe/createCustomToken" }
+} = {}){
+  const btn = $(btnId);
+  const addrEl = $(addrId);
+  const levelView = $(levelId);
+  const levelGate = $(levelGateId);
+
+  if (!btn) return;
+
+  btn.addEventListener("click", async ()=>{
+    try{
+      btn.disabled = true;
+      btn.textContent = "Connecting…";
+
+      let address;
+      // Try SIWE first
+      try {
+        address = await siweSignIn({ getNonceUrl:endpoints.nonce, createTokenUrl:endpoints.token, chainIdHex:"0xCC" });
+        toast("Wallet connected & signed in.");
+      } catch (e) {
+        console.warn("[geowallet-auth] SIWE failed, falling back to wallet-only mode:", e?.message || e);
+        address = await walletOnlyConnect("0xCC");
+        toast("Wallet connected (session only).");
+      }
+
+      if (addrEl) addrEl.textContent = address;
+      if (levelView && !levelView.textContent) levelView.textContent = "1";
+      if (levelGate) levelGate.textContent = "Ready to connect.";
+    }catch(e){
+      console.error(e);
+      toast("Failed to connect wallet.");
+      alert(e?.message || "Failed to connect wallet.");
+    }finally{
+      btn.disabled = false;
+      btn.textContent = "Connect Wallet";
+    }
+  }, { passive:false });
+}

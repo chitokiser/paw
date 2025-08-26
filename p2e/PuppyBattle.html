@@ -1,77 +1,382 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
-<meta charset="UTF-8" /> 
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/> 
-<title>Puppy Battle Game</title> 
-<script src="https://cdn.tailwindcss.com"></script>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>PuppyWar · PAW DAO</title>
+
+  <!-- Bootstrap (single) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"/>
+
+  <style>
+    :root{
+      --bg:#0b0d14; --text:#eef3ff; --muted:#a9b1c7;
+      --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.14);
+      --radius:16px; --tap:48px;
+      --accent:#43d17a; --danger:#ff5b6e; --warn:#ffb25c;
+    }
+    body{ background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; }
+    .container{ max-width: 920px; }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); backdrop-filter: blur(6px); }
+    .card-header{ border-bottom:1px solid var(--border); }
+    .btn{ min-height:var(--tap); border-radius:14px; font-weight:600; }
+    .badge-soft{ background:rgba(255,255,255,.08); border:1px solid var(--border); }
+    .grid{ display:grid; grid-template-columns: repeat(2,1fr); gap:12px; }
+    @media (max-width: 576px){ .grid{ grid-template-columns: 1fr; } .stack-sm>*{ width:100%!important; margin:.25rem 0!important; } }
+    #log{ max-height:220px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; background:rgba(0,0,0,.25); border-radius:12px; padding:10px; }
+    .mini{ font-size:12px; color:var(--muted); }
+    .puppy-img{ width:92px; height:92px; object-fit:contain; border-radius:12px; background: rgba(255,255,255,.05); }
+    .result-win{ color:#79ffa0; font-weight:800; }
+    .result-lose{ color:#ff8aa0; font-weight:800; }
+    /* Fullscreen battle animation overlay */
+    #dogAnimationLayer{
+      position: fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background: rgba(0,0,0,.45); backdrop-filter: blur(2px); z-index: 9999;
+    }
+    #dogAniFrame{ width:min(70vw, 380px); height:auto; image-rendering: -webkit-optimize-contrast; }
+  </style>
 </head>
-<body class="bg-gradient-to-br from-pink-100 via-white to-blue-100 min-h-screen">
-<audio id="battleSound" src="/sounds/dogfight.mp3"></audio> 
-<!-- Title --> 
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-6 p-4"> 
-<a href="WithPuppy.html" class="block w-full bg-gray-200 text-gray-700 text-center font-medium py-2 rounded-lg hover:bg-gray-300 transition">
-🏠 Puppy Home
-</a>
-<h1 class="text-2xl font-bold text-blue-500">🐶 Puppy Battle Arena</h1>
-<p class="text-sm text-gray-600 mt-1">Champion & Defense 10 times Success Prize: <span id="jackpotValue">-</span> GP</p>
+<body>
 
-</div>
+  <div class="container py-3">
 
-<!-- Battle Puppy List (Slot) -->
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4">
-<h2 class="text-lg font-semibold mb-2">🥇 top10</h2> 
-<div id="championList" class="flex flex-col gap-2"></div> 
+    <!-- Header / Stats -->
+    <div class="card mb-3">
+      <div class="card-body d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+          <div class="mini">Jackpot (GP)</div>
+          <div class="h4 mb-0"><span id="jackpotValue">…</span></div>
+        </div>
+        <div class="stack-sm d-flex gap-2">
+          <!-- ✅ Added Home button -->
+          <a href="../p2e/WithPuppy.html" class="btn btn-outline-info">🏠 Puppy Home</a>
+          <button id="btnConnect" class="btn btn-outline-light">🔌 Connect Wallet</button>
+          <button id="btnRandom" class="btn btn-success">🎯 Random Battle</button>
+          <button id="btnRefresh" class="btn btn-outline-secondary">↻ Refresh</button>
+        </div>
+      </div>
+    </div>
 
-</div> 
+    <!-- My Puppy -->
+    <div class="card mb-3">
+      <div class="card-header"><strong>My Puppy</strong></div>
+      <div class="card-body d-flex align-items-center gap-3">
+        <img id="myPuppyImg" class="puppy-img" src="/images/puppy/0.png" alt="My Puppy"/>
+        <div>
+          <div class="mini">Breed</div>
+          <div id="myBreed" class="h5 mb-2">?</div>
+          <div id="battleResult" class="mt-2"></div>
+        </div>
+      </div>
+    </div>
 
-<!-- Challenge Results / My Dog Information --> 
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4"> 
-<h2 class="text-md font-semibold mb-2">🐕 my dog</h2> 
-<div class="flex items-center justify-center gap-2"> 
-<img id="myPuppyImg" src="/images/puppy/0.png" class="w-12 h-12 rounded" /> 
-<div class="text-xs text-gray-500"> 
-Breed: <span id="myBreed" class="font-bold text-blue-500">?</span><br/> 
-</div> 
-</div> 
-<div class="mt-3 text-sm text-gray-700"> 
+    <!-- Champions -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <strong>Champions</strong>
+        <span id="champCount" class="badge badge-soft">…</span>
+      </div>
+      <div class="card-body">
+        <div id="championList" class="grid"></div>
+      </div>
+    </div>
 
-<div> 
-<button onclick="randomBattle()" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded font-semibold"> 
-Random Battle (-100GP)
-</button> 
+    <!-- Logs -->
+    <div class="card mb-4">
+      <div class="card-header"><strong>Battle Log</strong></div>
+      <div class="card-body">
+        <div id="log">Ready.</div>
+      </div>
+    </div>
 
-</div> 
-</div> 
-<div id="battleResult" class="mt-4 text-xs text-gray-600"></div> 
-</div> 
-<!-- Animation --> 
-<div id="dogAnimationLayer" class="fixed inset-0 flex items-center justify-center z-50" style="display:none;"> 
-<img id="dogAniFrame" class="w-40 h-40" src="/images/puppy/0.png" alt="Puppy" />
-</div>
-<!-- Reward/Log -->
-<div class="card-body text-center bg-white shadow rounded-xl max-w-md mx-auto mt-4 p-4">
-<h3 class="font-semibold text-md mb-2">📜 Game Event Log</h3>
-<div id="log" class="text-left text-xs max-h-40 overflow-auto"></div>
-</div>
+  </div>
 
-  <!-- 효과음 예시 -->
-  <audio id="barkSound" src="/sounds/bark.mp3"></audio>
+  <!-- Battle animation + sound -->
+  <div id="dogAnimationLayer">
+    <img id="dogAniFrame" src="/images/puppy/battle/0.png" alt="Battle Animation"/>
+  </div>
+  <audio id="battleSound" src="/sounds/dogfight.mp3" preload="auto"></audio>
 
-  <!-- ethers.js, 실제 게임용 JS 연결 (여기에 JS 넣으세요) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js"></script>
-  <script src="PuppyBattleGame.js"></script>
+  <!-- Vendor scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
+  <!-- App -->
+  <script>
+  (function(g){
+    const { ethers } = g;
+
+    /* ---------- Contract: address & ABI ---------- */
+    const BATTLE_CONTRACT_ADDR = "0x455516a6d57A17615cD829eC13C3d01854591CAA";
+    const BATTLE_ABI = [
+      "function bpid() view returns(uint8)",
+      "function jack() view returns(uint256)",
+      "function bps(uint8) view returns(uint8 mybreed, uint256 depo, uint256 power, address owner, uint8 defense)",
+      "function getmypuppy(address) view returns(uint16)",
+      "function getmypower(uint256 pid) view returns(uint256)",
+      "function Battle(uint8 _pid) external",
+      "function getreward() view returns(uint256)",
+      "function allowcation(uint8 _pid) public returns (bool)",
+      "event lost(uint256 amount, uint256 myPower)",
+      "event Bonus(address indexed user, uint256 amount, uint256 reward)",
+      "event RewardGiven(address indexed user, uint256 amount, uint256 myPower)",
+      "event getdepo(uint256 pay)"
+    ];
+
+    /* ---------- RPC fallback (read) ---------- */
+    const OPBNB_RPCS = [
+      "https://opbnb-mainnet-rpc.bnbchain.org",
+      "https://opbnb-rpc.publicnode.com",
+      "https://opbnb.blockpi.network/v1/rpc/public",
+      "https://1rpc.io/opbnb"
+    ];
+    let __readProvider=null, __battleRead=null;
+
+    async function pickHealthyRpc(timeoutMs=4000){
+      for(const url of OPBNB_RPCS){
+        try{
+          const p = new ethers.providers.StaticJsonRpcProvider({url, timeout:timeoutMs}, {chainId:204, name:"opbnb"});
+          await Promise.race([p.getBlockNumber(), new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")), timeoutMs))]);
+          return p;
+        }catch{/* try next */}
+      }
+      throw new Error("No healthy opBNB RPC found");
+    }
+    async function getRead(){
+      if(__readProvider && __battleRead) return {provider:__readProvider, battle:__battleRead};
+      __readProvider = await pickHealthyRpc();
+      __battleRead = new ethers.Contract(BATTLE_CONTRACT_ADDR, BATTLE_ABI, __readProvider);
+      return {provider:__readProvider, battle:__battleRead};
+    }
+
+    /* ---------- Wallet (write) ---------- */
+    let signer=null, battleWrite=null;
+
+    async function ensureOpBNB(userProvider){
+      const net = await userProvider.getNetwork();
+      if (Number(net.chainId) === 204) return;
+      try{
+        await g.ethereum.request({ method:"wallet_switchEthereumChain", params:[{ chainId:"0xCC" }] });
+      }catch{
+        await g.ethereum.request({
+          method:"wallet_addEthereumChain",
+          params:[{
+            chainId:"0xCC",
+            rpcUrls:["https://opbnb-mainnet-rpc.bnbchain.org"],
+            chainName:"opBNB",
+            nativeCurrency:{ name:"BNB", symbol:"BNB", decimals:18 },
+            blockExplorerUrls:["https://opbnbscan.com"]
+          }]
+        });
+      }
+    }
+
+    async function connectWallet(){
+      if(!g.ethereum) { alert("Please install a wallet (MetaMask/Rabby)."); return null; }
+      const provider = new ethers.providers.Web3Provider(g.ethereum, "any");
+      await provider.send("eth_requestAccounts", []);
+      await ensureOpBNB(provider);
+      signer = provider.getSigner();
+      battleWrite = new ethers.Contract(BATTLE_CONTRACT_ADDR, BATTLE_ABI, signer);
+      const addr = await signer.getAddress();
+      log(`🔌 Connected: ${addr}`);
+      return addr;
+    }
+
+    /* ---------- UI helpers ---------- */
+    function fmt(x){ try{ return ethers.BigNumber.isBigNumber(x) ? x.toString() : String(x); }catch{ return String(x); } }
+    function log(msg){
+      const box = document.getElementById("log");
+      box.innerHTML = `<div>${new Date().toLocaleTimeString()} ${msg}</div>` + box.innerHTML;
+    }
+
+    /* ---------- Data renders ---------- */
+    async function renderJackpot(){
+      try{
+        const { battle } = await getRead();
+        const jackpot = await battle.jack(); // GP*? assume /100 like original
+        document.getElementById("jackpotValue").textContent = (Number(jackpot)/100).toFixed(2);
+      }catch(e){
+        document.getElementById("jackpotValue").textContent = "Unknown";
+        log("⚠️ Failed to load jackpot.");
+      }
+    }
+
+    async function renderMyPuppy(){
+      try{
+        const addr = signer ? await signer.getAddress() : null;
+        if(!addr){ document.getElementById("myBreed").textContent = "—"; return; }
+        const { battle } = await getRead();
+        const myBreed = await battle.getmypuppy(addr);
+        document.getElementById("myBreed").textContent = fmt(myBreed);
+        document.getElementById("myPuppyImg").src = `/images/puppy/${Number(myBreed)}.png`;
+      }catch(e){
+        document.getElementById("myBreed").textContent = "—";
+        log("⚠️ Failed to load my puppy.");
+      }
+    }
+
+    async function renderChampionList(){
+      const wrap = document.getElementById("championList");
+      wrap.innerHTML = "<div class='mini'>Loading champions…</div>";
+      try{
+        const { battle } = await getRead();
+        const bpid = await battle.bpid();
+        document.getElementById("champCount").textContent = Number(bpid);
+        if(Number(bpid) === 0){ wrap.innerHTML = "<div class='mini'>No champions yet.</div>"; return; }
+
+        const parts = [];
+        for(let i=0; i<Number(bpid); i++){
+          const bp = await battle.bps(i);
+          const breed = Number(bp.mybreed);
+          const power = fmt(bp.power);
+          const defense = fmt(bp.defense);
+          const owner = String(bp.owner);
+          parts.push(`
+            <div class="p-2 rounded" style="border:1px dashed var(--border);">
+              <div class="d-flex align-items-center gap-2">
+                <img src="/images/puppy/${breed}.png" class="puppy-img" alt="puppy"/>
+                <div class="flex-grow-1">
+                  <div class="mini">Slot</div>
+                  <div class="h6 mb-1">#${i+1}</div>
+                  <div class="mini">Power · Defense</div>
+                  <div class="mb-1"><strong>${power}</strong> · <strong>${defense}</strong></div>
+                  <div class="mini">Owner</div>
+                  <div class="text-truncate" title="${owner}">${owner.slice(0,6)}…${owner.slice(-4)}</div>
+                </div>
+              </div>
+              <div class="d-flex gap-2 mt-2 stack-sm">
+                <button class="btn btn-success w-100 challenge-btn" data-slot="${i}">⚔️ Challenge</button>
+                <button class="btn btn-outline-warning w-100 claim-btn" data-slot="${i}">💰 Claim Defense Reward</button>
+              </div>
+            </div>
+          `);
+        }
+        wrap.innerHTML = parts.join("");
+      }catch(e){
+        wrap.innerHTML = "<div class='text-danger'>Failed to load champions.</div>";
+      }
+    }
+
+    /* ---------- Battle + Claim ---------- */
+    async function randomBattle(){
+      const { battle } = await getRead();
+      const bpid = await battle.bpid();
+      const n = Number(bpid);
+      if(!n){ alert("No champion slots."); return; }
+      const slot = Math.floor(Math.random()*n);
+      log(`🎯 Randomly challenging slot #${slot+1}…`);
+      await doBattle(slot);
+    }
+
+    async function doBattle(slot){
+      if(!battleWrite) await connectWallet();
+      try{
+        document.getElementById("battleResult").textContent = "Battle in progress…";
+        const tx = await battleWrite.Battle(slot);
+        log(`⏳ Battle tx sent: ${tx.hash}`);
+        await showDogFrameAnimation();
+        const receipt = await tx.wait();
+        log(`✅ Battle confirmed: ${tx.hash}`);
+
+        const iface = new ethers.utils.Interface(BATTLE_ABI);
+        let found = false;
+        for(const logRec of receipt.logs){
+          try{
+            const parsed = iface.parseLog(logRec);
+            const nm = parsed.name, args = parsed.args;
+            if(nm === "RewardGiven"){
+              found = true;
+              document.getElementById("battleResult").innerHTML =
+                `<span class="result-win">🎉 Victory! GP reward: ${fmt(args.amount)}</span>`;
+              log(`🏆 Reward: ${fmt(args.amount)} GP, MyPower: ${fmt(args.myPower)}`);
+            }else if(nm === "Bonus"){
+              log(`🎁 Bonus: ${fmt(args.amount)} GP (stat ${fmt(args.reward)})`);
+            }else if(nm === "lost"){
+              found = true;
+              document.getElementById("battleResult").innerHTML =
+                `<span class="result-lose">😢 Defeat! GP burned. MyPower: ${fmt(args.myPower)}</span>`;
+              log(`💥 Lost: ${fmt(args.amount)} GP, MyPower: ${fmt(args.myPower)}`);
+            }
+          }catch{/* ignore unrelated logs */}
+        }
+        if(!found) document.getElementById("battleResult").textContent = "No result events found.";
+
+        await renderChampionList();
+        await renderMyPuppy();
+        await renderJackpot();
+      }catch(err){
+        let msg = err?.message || "Battle failed.";
+        if (msg.includes("You can't challenge yourself")) msg = "You cannot challenge your own slot.";
+        document.getElementById("battleResult").innerHTML = `<span class="text-warning">${msg}</span>`;
+        log(`❌ Battle failed: ${msg}`);
+      }
+    }
+
+    async function claimReward(slot){
+      if(!battleWrite) await connectWallet();
+      try{
+        log("⏳ Submitting claim transaction…");
+        const tx = await battleWrite.allowcation(slot);
+        log(`🧾 Claim tx: ${tx.hash}`);
+        await tx.wait();
+        log("✅ Claim completed!");
+        await renderChampionList();
+        await renderMyPuppy();
+        await renderJackpot();
+      }catch(err){
+        const msg = err?.message || "Claim failed.";
+        log(`❌ Claim failed: ${msg}`);
+        alert("Claim failed: " + msg);
+      }
+    }
+
+    /* ---------- Animation ---------- */
+    async function showDogFrameAnimation(){
+      const layer = document.getElementById("dogAnimationLayer");
+      const img = document.getElementById("dogAniFrame");
+      layer.style.display = "flex";
+      try{ const s = document.getElementById("battleSound"); s.currentTime = 0; s.play().catch(()=>{}); }catch{}
+      const frames=[0,1,2,3,4];
+      let i=0;
+      await new Promise((resolve)=>{
+        const itv = setInterval(()=>{
+          img.src = `/images/puppy/battle/${frames[i]}.png`;
+          i++;
+          if(i>=frames.length){
+            clearInterval(itv);
+            setTimeout(()=>{ layer.style.display="none"; resolve(); }, 700);
+          }
+        }, 180);
+      });
+    }
+
+    /* ---------- Bindings ---------- */
+    document.getElementById("btnConnect").addEventListener("click", connectWallet);
+    document.getElementById("btnRandom").addEventListener("click", randomBattle);
+    document.getElementById("btnRefresh").addEventListener("click", async ()=>{
+      await renderJackpot(); await renderChampionList(); await renderMyPuppy();
+    });
+    document.getElementById("championList").addEventListener("click", async (e)=>{
+      const btn = e.target.closest("button");
+      if(!btn) return;
+      const slot = Number(btn.dataset.slot);
+      if(btn.classList.contains("challenge-btn")) return doBattle(slot);
+      if(btn.classList.contains("claim-btn")) return claimReward(slot);
+    });
+
+    /* ---------- Boot ---------- */
+    g.addEventListener("load", async ()=>{
+      try{
+        await renderJackpot();
+        await renderChampionList();
+      }catch(e){ log("⚠️ Initial load failed."); }
+    });
+
+    // Expose (optional)
+    g.PW = { connectWallet, randomBattle, doBattle, claimReward };
+
+  })(window);
+  </script>
 </body>
 </html>
-
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p"
-        crossorigin="anonymous"></script>
-   <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.2.0/ethers.umd.min.js" integrity="sha384-..." crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <script src="../src/PuppyBattle.js"></script>
-</body>
-
-</html>
-
