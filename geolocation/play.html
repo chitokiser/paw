@@ -1,211 +1,253 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>GeoHunt – Guest</title>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="shortcut icon" href="../images/logo.png" />
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <title>PAW · Guest Play — 48px, 10m radius, No-DB</title>
+  <link rel="shortcut icon" href="./images/logo.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
   <style>
-    html,body,#map {height:100%;width:100%;margin:0}
-    /* HUD */
-    .hud {
-      position: fixed; left: 12px; top: 12px; z-index: 1000;
-      background: rgba(11,13,20,.75); color: #e9eefc; backdrop-filter: blur(6px);
-      border: 1px solid rgba(255,255,255,.15); border-radius: 14px;
-      padding: 10px 12px; font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-      box-shadow: 0 8px 30px rgba(0,0,0,.25);
+    :root{
+      --bg:#0b0d14; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12);
+      --text:#e9eefc; --muted:#a9b1c7; --ok:#22c55e; --accent:#7c3aed; --warn:#f59e0b;
     }
-    .hud .title {font-weight: 800; font-size: 14px; opacity: .9}
-    .hud .value {font-weight: 900; font-size: 22px; line-height: 1.15}
-    .hud .muted {font-size: 12px; opacity: .75}
-    /* Controls */
-    .controls {
-      position: fixed; right: 12px; bottom: 12px; z-index: 1000;
-      display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
-    }
-    .btn {
-      padding: 10px 14px; border-radius: 12px; border: none; cursor: pointer; font-weight: 800;
-      background: #0b0d14; color:#e9eefc; border:1px solid #60a5fa;
-    }
-    .btn.primary { background: linear-gradient(135deg,#7c3aed,#2563eb); color:#fff; border:none }
-    .btn:disabled { opacity: .5; cursor: default }
-    .badge {
-      display:inline-block; padding:4px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.15);
-      background: rgba(255,255,255,.06); font-weight: 800; font-size: 12px;
-    }
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Pretendard,Apple SD Gothic Neo,"Noto Sans KR",sans-serif}
+    #app{display:grid;grid-template-rows:auto 1fr;min-height:100vh}
+    header{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;backdrop-filter:saturate(120%) blur(4px)}
+    header img{width:36px;height:36px}
+    .tag{border:1px solid var(--border);padding:4px 10px;border-radius:999px;color:var(--muted)}
+    .pill{border:1px solid var(--border);padding:6px 10px;border-radius:999px}
+    .btn{cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);padding:8px 12px;border-radius:12px}
+    .btn:hover{border-color:#fff3}
+    .btn.primary{background:linear-gradient(135deg,#7c3aed,#2563eb);border:none}
+    #map{width:100%;height:100%}
+    .legend{position:fixed;right:10px;top:64px;z-index:20}
+    .legend .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;gap:6px;flex-direction:column}
+    .row{display:flex;align-items:center;gap:8px}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .toast{position:fixed;right:10px;bottom:10px;max-width:320px;background:#111b;border:1px solid var(--border);border-radius:14px;padding:10px 12px;display:none;z-index:30}
+    /* Simple hit flash */
+    .hitfx{position:absolute;width:32px;height:32px;border-radius:50%;background:#fff8;transform:translate(-50%,-50%) scale(.5);pointer-events:none;animation:pop .35s ease-out forwards}
+    @keyframes pop{0%{opacity:.9;transform:translate(-50%,-50%) scale(.4)}70%{opacity:.6;transform:translate(-50%,-50%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.8)}}
   </style>
 </head>
 <body>
+<div id="app">
+  <header>
+    <img src="./images/logo.png" alt="logo"/>
+    <b>PAW · Guest Mode</b>
+    <span class="tag">DB <b style="color:var(--ok)">OFF</b></span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <span class="pill">CP: <b id="cpVal">-</b></span>
+      <span class="pill">몬스터: <b id="monCount">0</b></span>
+      <span class="pill">상점: <b id="shopCount">0</b></span>
+      <button class="btn" id="recenterBtn">현재 위치</button>
+      <button class="btn" id="resetBtn" title="세션 리셋">Reset</button>
+      <a class="btn primary" href="./p2e/WithPuppy.html">지갑 연결</a>
+    </div>
+  </header>
   <div id="map"></div>
+</div>
 
-  <!-- HUD -->
-  <div class="hud">
-    <div class="title">GeoHunt · Guest <span class="badge">Mode: Guest</span></div>
-    <div class="value">오늘 CP: <span id="cpToday">0</span></div>
-    <div class="muted">10m 이동마다 1CP 적립 · 앱 종료/리셋 시 초기화</div>
+<div class="legend">
+  <div class="card">
+    <div class="row"><div class="dot" style="background:#60a5fa"></div> 플레이어 (48px)</div>
+    <div class="row"><div class="dot" style="background:#f43f5e"></div> 몬스터 ×10 (반경 10m)</div>
+    <div class="row"><div class="dot" style="background:#22c55e"></div> 상점 ×1 (반경 10m)</div>
   </div>
+</div>
 
-  <!-- Controls -->
-  <div class="controls">
-    <button id="btnCenter" class="btn">내 위치</button>
-    <button id="btnStart"  class="btn primary">시작</button>
-    <button id="btnStop"   class="btn">중지</button>
-    <button id="btnReset"  class="btn">게스트 리셋</button>
-    <a href="./geohome.html" class="btn" style="text-decoration:none;">홈으로</a>
-  </div>
+<div class="toast" id="toast"></div>
 
-  <!-- Leaflet -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+<script>
+(() => {
+  // ===== Config (Self-contained / No-DB) ======================================
+  const MONSTER_COUNT = 10;
+  const SHOP_COUNT    = 1;
+  const RADIUS_M      = 10;     // 모든 배치는 유저 기준 10m 이내
+  const SPRITE_SIZE   = 48;     // 플레이어/몬스터 아이콘 크기(px)
+  const CP_SEED       = 5000;
 
-  <!-- Guest-only inline logic -->
-  <script type="module">
-    // ========= Config =========
-    const AWARD_EVERY_METERS = 10;   // 10m -> 1CP
-    const UI_REFRESH_MS = 800;       // HUD refresh throttle
+  // 이미지 경로 — 실제 프로젝트 경로에 맞춰 바꾸세요
+  const PLAYER_IMG   = './images/player.png';
+  const MONSTER_IMG  = './images/monster.png';
+  const SHOP_IMG     = './images/shop.png';
 
-    // ========= State =========
-    let watchId = null;
-    let last = null;     // {lat, lng}
-    let accumMeters = Number(localStorage.getItem('walk_accum_m') || 0) || 0;
-    let cpToday = Number(localStorage.getItem('cp_today') || 0) || 0;
+  const FALLBACK_LL  = { lat: 21.0278, lng: 105.8342 }; // 하노이 폴백
 
-    // ========= Map =========
-    const map = L.map('map', { maxZoom: 22, zoomControl: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-      maxZoom: 20, attribution:'© OpenStreetMap'
-    }).addTo(map);
-    // zoom control custom
-    L.control.zoom({ position:'bottomleft' }).addTo(map);
+  // ===== State (sessionStorage only) ==========================================
+  const state = {
+    sid: ensureSessionId(),
+    cp: readCP() ?? CP_SEED,
+    monsters: [], // {id, latlng, hp}
+    shops: [],    // {id, latlng}
+    map: null,
+    player: null,
+    seeded: JSON.parse(sessionStorage.getItem('seeded') || 'false'),
+  };
 
-    // Position marker & path
-    const meIcon = L.circleMarker([0,0], { radius: 8, color:'#3b82f6', weight:2, fillColor:'#93c5fd', fillOpacity:.8 });
-    const pathLine = L.polyline([], { color:'#38bdf8', weight:4, opacity:.7 });
-    meIcon.addTo(map); pathLine.addTo(map);
+  // ===== Boot ================================================================
+  setCP(state.cp);
+  updateHUD();
 
-    // ========= UI =========
-    const cpEl = document.getElementById('cpToday');
-    const btnStart = document.getElementById('btnStart');
-    const btnStop  = document.getElementById('btnStop');
-    const btnReset = document.getElementById('btnReset');
-    const btnCenter= document.getElementById('btnCenter');
+  const map = L.map('map');
+  state.map = map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
 
-    function renderCP(){
-      cpEl.textContent = String(cpToday);
-    }
-    renderCP();
+  getCurrentPosition().then(center => {
+    map.setView(center, 19);
 
-    function saveLocal(){
-      localStorage.setItem('cp_today', String(cpToday));
-      localStorage.setItem('walk_accum_m', String(Math.max(0, Math.round(accumMeters))));
-    }
+    // Player marker (48px)
+    state.player = L.marker(center, { icon: makeImgIcon(PLAYER_IMG, SPRITE_SIZE) })
+      .addTo(map).bindTooltip('YOU', { permanent: true, direction: 'top' });
 
-    function setButtons(running){
-      btnStart.disabled = running;
-      btnStop.disabled  = !running;
-    }
-    setButtons(false);
-
-    // ========= Geodesy =========
-    function haversine(a, b){
-      if (!a || !b) return 0;
-      const toRad = (x)=>x*Math.PI/180;
-      const R = 6371000; // m
-      const dLat = toRad(b.lat - a.lat);
-      const dLng = toRad(b.lng - a.lng);
-      const s1 = Math.sin(dLat/2), s2 = Math.sin(dLng/2);
-      const aa = s1*s1 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * s2*s2;
-      const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
-      return R * c;
-    }
-
-    // ========= Award =========
-    function tryAward(distanceM){
-      accumMeters += distanceM;
-      const awards = Math.floor(accumMeters / AWARD_EVERY_METERS);
-      if (awards > 0){
-        cpToday += awards;
-        accumMeters -= awards * AWARD_EVERY_METERS;
-        renderCP(); saveLocal();
-        // console for debug/toast
-        console.log(`[guest] +${awards} CP (${Math.round(distanceM)}m 이동)`);
-      }
-    }
-
-    // ========= GPS =========
-    function onPos(p){
-      const cur = { lat: p.coords.latitude, lng: p.coords.longitude };
-      // draw
-      meIcon.setLatLng(cur);
-      const pts = pathLine.getLatLngs(); pts.push(cur); pathLine.setLatLngs(pts);
-      if (!last){
-        last = cur;
-        map.setView(cur, 18);
-        return;
-      }
-      const d = haversine(last, cur);
-      // 간단한 노이즈 필터: 1m 미만 무시, 200m 이상 점프도 무시
-      if (d >= 1 && d <= 200){
-        tryAward(d);
-        last = cur;
-      } else if (d > 200){
-        // 큰 점프: 경로 초기화만
-        last = cur;
-      }
-    }
-    function onErr(e){
-      console.warn('geo error', e);
-    }
-
-    function start(){
-      if (watchId !== null) return;
-      setButtons(true);
-      // 권장 옵션: 고정밀 + 배터리 세이브 밸런스
-      watchId = navigator.geolocation.watchPosition(onPos, onErr, {
-        enableHighAccuracy: true, maximumAge: 2000, timeout: 10000
-      });
-    }
-    function stop(){
-      if (watchId === null) return;
-      navigator.geolocation.clearWatch(watchId);
-      watchId = null;
-      setButtons(false);
-    }
-
-    // ========= Events =========
-    btnStart.addEventListener('click', start);
-    btnStop .addEventListener('click', stop);
-    btnReset.addEventListener('click', ()=>{
-      if (!confirm('게스트 데이터를 초기화할까요? (오늘 CP/이동 거리)')) return;
-      cpToday = 0; accumMeters = 0; last = null;
-      localStorage.removeItem('cp_today');
-      localStorage.removeItem('walk_accum_m');
-      renderCP();
-      // 경로/마커 초기화
-      pathLine.setLatLngs([]);
-      console.log('[guest] reset');
-    });
-    btnCenter.addEventListener('click', ()=>{
-      if (!last) return;
-      map.setView(last, Math.max(map.getZoom(), 18), { animate: true });
-    });
-
-    // ========= Boot =========
-    sessionStorage.setItem('GH_MODE','guest'); // 모드 플래그
-    // 위치 권한 워밍업 & 첫 위치 잡기
-    if ('geolocation' in navigator){
-      navigator.geolocation.getCurrentPosition(
-        (p)=>{ onPos(p); }, 
-        onErr,
-        { enableHighAccuracy:true, maximumAge:2000, timeout:10000 }
-      );
+    if (!state.seeded) {
+      seedAll(center);
+      sessionStorage.setItem('seeded', 'true');
+      toast('게스트 시드 완료: 몬스터 10 · 상점 1 · CP 5,000');
     } else {
-      alert('이 기기에서는 위치 서비스를 사용할 수 없습니다.');
+      restoreSession(center);
+    }
+  });
+
+  document.getElementById('recenterBtn').onclick = async () => {
+    const cur = await getCurrentPosition().catch(()=>null);
+    if (cur) { state.map.setView(cur, state.map.getZoom()); state.player.setLatLng(cur); }
+  };
+  document.getElementById('resetBtn').onclick = () => {
+    ['seeded','cp','monsters','shops'].forEach(k=>sessionStorage.removeItem(k));
+    location.reload();
+  };
+
+  // ===== Seeding / Restore ====================================================
+  function seedAll(center){
+    // CP
+    setCP(CP_SEED);
+
+    // Monsters within 10m, 48px
+    state.monsters = [];
+    for (let i=0;i<MONSTER_COUNT;i++){
+      const pt = jitterWithin(center, RADIUS_M);
+      const m = { id:`MN-${i+1}`, latlng: pt, hp: 100 };
+      state.monsters.push(m);
+      drawMonster(m);
     }
 
-    // 페이지 이탈 시 정리
-    window.addEventListener('pagehide', ()=>{ try{ stop(); }catch{} });
-  </script>
+    // Shop within 10m
+    state.shops = [];
+    for (let i=0;i<SHOP_COUNT;i++){
+      const pt = jitterWithin(center, RADIUS_M);
+      const s = { id:`SP-${i+1}`, latlng: pt };
+      state.shops.push(s);
+      drawShop(s);
+    }
+
+    persistSession();
+    updateHUD();
+  }
+
+  function restoreSession(center){
+    // restore CP
+    const cp = readCP(); if (typeof cp === 'number') setCP(cp);
+
+    // restore markers
+    const mArr = JSON.parse(sessionStorage.getItem('monsters')||'[]');
+    const sArr = JSON.parse(sessionStorage.getItem('shops')||'[]');
+    state.monsters = mArr; state.shops = sArr;
+    mArr.forEach(drawMonster); sArr.forEach(drawShop);
+
+    // recenter player
+    if (center) state.player.setLatLng(center);
+    updateHUD();
+  }
+
+  // ===== Draw / Interactions ==================================================
+  function drawMonster(m){
+    const marker = L.marker(m.latlng, { icon: makeImgIcon(MONSTER_IMG, SPRITE_SIZE), interactive: true })
+      .addTo(state.map).bindTooltip(`${m.id} (HP:${m.hp})`);
+
+    marker.on('click', (e) => {
+      // simple hit FX on map container
+      spawnHitFX(e.latlng);
+      m.hp = Math.max(0, m.hp - 25);
+      if (m.hp <= 0){ addCP(20); marker.bindPopup(`<b>${m.id}</b><br/>격파! CP +20`).openPopup(); }
+      else { addCP(5); marker.bindPopup(`<b>${m.id}</b><br/>공격! CP +5`).openPopup(); }
+      persistSession();
+      updateHUD();
+    });
+  }
+
+  function drawShop(s){
+    const marker = L.marker(s.latlng, { icon: makeImgIcon(SHOP_IMG, SPRITE_SIZE), interactive: true })
+      .addTo(state.map).bindTooltip(`${s.id}`);
+    marker.on('click', (e) => {
+      spawnHitFX(e.latlng);
+      addCP(25);
+      marker.bindPopup(`<b>${s.id}</b><br/>모의 구매: CP +25`).openPopup();
+      persistSession();
+      updateHUD();
+    });
+  }
+
+  function spawnHitFX(latlng){
+    const pt = state.map.latLngToContainerPoint(latlng);
+    const fx = document.createElement('div');
+    fx.className = 'hitfx';
+    fx.style.left = pt.x + 'px';
+    fx.style.top  = pt.y + 'px';
+    state.map.getContainer().appendChild(fx);
+    setTimeout(()=> fx.remove(), 380);
+  }
+
+  // ===== Helpers ==============================================================
+  function jitterWithin(center, radiusM){
+    const r = Math.random()*radiusM; // 0 ~ R
+    const theta = Math.random()*Math.PI*2;
+    const dx = (r*Math.cos(theta))/111320; // deg lon approx
+    const dy = (r*Math.sin(theta))/(111320*Math.cos(toRad(center.lat)));
+    return { lat: center.lat + dy, lng: center.lng + dx };
+  }
+  function toRad(d){ return d*Math.PI/180; }
+
+  function makeImgIcon(url, size){
+    return L.icon({ iconUrl: url, iconSize: [size, size], iconAnchor: [size/2, size/2] });
+  }
+
+  function readCP(){ const v = sessionStorage.getItem('cp'); return v ? Number(v) : null; }
+  function setCP(v){ sessionStorage.setItem('cp', String(v)); document.getElementById('cpVal').textContent = Number(v).toLocaleString(); }
+  function addCP(delta){ setCP((readCP() ?? 0) + delta); }
+
+  function persistSession(){
+    sessionStorage.setItem('monsters', JSON.stringify(state.monsters));
+    sessionStorage.setItem('shops', JSON.stringify(state.shops));
+  }
+  function ensureSessionId(){ let sid = sessionStorage.getItem('sid'); if(!sid){ sid = 'GUEST-' + Math.random().toString(36).slice(2,10); sessionStorage.setItem('sid', sid); } return sid; }
+
+  function getCurrentPosition(){
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(FALLBACK_LL);
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        _  => resolve(FALLBACK_LL),
+        { enableHighAccuracy: true, timeout: 7000, maximumAge: 2000 }
+      );
+    });
+  }
+
+  function updateHUD(){
+    document.getElementById('monCount').textContent = state.monsters.length;
+    document.getElementById('shopCount').textContent = state.shops.length;
+    document.getElementById('cpVal').textContent = (readCP() ?? 0).toLocaleString();
+  }
+
+  function toast(msg){
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(()=> el.style.display = 'none', 2400);
+  }
+})();
+</script>
 </body>
 </html>
