@@ -5,10 +5,10 @@
 // - ✅ 죽은 몬스터(또는 쿨다운 중) 완전 차단: isMonsterDead() 사용
 // - ✅ (옵션) AI 공격 틱: __applyPlayerDamage 호출 시에도 죽음/쿨다운/거리 체크
 
-import { collection, query, where, limit, getDocs } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import { collection, query, where, limit, getDocs, onSnapshot  } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { makeAniFirstFrameIcon, attachSpriteToMarker, getAniBase } from './fx.js';
 import { isMonsterDead } from './battle.js';
-
+import { db } from './firebase.js';
 /* ===============================
  * 로컬 쿨다운 유틸
  * =============================== */

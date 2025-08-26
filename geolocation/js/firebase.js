@@ -41,3 +41,20 @@ export const authReady = (async () => {
     const unsub = onAuthStateChanged(auth, () => { unsub?.(); res(); });
   });
 })();
+
+
+auth.onAuthStateChanged(u=>{
+  if (u) hideBanner('guest');          // 로그인된 순간 닫기
+});
+
+function guardWrite(fn){
+  return async (...args)=>{
+    try { return await fn(...args); }
+    catch(e){
+      if (String(e?.message||'').includes('WALLET_REQUIRED'))
+        showBanner('guest', 'Login required to save progress (guest cannot save).');
+      throw e;
+    }
+  };
+}
+function hideBanner(){ try{ document.getElementById('banner')?.remove(); }catch{} }

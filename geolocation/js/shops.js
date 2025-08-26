@@ -1,8 +1,6 @@
-// /geolocation/js/shops.js
-// 상점 구독/마커/모달 UI/거래 (CP 통화 전용, Firestore 트랜잭션 일원화)
-// - 지갑 모드 전용: users/{지갑주소}, inventories/{wa:지갑주소} 기준
-// - 구매/판매 모두 Firestore runTransaction으로 원자 처리
-// - 인벤 필드 구조: items.{itemId}.{qty|name|rarity}, equipped.weapon 등
+// 상점 구독/마커/모달 UI/거래 (CP 전용, 주소기반)
+// - 읽기: shops/*, shops/*/items/*
+// - 거래: users/{지갑주소}, inventories/wa:{지갑주소}
 
 import {
   collection, query, where, onSnapshot, doc, runTransaction,
@@ -10,7 +8,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { db as _db } from "./firebase.js";
 
-// 🔑 단일키 유틸 (지갑 주소 기준)
 import {
   getMode,
   getUserDocRef,
@@ -18,36 +15,28 @@ import {
   migrateInventoryIfNeeded
 } from "./identity.js";
 
-/* ---------------- 유틸 ---------------- */
+/* ---------- helpers ---------- */
 function _tileSizeDeg(){ return 0.01; }
 function _tilesFromBounds(bounds, g = _tileSizeDeg()){
   const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
   const y0 = Math.floor(sw.lat/g), y1 = Math.floor(ne.lat/g);
   const x0 = Math.floor(sw.lng/g), x1 = Math.floor(ne.lng/g);
-  const tiles = [];
-  for (let y=y0;y<=y1;y++) for (let x=x0;x<=x1;x++) tiles.push(`${y}_${x}`);
-  return tiles.slice(0, 10); // 근처 10개만
+  const tiles=[]; for (let y=y0;y<=y1;y++) for (let x=x0;x<=x1;x++) tiles.push(`${y}_${x}`);
+  return tiles.slice(0,10);
 }
-
 function _shopIcon(size=68, imageURL='https://puppi.netlify.app/images/event/shop.png'){
   const s = Math.max(24, Number(size)||68);
-  const html = `<div class="mon-wrap" style="position:relative;width:${s}px;height:${s}px;">
+  const html = `<div style="position:relative;width:${s}px;height:${s}px">
     <img src="${imageURL}" alt="shop" style="width:100%;height:100%;object-fit:contain;pointer-events:none"/>
   </div>`;
   return L.divIcon({ className:'', html, iconSize:[s,s], iconAnchor:[s/2,s/2] });
 }
-
-/** 🔁 가격은 CP 우선, 기존 GP 필드는 폴백으로만 사용 */
 function _getBuyPrice(it){
-  const b = Number(
-    it.buyPriceCP ?? it.priceCP ??
-    it.buyPriceGP ?? it.priceGP ??
-    it.sellPriceCP ?? it.sellPriceGP ?? 0
-  );
+  const b = Number(it.buyPriceCP ?? it.priceCP ?? it.buyPriceGP ?? it.priceGP ?? it.sellPriceCP ?? it.sellPriceGP ?? 0);
   return Math.max(0, b|0);
 }
 
-/* ---------------- 상점 모달 ---------------- */
+/* ---------- modal ---------- */
 function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
   let wrap = document.getElementById('shopModal'); if (wrap) wrap.remove();
   wrap = document.createElement('div'); wrap.id='shopModal';
@@ -57,135 +46,68 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
   const card = document.createElement('div');
   Object.assign(card.style,{background:'#fff',border:'1px solid #e5e7eb',borderRadius:'16px',boxShadow:'0 20px 60px rgba(0,0,0,.25)',width:'min(560px,95vw)',maxHeight:'85vh',overflow:'auto',padding:'12px'});
 
-  const title = document.createElement('div');
-  title.style.fontWeight='800'; title.style.fontSize='18px';
-  title.textContent = shop?.name || '상점';
-  card.appendChild(title);
+  const title = document.createElement('div'); title.style.fontWeight='800'; title.style.fontSize='18px'; title.textContent=shop?.name||'상점'; card.appendChild(title);
 
-  const tabs = document.createElement('div'); tabs.style.display='flex'; tabs.style.gap='6px'; tabs.style.margin='8px 0';
-  const btnBuy = document.createElement('button'); btnBuy.textContent='구매';
-  const btnSell= document.createElement('button'); btnSell.textContent='판매';
-  Object.assign(btnBuy.style,{padding:'6px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'700'});
-  Object.assign(btnSell.style,{padding:'6px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'700'});
+  const tabs=document.createElement('div'); Object.assign(tabs.style,{display:'flex',gap:'6px',margin:'8px 0'});
+  const btnBuy=document.createElement('button'); btnBuy.textContent='구매';
+  const btnSell=document.createElement('button'); btnSell.textContent='판매';
+  for (const b of [btnBuy,btnSell]) Object.assign(b.style,{padding:'6px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'700'});
   tabs.appendChild(btnBuy); tabs.appendChild(btnSell); card.appendChild(tabs);
 
-  const body = document.createElement('div'); card.appendChild(body);
+  const body=document.createElement('div'); card.appendChild(body);
 
-  /* --- 구매탭 --- */
   function renderBuy(){
     body.innerHTML='';
     if (!items.length){ body.textContent='판매 중인 품목이 없습니다.'; return; }
-
     for (const it of items){
       if (it.active===false) continue;
-      const row = document.createElement('div');
+      const row=document.createElement('div');
       Object.assign(row.style,{display:'grid',gridTemplateColumns:'64px 1fr auto auto',gap:'10px',alignItems:'center',borderBottom:'1px dashed #e5e7eb',padding:'8px 0'});
-
-      const img = document.createElement('img');
-      img.src = it.iconURL || 'https://puppi.netlify.app/images/items/default.png';
-      Object.assign(img.style,{width:'64px',height:'64px',objectFit:'contain'});
-      row.appendChild(img);
-
-      const meta = document.createElement('div');
-      const price = _getBuyPrice(it);
-      meta.innerHTML = `<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
-        <div style="font-size:12px;color:#6b7280">
-          ${it.weapon? `ATK ${it.weapon.baseAtk} · +CRIT ${(it.weapon.crit??0)}% · +ATK ${(it.weapon.extraInit??0)}` : (it.stackable? '소모품':'장비')}
-          ${typeof it.stock==='number' ? ` · 재고 ${it.stock}` : ' · 재고 무한'}
-        </div>`;
+      const img=document.createElement('img'); img.src=it.iconURL||'https://puppi.netlify.app/images/items/default.png'; Object.assign(img.style,{width:'64px',height:'64px',objectFit:'contain'}); row.appendChild(img);
+      const meta=document.createElement('div');
+      const price=_getBuyPrice(it);
+      meta.innerHTML=`<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
+      <div style="font-size:12px;color:#6b7280">${it.weapon?`ATK ${it.weapon.baseAtk} · +CRIT ${(it.weapon.crit??0)}% · +ATK ${(it.weapon.extraInit??0)}`:(it.stackable?'소모품':'장비')}
+      ${typeof it.stock==='number'?` · 재고 ${it.stock}`:' · 재고 무한'}</div>`;
       row.appendChild(meta);
-
-      const qtySelect = document.createElement('select');
-      const maxQty = 10;
-      for (let q=1; q<=maxQty; q++){
-        const opt = document.createElement('option');
-        opt.value = q; opt.textContent = `${q}개`;
-        qtySelect.appendChild(opt);
-      }
-      row.appendChild(qtySelect);
-
-      const buyBtn = document.createElement('button');
-      buyBtn.textContent = `${price} CP`;
-      Object.assign(buyBtn.style,{background:'#111827',color:'#fff',border:'1px solid #e5e7eb',padding:'8px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'800'});
-      buyBtn.addEventListener('click', async ()=>{
-        buyBtn.disabled=true;
-        try{
-          const qty = parseInt(qtySelect.value)||1;
-          await onBuy(it, qty, price);
-          wrap.remove();
-        } finally{ buyBtn.disabled=false; }
-      });
-      row.appendChild(buyBtn);
-
+      const sel=document.createElement('select'); for(let q=1;q<=10;q++){const o=document.createElement('option');o.value=q;o.textContent=`${q}개`;sel.appendChild(o);} row.appendChild(sel);
+      const btn=document.createElement('button'); btn.textContent=`${price} CP`; Object.assign(btn.style,{background:'#111827',color:'#fff',border:'1px solid #e5e7eb',padding:'8px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'800'});
+      btn.addEventListener('click', async ()=>{ btn.disabled=true; try{ const q=parseInt(sel.value)||1; await onBuy(it,q,price); wrap.remove(); } finally{ btn.disabled=false; } });
+      row.appendChild(btn);
       body.appendChild(row);
     }
   }
 
-  /* --- 판매탭 --- */
   function renderSell(){
     body.innerHTML='';
-    const sellables = items.filter(x=> Number((x.sellPriceCP ?? x.sellPriceGP) || 0)>0);
-    const invRows = [];
+    const sellables=items.filter(x=> Number((x.sellPriceCP ?? x.sellPriceGP) || 0)>0);
+    const rows=[];
     for (const it of sellables){
-      const key = it.itemId || it.id;
-      const qty = invSnapshot?.[key] || 0;
-      if (qty<=0) continue;
-      invRows.push({it, qty});
+      const key=it.itemId||it.id; const qty=invSnapshot?.[key]||0; if (qty>0) rows.push({it,qty});
     }
-    if (!invRows.length){ body.textContent='판매 가능한 아이템이 없습니다.'; return; }
-
-    for (const {it, qty} of invRows){
-      const row = document.createElement('div');
+    if (!rows.length){ body.textContent='판매 가능한 아이템이 없습니다.'; return; }
+    for (const {it,qty} of rows){
+      const row=document.createElement('div');
       Object.assign(row.style,{display:'grid',gridTemplateColumns:'64px 1fr auto auto',gap:'10px',alignItems:'center',borderBottom:'1px dashed #e5e7eb',padding:'8px 0'});
-
-      const img = document.createElement('img'); img.src = it.iconURL || 'https://puppi.netlify.app/images/items/default.png';
-      Object.assign(img.style,{width:'64px',height:'64px',objectFit:'contain'}); row.appendChild(img);
-
-      const meta = document.createElement('div');
-      meta.innerHTML = `<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
-        <div style="font-size:12px;color:#6b7280">보유수량 ${qty} · 판매가 ${(it.sellPriceCP ?? it.sellPriceGP)|0} CP</div>`;
-      row.appendChild(meta);
-
-      const qtySelect = document.createElement('select');
-      for (let q=1; q<=qty; q++){
-        const opt = document.createElement('option');
-        opt.value = q; opt.textContent = `${q}개`;
-        qtySelect.appendChild(opt);
-      }
-      row.appendChild(qtySelect);
-
-      const sellBtn = document.createElement('button'); sellBtn.textContent = `판매`;
-      Object.assign(sellBtn.style,{background:'#fff',color:'#111827',border:'1px solid #e5e7eb',padding:'8px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'800'});
-      sellBtn.addEventListener('click', async ()=>{
-        sellBtn.disabled=true;
-        try{
-          const q = parseInt(qtySelect.value)||1;
-          await onSell(it, q);
-          wrap.remove();
-        } finally{ sellBtn.disabled=false; }
-      });
-      row.appendChild(sellBtn);
-
+      const img=document.createElement('img'); img.src=it.iconURL||'https://puppi.netlify.app/images/items/default.png'; Object.assign(img.style,{width:'64px',height:'64px',objectFit:'contain'}); row.appendChild(img);
+      const meta=document.createElement('div'); meta.innerHTML=`<div style="font-weight:700">${it.name} <small style="color:#6b7280">(${it.itemId||it.id})</small></div>
+      <div style="font-size:12px;color:#6b7280">보유수량 ${qty} · 판매가 ${(it.sellPriceCP ?? it.sellPriceGP)|0} CP</div>`; row.appendChild(meta);
+      const sel=document.createElement('select'); for(let q=1;q<=qty;q++){const o=document.createElement('option');o.value=q;o.textContent=`${q}개`;sel.appendChild(o);} row.appendChild(sel);
+      const btn=document.createElement('button'); btn.textContent='판매'; Object.assign(btn.style,{background:'#fff',color:'#111827',border:'1px solid #e5e7eb',padding:'8px 10px',borderRadius:'10px',cursor:'pointer',fontWeight:'800'});
+      btn.addEventListener('click', async ()=>{ btn.disabled=true; try{ const q=parseInt(sel.value)||1; await onSell(it,q); wrap.remove(); } finally{ btn.disabled=false; } }); row.appendChild(btn);
       body.appendChild(row);
     }
   }
 
-  const selectBuy = ()=>{ btnBuy.style.background='#111827'; btnBuy.style.color='#fff'; btnSell.style.background=''; btnSell.style.color=''; renderBuy(); };
-  const selectSell= ()=>{ btnSell.style.background='#111827'; btnSell.style.color='#fff'; btnBuy.style.background=''; btnBuy.style.color=''; renderSell(); };
+  const selectBuy=()=>{btnBuy.style.background='#111827';btnBuy.style.color='#fff';btnSell.style.background='';btnSell.style.color='';renderBuy();};
+  const selectSell=()=>{btnSell.style.background='#111827';btnSell.style.color='#fff';btnBuy.style.background='';btnBuy.style.color='';renderSell();};
+  btnBuy.addEventListener('click',selectBuy); btnSell.addEventListener('click',selectSell); selectBuy();
 
-  btnBuy.addEventListener('click', selectBuy);
-  btnSell.addEventListener('click', selectSell);
-  selectBuy();
-
-  const close = document.createElement('button'); close.textContent='닫기';
-  Object.assign(close.style,{marginTop:'8px',padding:'8px 12px',borderRadius:'8px',cursor:'pointer'});
-  close.addEventListener('click', ()=>wrap.remove());
-  card.appendChild(close);
-
+  const close=document.createElement('button'); close.textContent='닫기'; Object.assign(close.style,{marginTop:'8px',padding:'8px 12px',borderRadius:'8px',cursor:'pointer'}); close.addEventListener('click',()=>wrap.remove()); card.appendChild(close);
   wrap.appendChild(card); document.body.appendChild(wrap);
 }
 
-/* ---------------- Shops 클래스 ---------------- */
+/* ---------- class ---------- */
 export class Shops {
   constructor({ db, map, playerMarker, Score, toast, inv }) {
     this.db = db || _db; this.map = map; this.playerMarker = playerMarker;
@@ -194,180 +116,133 @@ export class Shops {
     this.MIN_ZOOM = 16; this.TRADE_RANGE_M = 20;
     this.invSnapshot = {};
 
-    // 인벤 스냅샷 자동 유지(있을 때)
     try{
-      const origOnChange = this.inv?.onChange;
-      if (typeof origOnChange === 'function'){
-        this.inv.onChange = (items)=>{
-          this._buildInvSnapshot(items);
-          try{ origOnChange(items); }catch{}
-        };
+      const orig = this.inv?.onChange;
+      if (typeof orig === 'function'){
+        this.inv.onChange = (items)=>{ this._buildInvSnapshot(items); try{orig(items);}catch{} };
       }
     }catch{}
   }
 
   _buildInvSnapshot(itemsMaybe){
-    const snap = {};
+    const snap={};
     try{
-      const src =
-        itemsMaybe ??
-        this.inv?.items ??
-        (typeof this.inv?.getAll === 'function' ? this.inv.getAll() : undefined) ??
-        [];
-      if (Array.isArray(src)) {
-        src.forEach(it=>{ if (it?.id) snap[it.id] = (snap[it.id]||0) + (Number(it.qty)||0); });
-      } else if (src && typeof src === 'object') {
-        Object.entries(src).forEach(([k,v])=>{
-          if (v && typeof v === 'object') snap[k] = Number(v.qty||0);
-          else snap[k] = Number(v||0);
-        });
-      }
+      const src = itemsMaybe ?? this.inv?.items ?? (typeof this.inv?.getAll==='function'? this.inv.getAll(): undefined) ?? [];
+      if (Array.isArray(src)) src.forEach(it=>{ if (it?.id) snap[it.id]=(snap[it.id]||0)+(Number(it.qty)||0); });
+      else if (src && typeof src==='object') Object.entries(src).forEach(([k,v])=>{ snap[k] = (v&&typeof v==='object')? Number(v.qty||0): Number(v||0); });
     }catch(e){ console.warn('[shops] inv snapshot build fail', e); }
-    this.invSnapshot = snap;
-    return snap;
+    this.invSnapshot=snap; return snap;
   }
 
   async _loadItems(shopId){
-    const snap = await getDocs(collection(this.db, `shops/${shopId}/items`));
+    const snap=await getDocs(collection(this.db, `shops/${shopId}/items`));
     const out=[]; snap.forEach(d=> out.push({ id:d.id, ...d.data() })); return out;
   }
 
   _inTradeRange(shop){
     try{
-      const pos = this.playerMarker?.getLatLng?.(); if (!pos) return false;
-      const dist = this.map.distance(pos, L.latLng(shop.lat, shop.lon));
-      return dist <= this.TRADE_RANGE_M;
-    }catch{ return true; } // 맵 없으면 스킵
+      const pos=this.playerMarker?.getLatLng?.(); if (!pos) return false;
+      const dist=this.map.distance(pos, L.latLng(shop.lat, shop.lon));
+      return dist<=this.TRADE_RANGE_M;
+    }catch{ return true; }
   }
-
   _requireWalletMode(){
-    const mode = getMode();
-    if (mode !== 'wallet') {
-      this.toast?.('지갑 모드에서만 거래할 수 있어요.');
-      throw new Error('wallet_required');
-    }
+    const mode=getMode();
+    if (mode!=='wallet'){ this.toast?.('지갑 모드에서만 거래할 수 있어요.'); throw new Error('wallet_required'); }
   }
 
-  // ───────────────── 구매(원자 트랜잭션: CP 차감 + 재고 감소 + 인벤 지급)
-  async _buy(shop, item, qty = 1){
+  // 구매(원자 트랜잭션)
+  async _buy(shop, item, qty=1){
     if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
     this._requireWalletMode();
 
-    const userRef = getUserDocRef(this.db);
-    if (!userRef) { this.toast?.('지갑 연결을 먼저 해주세요.'); throw new Error('no_user_ref'); }
+    const userRef=getUserDocRef(this.db);
+    if (!userRef){ this.toast?.('지갑 연결을 먼저 해주세요.'); throw new Error('no_user_ref'); }
     await migrateInventoryIfNeeded(this.db);
-    const invRef = await ensureInventoryDoc(this.db);
+    const invRef=await ensureInventoryDoc(this.db);
 
-    const itemRef = doc(this.db, `shops/${shop.id}/items`, item.id);
-    const itemKey = String(item.itemId || item.id);
+    const itemRef=doc(this.db, `shops/${shop.id}/items`, item.id);
+    const key=String(item.itemId||item.id);
 
-    // FieldPath 준비 (⚠️ 객체 키로 쓰지 말고 페어 나열!)
-    const qtyPath    = new FieldPath('items', itemKey, 'qty');
-    const namePath   = new FieldPath('items', itemKey, 'name');
-    const rarityPath = new FieldPath('items', itemKey, 'rarity');
-    const weapPath   = new FieldPath('items', itemKey, 'weapon');
+    const qtyPath=new FieldPath('items', key, 'qty');
+    const namePath=new FieldPath('items', key, 'name');
+    const rarityPath=new FieldPath('items', key, 'rarity');
+    const weapPath=new FieldPath('items', key, 'weapon');
 
-    let nextCPAfterTx = null;
+    let nextCPAfterTx=null;
 
-    await runTransaction(this.db, async (tx) => {
-      // ─ 가격/재고 확정(서버)
-      const isnap = await tx.get(itemRef);
-      if (!isnap.exists()) throw new Error('gone');
-      const idata = isnap.data() || {};
-      if (idata.active === false) throw new Error('inactive');
+    await runTransaction(this.db, async (tx)=>{
+      const isnap=await tx.get(itemRef); if (!isnap.exists()) throw new Error('gone');
+      const idata=isnap.data()||{}; if (idata.active===false) throw new Error('inactive');
 
-      const unitPrice = Number(
-        idata.buyPriceCP ?? idata.priceCP ??
-        idata.buyPriceGP ?? idata.priceGP ?? 0
-      ) || 0;
-      const q = Math.max(1, qty|0);
-      const pay = Math.max(0, unitPrice * q);
+      const unit=Number(idata.buyPriceCP ?? idata.priceCP ?? idata.buyPriceGP ?? idata.priceGP ?? 0) || 0;
+      const q=Math.max(1, qty|0); const pay=Math.max(0, unit*q);
 
-      // ─ 유저 CP 확인/차감
-      const uss = await tx.get(userRef);
-      if (!uss.exists()) throw new Error('user_missing');
-      const u = uss.data() || {};
-      const curCP = Number(u.cp ?? u.chainPoint ?? 0);
+      const us=await tx.get(userRef); if (!us.exists()) throw new Error('user_missing');
+      const u=us.data()||{}; const curCP=Number(u.cp ?? u.chainPoint ?? 0);
       if (!Number.isFinite(curCP)) throw new Error('cp_invalid');
       if (curCP < pay) throw new Error('insufficient_cp');
-      const nextCP = curCP - pay;
+      const nextCP=curCP - pay;
 
-      // ─ 인벤 문서 보장
-      const invSnap = await tx.get(invRef);
+      const invSnap=await tx.get(invRef);
       if (!invSnap.exists()){
         tx.set(invRef, { items:{}, equipped:{ weapon:'fist' }, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
       }
 
-      // ─ 재고 감소(숫자일 때만)
-      if (typeof idata.stock === 'number'){
-        const curStock = Number(idata.stock);
-        if (!Number.isFinite(curStock)) throw new Error('stock_invalid');
-        if (curStock < q) throw new Error('soldout');
-        tx.update(itemRef, { stock: curStock - q, updatedAt: serverTimestamp() });
-      } else {
+      if (typeof idata.stock==='number'){
+        const cur=Number(idata.stock);
+        if (!Number.isFinite(cur)) throw new Error('stock_invalid');
+        if (cur < q) throw new Error('soldout');
+        tx.update(itemRef, { stock: cur - q, updatedAt: serverTimestamp() });
+      }else{
         tx.update(itemRef, { updatedAt: serverTimestamp() });
       }
 
-      // ─ 인벤 지급 (⚠️ FieldPath-값 페어 나열!)
-      tx.update(
-        invRef,
-        qtyPath,    increment(q),
-        namePath,   item.name || itemKey,
-        rarityPath, item.weapon ? 'rare' : (item.rarity || 'common'),
-        'updatedAt', serverTimestamp(),
-        ...(item.weapon ? [weapPath, item.weapon] : [])
-      );
+      const pairs=[ qtyPath, increment(q), namePath, (item.name||key), rarityPath, (item.weapon?'rare':(item.rarity||'common')), 'updatedAt', serverTimestamp() ];
+      if (item.weapon) pairs.push(weapPath, item.weapon);
+      tx.update(invRef, ...pairs);
 
-      // ─ CP 차감
       tx.update(userRef, { cp: nextCP, chainPoint: nextCP, updatedAt: serverTimestamp() });
       nextCPAfterTx = nextCP;
     });
 
-    try { if (this.Score?.setCP && Number.isFinite(nextCPAfterTx)) await this.Score.setCP(nextCPAfterTx); } catch {}
+    try{ if (this.Score?.setCP && Number.isFinite(nextCPAfterTx)) await this.Score.setCP(nextCPAfterTx); }catch{}
     this._buildInvSnapshot();
     this.toast?.('구매 완료!');
     return true;
   }
 
-  // ───────────────── 판매(원자 트랜잭션: 인벤 차감 + 상점재고 증가 + CP 지급)
+  // 판매(원자 트랜잭션)
   async _sell(shop, item, qty=1){
     if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
     this._requireWalletMode();
 
-    const userRef = getUserDocRef(this.db);
-    if (!userRef) { this.toast?.('지갑 연결을 먼저 해주세요.'); throw new Error('no_user_ref'); }
+    const userRef=getUserDocRef(this.db);
+    if (!userRef){ this.toast?.('지갑 연결을 먼저 해주세요.'); throw new Error('no_user_ref'); }
     await migrateInventoryIfNeeded(this.db);
-    const invRef  = await ensureInventoryDoc(this.db);
+    const invRef=await ensureInventoryDoc(this.db);
 
-    const itemRef = doc(this.db, `shops/${shop.id}/items`, item.id);
-    const itemKey = String(item.itemId || item.id);
-    const rewardUnit = Math.max(0, Number((item.sellPriceCP ?? item.sellPriceGP) || 0));
+    const itemRef=doc(this.db, `shops/${shop.id}/items`, item.id);
+    const key=String(item.itemId||item.id);
+    const rewardUnit=Math.max(0, Number((item.sellPriceCP ?? item.sellPriceGP) || 0));
+    const qtyPath = new FieldPath('items', key, 'qty');
 
-    const qtyPath = new FieldPath('items', itemKey, 'qty');
-
-    await runTransaction(this.db, async (tx) => {
-      const invSnap = await tx.get(invRef);
-      if (!invSnap.exists()) throw new Error('inv_missing');
-      const curQty = Number((((invSnap.data()||{}).items||{})[itemKey]||{}).qty || 0);
+    await runTransaction(this.db, async (tx)=>{
+      const invSnap=await tx.get(invRef); if (!invSnap.exists()) throw new Error('inv_missing');
+      const curQty=Number((((invSnap.data()||{}).items||{})[key]||{}).qty || 0);
       if (!Number.isFinite(curQty) || curQty < qty) throw new Error('not_enough');
 
-      // 인벤 차감
       tx.update(invRef, qtyPath, increment(-qty), 'updatedAt', serverTimestamp());
 
-      // 상점 재고 되돌림(정수형 stock일 때만)
-      const sSnap = await tx.get(itemRef);
+      const sSnap=await tx.get(itemRef);
       if (sSnap.exists()){
-        const sd = sSnap.data() || {};
-        if (typeof sd.stock === 'number'){
-          tx.update(itemRef, { stock: (Number(sd.stock)||0) + qty, updatedAt: serverTimestamp() });
-        } else {
-          tx.update(itemRef, { updatedAt: serverTimestamp() });
-        }
+        const sd=snap.data?.() || sSnap.data() || {};
+        if (typeof sd.stock==='number') tx.update(itemRef, { stock: (Number(sd.stock)||0) + qty, updatedAt: serverTimestamp() });
+        else tx.update(itemRef, { updatedAt: serverTimestamp() });
       }
 
-      // CP 지급
-      const uSnap = await tx.get(userRef);
-      const curCP = Number((uSnap.data()||{}).cp ?? (uSnap.data()||{}).chainPoint ?? 0);
+      const uSnap=await tx.get(userRef);
+      const curCP=Number((uSnap.data()||{}).cp ?? (uSnap.data()||{}).chainPoint ?? 0);
       const next  = curCP + rewardUnit * qty;
       tx.update(userRef, { cp: next, chainPoint: next, updatedAt: serverTimestamp() });
     });
@@ -378,12 +253,12 @@ export class Shops {
   }
 
   async _open(shop){
-    const freshSnap = this._buildInvSnapshot();
+    const fresh = this._buildInvSnapshot();
     this._loadItems(shop.id).then(items=>{
       _openShopModalUI(shop, items, {
         onBuy:(it,qty,price)=>this._buy(shop,it,qty,price),
         onSell:(it,q)=>this._sell(shop,it,q),
-        invSnapshot:freshSnap
+        invSnapshot:fresh
       });
     }).catch(e=>{ console.warn('[shop] open fail', e); this.toast?.('상점 로드 실패'); });
   }
@@ -395,16 +270,16 @@ export class Shops {
       this._tilesKey=''; for (const m of this._markers.values()){ try{this.map.removeLayer(m);}catch{} }
       this._markers.clear(); return;
     }
-    const tiles = _tilesFromBounds(this.map.getBounds()); if (!tiles.length) return;
-    const key = tiles.join(','); if (key===this._tilesKey) return; this._tilesKey=key;
+    const tiles=_tilesFromBounds(this.map.getBounds()); if (!tiles.length) return;
+    const key=tiles.join(','); if (key===this._tilesKey) return; this._tilesKey=key;
     if (this._unsub){ try{this._unsub();}catch{} this._unsub=null; }
 
-    const qy = query(collection(this.db,'shops'), where('active','==',true), where('tile','in',tiles));
-    this._unsub = onSnapshot(qy,(snap)=>{
+    const qy=query(collection(this.db,'shops'), where('active','==',true), where('tile','in',tiles));
+    this._unsub=onSnapshot(qy,(snap)=>{
       snap.docChanges().forEach(ch=>{
         const id = ch.doc.id;
         if (ch.type==='removed'){ const m=this._markers.get(id); if (m){try{this.map.removeLayer(m);}catch{} this._markers.delete(id);} return; }
-        const data = ch.doc.data()||{}; const {lat, lon, imageURL, size=48, active=true, name='상점'}=data;
+        const data=ch.doc.data()||{}; const {lat,lon,imageURL,size=48,active=true,name='상점'}=data;
         if (!Number.isFinite(lat)||!Number.isFinite(lon)||!active){
           const m=this._markers.get(id); if (m){try{this.map.removeLayer(m);}catch{} this._markers.delete(id);} return;
         }

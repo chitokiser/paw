@@ -1,5 +1,8 @@
 // /geolocation/js/inventoryTransfer.js
 // 인벤토리 지급/이전/소비 유틸 (지갑주소 기반 inventories/wa:<address> 문서 사용)
+// - 외부 지갑/세션 의존 없음: 모든 함수는 명시적 guestId("wa:<address>") 인자를 받음
+// - monstersRT 폴백 제거: monsters 컬렉션만 사용
+// - 모든 변경은 Firestore 트랜잭션(runTransaction)으로 일관 처리
 
 import {
   doc, getDoc, setDoc, updateDoc, runTransaction,
@@ -7,8 +10,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
 import { rollDrops } from './loot.js';
-import { safeWrite } from './dbGuard.js';
-import { ensureInventoryDoc } from './identity.js'; // 반드시 inventories/wa:<address> 반환하도록 구현
 
 /* =========================================================
  * 공통 유틸
@@ -33,120 +34,120 @@ const fpQty    = (id) => new FieldPath('items', String(id), 'qty');
 const fpName   = (id) => new FieldPath('items', String(id), 'name');
 const fpRarity = (id) => new FieldPath('items', String(id), 'rarity');
 
+// inventories 문서 참조 헬퍼(guestId는 반드시 "wa:<addressLower>" 형식)
+function invDoc(db, guestId){
+  if (!db)       throw new Error('NO_DB');
+  if (!guestId)  throw new Error('NO_GUEST');
+  return doc(db, 'inventories', String(guestId));
+}
+
 /* =========================================================
- * 상점/보상 지급: 트랜잭션으로 안전 병합
- * guestId = inventories 문서 ID(보통 "wa:<address>")
+ * 상점/보상 지급: 트랜잭션 안전 병합
+ * guestId = "wa:<address>"
  * ======================================================= */
 export async function grantItemsDirect(db, { guestId, items }) {
-  const invRef = doc(db, 'inventories', String(guestId));
+  const ref = invDoc(db, guestId);
 
-  const out = await safeWrite(`grant-${guestId}`, () =>
-    runTransaction(db, async (tx) => {
-      const grant = sanitizeItems(items);
-      if (!grant.length) return [];
+  return await runTransaction(db, async (tx) => {
+    const grant = sanitizeItems(items);
+    if (!grant.length) return [];
 
-      // 문서 보장
-      const snap = await tx.get(invRef);
-      if (!snap.exists()) {
-        tx.set(invRef, {
-          items: {}, owner: String(guestId), createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-        }, { merge: true });
-      }
+    // 문서 보장
+    const snap = await tx.get(ref);
+    if (!snap.exists()) {
+      tx.set(ref, {
+        owner: String(guestId),
+        items: {},
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
 
-      // 각 아이템 병합 (FieldPath 페어 나열형)
-      for (const it of grant) {
-        tx.update(
-          invRef,
-          fpQty(it.id),    increment(it.qty),
-          fpName(it.id),   it.name,
-          fpRarity(it.id), it.rarity,
-          'updatedAt',     serverTimestamp()
-        );
-      }
-      return grant;
-    })
-  );
-
-  if (!out.ok) throw (out.error || new Error('grant blocked'));
-  return out.res || [];
+    // 각 아이템 병합
+    for (const it of grant) {
+      tx.update(
+        ref,
+        fpQty(it.id),    increment(it.qty),
+        fpName(it.id),   it.name,
+        fpRarity(it.id), it.rarity,
+        'updatedAt',     serverTimestamp()
+      );
+    }
+    return grant;
+  });
 }
 
 /* =========================================================
  * 전리품 이전(몬스터 → 인벤)
- *  - 몬스터 쿨다운 예약만 반영(dead/alive/resawnAt은 존중)
+ *  - 몬스터 쿨다운 예약
  *  - items / lootTable / DEFAULT 순서로 드롭 산출
  *  - 빨간약 1개 보장
  *  - inventories/wa:<address> 문서에 병합
  * ======================================================= */
 export async function transferMonsterInventory(db, { monsterId, guestId }) {
-  // 현재 지갑 세션 기준 인벤 문서 보장(주소 기반)
-  const invRef = await ensureInventoryDoc(db);
-  if (!invRef) throw new Error('인벤 문서를 찾을 수 없습니다');
+  if (!monsterId) throw new Error('NO_MONSTER');
 
+  const invRef = invDoc(db, guestId);
   const monRef = doc(db, 'monsters', String(monsterId));
 
-  const out = await safeWrite(`loot-${monsterId}`, () =>
-    runTransaction(db, async (tx) => {
-      const monSnap = await tx.get(monRef);
-      if (!monSnap.exists()) throw new Error('monster doc not found');
-      const mon = monSnap.data() || {};
+  return await runTransaction(db, async (tx) => {
+    const monSnap = await tx.get(monRef);
+    if (!monSnap.exists()) throw new Error('monster doc not found');
 
-      const now = Date.now();
-      const cdUntil = Number(mon.cooldownUntil || 0);
-      const legacyDead = (mon.dead === true) || (mon.alive === false);
-      const legacyResp = Number(mon.respawnAt || 0);
-      const cooldownMs = Math.max(1_000, Number(mon.cooldownMs ?? mon.respawnMs ?? 600_000));
+    const mon = monSnap.data() || {};
+    const now = Date.now();
 
-      if ((legacyDead && legacyResp > now) || now < cdUntil) {
-        const err = Object.assign(new Error('on cooldown'), { code: 'cooldown' });
-        throw err;
-      }
+    const cdUntil    = Number(mon.cooldownUntil || 0);
+    const legacyDead = (mon.dead === true) || (mon.alive === false);
+    const legacyResp = Number(mon.respawnAt || 0);
+    const cooldownMs = Math.max(1_000, Number(mon.cooldownMs ?? mon.respawnMs ?? 600_000));
 
-      // 드롭 산출
-      let drops = [];
-      if (Array.isArray(mon.items) && mon.items.length) {
-        drops = sanitizeItems(mon.items);
-      } else if (Array.isArray(mon.lootTable) && mon.lootTable.length) {
-        drops = sanitizeItems(rollDrops(mon.lootTable));
-      }
-      if (!drops.length) drops = sanitizeItems(DEFAULT_DROP);
+    if ((legacyDead && legacyResp > now) || now < cdUntil) {
+      const err = Object.assign(new Error('on cooldown'), { code: 'cooldown' });
+      throw err;
+    }
 
-      // 빨간약 보장
-      if (!drops.some(it => it.id === 'red_potion' || it.name === '빨간약')) {
-        drops.unshift({ id:'red_potion', name:'빨간약', qty:1, rarity:'common' });
-      }
+    // 드롭 산출
+    let drops = [];
+    if (Array.isArray(mon.items) && mon.items.length) {
+      drops = sanitizeItems(mon.items);
+    } else if (Array.isArray(mon.lootTable) && mon.lootTable.length) {
+      drops = sanitizeItems(rollDrops(mon.lootTable));
+    }
+    if (!drops.length) drops = sanitizeItems(DEFAULT_DROP);
 
-      // 인벤 문서 보장
-      const invSnap = await tx.get(invRef);
-      if (!invSnap.exists()) {
-        tx.set(invRef, { items:{}, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
-      }
+    // 빨간약 보장
+    if (!drops.some(it => it.id === 'red_potion' || it.name === '빨간약')) {
+      drops.unshift({ id:'red_potion', name:'빨간약', qty:1, rarity:'common' });
+    }
 
-      // 병합
-      for (const it of drops) {
-        tx.update(
-          invRef,
-          fpQty(it.id),    increment(it.qty),
-          fpName(it.id),   it.name,
-          fpRarity(it.id), it.rarity,
-          'updatedAt',     serverTimestamp()
-        );
-      }
+    // 인벤 문서 보장
+    const invSnap = await tx.get(invRef);
+    if (!invSnap.exists()) {
+      tx.set(invRef, { items:{}, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
+    }
 
-      // 몬스터 쿨다운 예약
-      tx.update(monRef, {
-        cooldownUntil: now + cooldownMs,
-        lastKilledAt:  now,
-        lastKilledBy:  String(guestId || 'unknown'),
-        killSeq:       increment(1)
-      });
+    // 병합
+    for (const it of drops) {
+      tx.update(
+        invRef,
+        fpQty(it.id),    increment(it.qty),
+        fpName(it.id),   it.name,
+        fpRarity(it.id), it.rarity,
+        'updatedAt',     serverTimestamp()
+      );
+    }
 
-      return drops;
-    })
-  );
+    // 몬스터 쿨다운 예약
+    tx.update(monRef, {
+      cooldownUntil: now + cooldownMs,
+      lastKilledAt:  now,
+      lastKilledBy:  String(guestId),
+      killSeq:       increment(1)
+    });
 
-  if (!out.ok) throw (out.error || new Error('loot-transfer blocked'));
-  return out.res || [];
+    return drops;
+  });
 }
 
 /* =========================================================
@@ -155,9 +156,12 @@ export async function transferMonsterInventory(db, { monsterId, guestId }) {
 
 /** 현재 수량 조회: { kind: 'object'|'number'|'none', qty } */
 export async function getItemQty(db, { guestId, itemId }) {
-  const invRef = doc(db, 'inventories', String(guestId));
-  const snap = await getDoc(invRef);
+  if (!itemId) throw new Error('NO_ITEM');
+  const ref = invDoc(db, guestId);
+
+  const snap = await getDoc(ref);
   if (!snap.exists()) return { kind: 'none', qty: 0 };
+
   const items = (snap.data() || {}).items || {};
   const cur = items[itemId];
   if (cur == null) return { kind: 'none', qty: 0 };
@@ -179,63 +183,54 @@ export async function getItemQty(db, { guestId, itemId }) {
  * - 성공 시 차감 후 수량 반환(0 이상)
  */
 export async function consumeItemOnce(db, { guestId, itemId }) {
-  if (!db) throw new Error('NO_DB');
-  if (!guestId) throw new Error('NO_GUEST');
   if (!itemId) throw new Error('NO_ITEM');
+  const ref = invDoc(db, guestId);
 
-  const invRef = doc(db, 'inventories', String(guestId));
+  return await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('NO_STOCK');
 
-  const out = await safeWrite(`consume-${guestId}-${itemId}`, () =>
-    runTransaction(db, async (tx) => {
-      const snap = await tx.get(invRef);
-      if (!snap.exists()) throw new Error('NO_STOCK');
+    const items = (snap.data() || {}).items || {};
+    const cur = items[itemId];
 
-      const items = (snap.data() || {}).items || {};
-      const cur = items[itemId];
+    // 숫자형: items.<id> = number
+    if (typeof cur === 'number') {
+      const curQty = Number.isFinite(cur) ? cur : 0;
+      if (curQty <= 0) throw new Error('NO_STOCK');
 
-      // 숫자형: items.<id> = number
-      if (typeof cur === 'number') {
-        const curQty = Number.isFinite(cur) ? cur : 0;
-        if (curQty <= 0) throw new Error('NO_STOCK');
-
-        if (curQty - 1 <= 0) {
-          tx.update(invRef, fpItem(itemId), deleteField(), 'updatedAt', serverTimestamp());
-          return 0;
-        } else {
-          tx.update(invRef, fpItem(itemId), increment(-1), 'updatedAt', serverTimestamp());
-          return curQty - 1;
-        }
+      if (curQty - 1 <= 0) {
+        tx.update(ref, fpItem(itemId), deleteField(), 'updatedAt', serverTimestamp());
+        return 0;
+      } else {
+        tx.update(ref, fpItem(itemId), increment(-1), 'updatedAt', serverTimestamp());
+        return curQty - 1;
       }
+    }
 
-      // 객체형: items.<id> = { name, qty, rarity }
-      if (typeof cur === 'object' && cur) {
-        const curQty = Number.isFinite(Number(cur.qty)) ? Number(cur.qty) : 0;
-        if (curQty <= 0) throw new Error('NO_STOCK');
+    // 객체형: items.<id> = { name, qty, rarity }
+    if (typeof cur === 'object' && cur) {
+      const curQty = Number.isFinite(Number(cur.qty)) ? Number(cur.qty) : 0;
+      if (curQty <= 0) throw new Error('NO_STOCK');
 
-        if (curQty - 1 <= 0) {
-          tx.update(invRef, fpItem(itemId), deleteField(), 'updatedAt', serverTimestamp());
-          return 0;
-        } else {
-          tx.update(invRef, fpQty(itemId), curQty - 1, 'updatedAt', serverTimestamp());
-          return curQty - 1;
-        }
+      if (curQty - 1 <= 0) {
+        tx.update(ref, fpItem(itemId), deleteField(), 'updatedAt', serverTimestamp());
+        return 0;
+      } else {
+        tx.update(ref, fpQty(itemId), curQty - 1, 'updatedAt', serverTimestamp());
+        return curQty - 1;
       }
+    }
 
-      throw new Error('NO_STOCK');
-    })
-  );
-
-  if (!out.ok) throw (out.error || new Error('consume blocked'));
-  return out.res;
+    throw new Error('NO_STOCK');
+  });
 }
 
 /* =========================================================
- * 편의: 현재 세션 인벤 문서에 간단 지급(필드 경로 문자열 버전)
- *  - 상점 등 “트랜잭션 필요 없음” 케이스용
+ * 편의: 현재 세션 인벤 문서에 간단 지급(트랜잭션 불필요 케이스)
+ *  - 가이드대로 guestId를 명시적으로 받습니다.
  * ======================================================= */
-export async function grantToCurrentInventory(db, items) {
-  const invRef = await ensureInventoryDoc(db);
-  if (!invRef) throw new Error('인벤 문서를 찾을 수 없습니다');
+export async function grantToInventory(db, { guestId, items }) {
+  const ref = invDoc(db, guestId);
 
   const grant = sanitizeItems(items);
   if (!grant.length) return [];
@@ -246,7 +241,13 @@ export async function grantToCurrentInventory(db, items) {
     payload[`items.${it.id}.name`]   = it.name;
     payload[`items.${it.id}.rarity`] = it.rarity;
   }
-  await updateDoc(invRef, payload);
+
+  // 문서 없으면 생성
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, { owner:String(guestId), items:{}, createdAt: serverTimestamp() }, { merge:true });
+  }
+  await updateDoc(ref, payload);
   return grant;
 }
 
@@ -255,5 +256,5 @@ export default {
   transferMonsterInventory,
   getItemQty,
   consumeItemOnce,
-  grantToCurrentInventory
+  grantToInventory,
 };

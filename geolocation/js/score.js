@@ -4,6 +4,7 @@
 //   HP = level * 1000, attack = level, maxHp = level * 1000
 
 import { db } from './firebase.js';
+import { resolveWalletAddress, userDocRefByAddress } from './dbGuard.js';
 import {
   doc, setDoc, updateDoc, onSnapshot,
   serverTimestamp, getDoc
@@ -115,62 +116,79 @@ export const Score = (() => {
     _stats.hp     = nextHp;
   }
 
-  /* ---------------- Firestore I/O ---------------- */
-  async function _ensureUserDoc(addrLower){
-    const ref = doc(db, 'users', addrLower);
-    const snap = await getDoc(ref);
-    if (!snap.exists()){
-      const lv = 1;
-      await setDoc(ref, {
-        address: addrLower,
-        level: lv,
-        hp: lv * 1000,          // ✔ HP = 레벨×1000
-        maxHp: lv * 1000,
-        exp: 0,
-        attack: lv,             // ✔ 공격력 = 레벨
-        defense: 10,
-        distanceM: 0,
-        cp: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge:true });
-    } else {
-      await _enforceGameDerivedFields(addrLower, snap.data()||{});
-    }
+/* ---------------- Firestore I/O ---------------- */
+// addr → 반드시 소문자 지갑주소로 정규화해서 사용
+async function _ensureUserDoc(addr){
+  const a = keyOf(addr);
+  if (!a) return;
+  const ref = doc(db, 'users', a);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()){
+    const lv = 1;
+    await setDoc(ref, {
+      address: a,                 // 문서키 = 지갑주소(소문자), 필드에도 보관
+      level: lv,
+      hp: lv * 1000,              // ✔ HP = 레벨 × 1000
+      maxHp: lv * 1000,
+      exp: 0,
+      attack: lv,                 // ✔ 공격력 = 레벨
+      defense: 10,
+      distanceM: 0,
+      cp: 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge:true });
+  } else {
+    // 기존 데이터가 있으면 파생 규칙을 강제 주입/보정
+    await _enforceGameDerivedFields(a, snap.data() || {});
   }
+}
 
-  async function _save(partial){
-    if (!_stats.uid) return;
-    try{
-      await updateDoc(doc(db,'users', _stats.uid), { ...partial, updatedAt: serverTimestamp() });
-    }catch{
-      await setDoc(
-        doc(db,'users', _stats.uid),
-        { ...partial, address:_stats.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
-        { merge:true }
-      );
-    }
+async function _save(partial){
+  // 현재 바인딩된 지갑주소가 없으면 시도해서 채움
+  if (!_stats.uid){
+    const resolved = await resolveWalletAddress();
+    if (!resolved) return; // 지갑 없음 → 저장 스킵
+    _stats.uid = keyOf(resolved);
   }
+  const a = keyOf(_stats.uid);
+  const ref = doc(db, 'users', a);
 
-  function _subscribe(addrLower){
-    if (_unsub){ try{_unsub();}catch{} _unsub=null; }
-    if (!addrLower) return;
-    const ref = doc(db, 'users', addrLower);
-    _unsub = onSnapshot(ref, async (ss)=>{
-      const p = ss.data?.() || ss.data() || {};
-      // 먼저 규칙 주입/보정
-      await _enforceGameDerivedFields(addrLower, p);
-
-      // 파생 반영된 _stats 기준으로 나머지 필드 동기화
-      _stats.uid       = addrLower;
-      _stats.exp       = Number(p.exp ?? _stats.exp ?? 0);
-      _stats.defense   = Number(p.defense ?? 10);
-      _stats.distanceM = Number(p.distanceM ?? 0);
-      _stats.cp        = Number(p.cp ?? 0);
-
-      _syncHUDAndNotify();
-    }, (e)=>console.warn('[Score] onSnapshot error', e));
+  try{
+    await updateDoc(ref, { ...partial, updatedAt: serverTimestamp() });
+  }catch(_e){
+    // 문서가 없거나 권한 문제 등으로 update 실패 → merge set로 생성/갱신 시도
+    await setDoc(ref, {
+      ...partial,
+      address: a,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge:true });
   }
+}
+
+function _subscribe(addrLower){
+  if (_unsub){ try{ _unsub(); }catch{} _unsub = null; }
+  const a = keyOf(addrLower);
+  if (!a) return;
+
+  const ref = doc(db, 'users', a);
+  _unsub = onSnapshot(ref, async (ss)=>{
+    const p = ss.exists() ? (ss.data() || {}) : {};
+    // 먼저 규칙(레벨→HP/ATK 파생)을 주입/보정
+    await _enforceGameDerivedFields(a, p);
+
+    // 그 다음 세션 상태 반영
+    _stats.uid       = a;
+    _stats.exp       = Number(p.exp       ?? _stats.exp ?? 0);
+    _stats.defense   = Number(p.defense   ?? 10);
+    _stats.distanceM = Number(p.distanceM ?? 0);
+    _stats.cp        = Number(p.cp        ?? 0);
+
+    _syncHUDAndNotify();
+  }, (e)=>console.warn('[Score] onSnapshot error', e));
+}
 
   async function _bindTo(addr){
     const a = keyOf(addr);
