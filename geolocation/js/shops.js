@@ -1,12 +1,11 @@
 // 상점 구독/마커/모달 UI/거래 (CP 전용, 주소기반)
-// - 읽기: shops/*, shops/*/items/*
-// - 거래: users/{지갑주소}, inventories/wa:{지갑주소}
 
 import {
   collection, query, where, onSnapshot, doc, runTransaction,
   serverTimestamp, getDocs, increment, FieldPath
 } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
-import { db as _db } from "./firebase.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+import { db as _db, auth as _auth } from "./firebase.js";
 
 import {
   getMode,
@@ -16,6 +15,13 @@ import {
 } from "./identity.js";
 
 /* ---------- helpers ---------- */
+async function _ensureAuth() {
+  const auth = _auth || getAuth();
+  if (!auth.currentUser) {
+    try { await signInAnonymously(auth); } catch(e) { console.warn('[shops] anon auth fail', e); }
+  }
+  return auth;
+}
 function _tileSizeDeg(){ return 0.01; }
 function _tilesFromBounds(bounds, g = _tileSizeDeg()){
   const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
@@ -100,7 +106,8 @@ function _openShopModalUI(shop, items, {onBuy, onSell, invSnapshot}){
   }
 
   const selectBuy=()=>{btnBuy.style.background='#111827';btnBuy.style.color='#fff';btnSell.style.background='';btnSell.style.color='';renderBuy();};
-  const selectSell=()=>{btnSell.style.background='#111827';btnSell.style.color='#fff';btnBuy.style.background='';btnBuy.style.color='';renderSell();};
+  const selectSell=()=>{btnSell.style.background='#111827';btnSell.style.color = '#fff';btnBuy.style.background='';btnBuy.style.color='';renderSell();};
+
   btnBuy.addEventListener('click',selectBuy); btnSell.addEventListener('click',selectSell); selectBuy();
 
   const close=document.createElement('button'); close.textContent='닫기'; Object.assign(close.style,{marginTop:'8px',padding:'8px 12px',borderRadius:'8px',cursor:'pointer'}); close.addEventListener('click',()=>wrap.remove()); card.appendChild(close);
@@ -153,6 +160,9 @@ export class Shops {
 
   // 구매(원자 트랜잭션)
   async _buy(shop, item, qty=1){
+    console.log('[Shop Buy] Attempting to buy:', { shop, item, qty });
+    console.log('[Shop Buy] Auth state:', getAuth()?.currentUser);
+    await _ensureAuth(); // 🔑 rules의 request.auth != null 보장
     if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
     this._requireWalletMode();
 
@@ -164,56 +174,68 @@ export class Shops {
     const itemRef=doc(this.db, `shops/${shop.id}/items`, item.id);
     const key=String(item.itemId||item.id);
 
-    const qtyPath=new FieldPath('items', key, 'qty');
-    const namePath=new FieldPath('items', key, 'name');
-    const rarityPath=new FieldPath('items', key, 'rarity');
-    const weapPath=new FieldPath('items', key, 'weapon');
+    try{
+      const nextCPAfterTx = await runTransaction(this.db, async (tx)=>{
+        const isnap=await tx.get(itemRef); if (!isnap.exists()) throw new Error('gone');
+        const idata=isnap.data()||{}; if (idata.active===false) throw new Error('inactive');
 
-    let nextCPAfterTx=null;
+        const unit=Number(idata.buyPriceCP ?? idata.priceCP ?? idata.buyPriceGP ?? idata.priceGP ?? 0) || 0;
+        const q=Math.max(1, qty|0); const pay=Math.max(0, unit*q);
 
-    await runTransaction(this.db, async (tx)=>{
-      const isnap=await tx.get(itemRef); if (!isnap.exists()) throw new Error('gone');
-      const idata=isnap.data()||{}; if (idata.active===false) throw new Error('inactive');
+        const us=await tx.get(userRef); if (!us.exists()) throw new Error('user_missing');
+        const u=us.data()||{}; const curCP=Number(u.cp ?? u.chainPoint ?? 0);
+        if (!Number.isFinite(curCP)) throw new Error('cp_invalid');
+        if (curCP < pay) { this.toast?.(`CP 부족: 보유 ${curCP} / 필요 ${pay}`); throw new Error('insufficient_cp'); }
+        const nextCP=curCP - pay;
 
-      const unit=Number(idata.buyPriceCP ?? idata.priceCP ?? idata.buyPriceGP ?? idata.priceGP ?? 0) || 0;
-      const q=Math.max(1, qty|0); const pay=Math.max(0, unit*q);
+        // 1) stock: 숫자면 감소, 아니면 타임스탬프만 (규칙: stock/updatedAt/lastSoldAt)
+        if (typeof idata.stock==='number'){
+          const curStock=Number(idata.stock);
+          if (!Number.isFinite(curStock)) throw new Error('stock_invalid');
+          if (curStock > 0 && curStock < q) throw new Error('soldout');
+          tx.update(itemRef, { stock: curStock - q, updatedAt: serverTimestamp(), lastSoldAt: serverTimestamp() });
+        }else{
+          tx.update(itemRef, { updatedAt: serverTimestamp(), lastSoldAt: serverTimestamp() });
+        }
 
-      const us=await tx.get(userRef); if (!us.exists()) throw new Error('user_missing');
-      const u=us.data()||{}; const curCP=Number(u.cp ?? u.chainPoint ?? 0);
-      if (!Number.isFinite(curCP)) throw new Error('cp_invalid');
-      if (curCP < pay) throw new Error('insufficient_cp');
-      const nextCP=curCP - pay;
+        // 2) 유저 CP 차감 (cp만)
+        tx.update(userRef, { cp: nextCP, updatedAt: serverTimestamp() });
 
-      const invSnap=await tx.get(invRef);
-      if (!invSnap.exists()){
-        tx.set(invRef, { items:{}, equipped:{ weapon:'fist' }, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge:true });
-      }
+        // 3) 인벤 지급 (수량과 메타정보 분리)
+        const qtyPath = new FieldPath('items', key, 'qty');
+        tx.update(invRef, qtyPath, increment(q));
 
-      if (typeof idata.stock==='number'){
-        const cur=Number(idata.stock);
-        if (!Number.isFinite(cur)) throw new Error('stock_invalid');
-        if (cur < q) throw new Error('soldout');
-        tx.update(itemRef, { stock: cur - q, updatedAt: serverTimestamp() });
-      }else{
-        tx.update(itemRef, { updatedAt: serverTimestamp() });
-      }
+        const updatePairs = [
+          new FieldPath('items', key, 'name'),
+          (item.name || key),
+          new FieldPath('items', key, 'rarity'),
+          (item.weapon ? 'rare' : (item.rarity || 'common')),
+          'updatedAt', 
+          serverTimestamp()
+        ];
 
-      const pairs=[ qtyPath, increment(q), namePath, (item.name||key), rarityPath, (item.weapon?'rare':(item.rarity||'common')), 'updatedAt', serverTimestamp() ];
-      if (item.weapon) pairs.push(weapPath, item.weapon);
-      tx.update(invRef, ...pairs);
+        if (item.weapon) {
+          updatePairs.push(new FieldPath('items', key, 'weapon'), item.weapon);
+        }
+        tx.update(invRef, ...updatePairs);
 
-      tx.update(userRef, { cp: nextCP, chainPoint: nextCP, updatedAt: serverTimestamp() });
-      nextCPAfterTx = nextCP;
-    });
+        return nextCP;
+      });
 
-    try{ if (this.Score?.setCP && Number.isFinite(nextCPAfterTx)) await this.Score.setCP(nextCPAfterTx); }catch{}
-    this._buildInvSnapshot();
-    this.toast?.('구매 완료!');
-    return true;
+      try{ if (this.Score?.setCP && Number.isFinite(nextCPAfterTx)) await this.Score.setCP(nextCPAfterTx); }catch{}
+      this._buildInvSnapshot();
+      this.toast?.('구매 완료!');
+      return true;
+
+    } catch(e){
+      console.error('[shop.buy.tx] fail', e.code, e.message, e);
+      throw e;
+    }
   }
 
   // 판매(원자 트랜잭션)
   async _sell(shop, item, qty=1){
+    await _ensureAuth();
     if (!this._inTradeRange(shop)) { this.toast?.('거래 가능 거리 밖입니다.'); throw new Error('out_of_range'); }
     this._requireWalletMode();
 
@@ -227,25 +249,37 @@ export class Shops {
     const rewardUnit=Math.max(0, Number((item.sellPriceCP ?? item.sellPriceGP) || 0));
     const qtyPath = new FieldPath('items', key, 'qty');
 
-    await runTransaction(this.db, async (tx)=>{
-      const invSnap=await tx.get(invRef); if (!invSnap.exists()) throw new Error('inv_missing');
-      const curQty=Number((((invSnap.data()||{}).items||{})[key]||{}).qty || 0);
-      if (!Number.isFinite(curQty) || curQty < qty) throw new Error('not_enough');
+    try{
+      await runTransaction(this.db, async (tx)=>{
+        const invSnap=await tx.get(invRef); if (!invSnap.exists()) throw new Error('inv_missing');
+        const curQty=Number((((invSnap.data()||{}).items||{})[key]||{}).qty || 0);
+        if (!Number.isFinite(curQty) || curQty < qty) throw new Error('not_enough');
 
-      tx.update(invRef, qtyPath, increment(-qty), 'updatedAt', serverTimestamp());
+        // 인벤 감소
+        tx.update(invRef, qtyPath, increment(-qty), 'updatedAt', serverTimestamp());
 
-      const sSnap=await tx.get(itemRef);
-      if (sSnap.exists()){
-        const sd=snap.data?.() || sSnap.data() || {};
-        if (typeof sd.stock==='number') tx.update(itemRef, { stock: (Number(sd.stock)||0) + qty, updatedAt: serverTimestamp() });
-        else tx.update(itemRef, { updatedAt: serverTimestamp() });
-      }
+        // 상점 재고 복원(숫자형일 때만), 아니면 타임스탬프만
+        const sSnap=await tx.get(itemRef);
+        if (sSnap.exists()){
+          const sd = sSnap.data() || {};
+          if (typeof sd.stock==='number') {
+            const next = (Number(sd.stock)||0) + qty;
+            tx.update(itemRef, { stock: next, updatedAt: serverTimestamp() });
+          } else {
+            tx.update(itemRef, { updatedAt: serverTimestamp() });
+          }
+        }
 
-      const uSnap=await tx.get(userRef);
-      const curCP=Number((uSnap.data()||{}).cp ?? (uSnap.data()||{}).chainPoint ?? 0);
-      const next  = curCP + rewardUnit * qty;
-      tx.update(userRef, { cp: next, chainPoint: next, updatedAt: serverTimestamp() });
-    });
+        // 유저 CP 지급 (cp만)
+        const uSnap=await tx.get(userRef);
+        const curCP=Number((uSnap.data()||{}).cp ?? (uSnap.data()||{}).chainPoint ?? 0);
+        const next  = curCP + rewardUnit * qty;
+        tx.update(userRef, { cp: next, updatedAt: serverTimestamp() });
+      });
+    } catch(e){
+      console.error('[shop.sell.tx] fail', e.code, e.message, e);
+      throw e;
+    }
 
     this._buildInvSnapshot();
     this.toast?.('판매 완료! (CP 지급)');

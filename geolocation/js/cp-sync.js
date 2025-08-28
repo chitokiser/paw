@@ -1,8 +1,8 @@
-// /geolocation/js/cp-sync.js
-// - 게스트: localStorage로 오늘 CP 관리
-// - 지갑: users/{auth.uid} 문서에 cpToday/cp 읽기/쓰기, address 필드에 지갑주소 저장
-// - 오늘 CP가 0이거나 미정의면, lastDate가 오늘일 때 cp를 "표시"용으로 Fallback
-//   (AUTO_BACKFILL_CP_TODAY=true로 켜면 DB의 cpToday도 cp로 1회 보정)
+// /geolocation/js/cp-sync.js  (지갑주소=문서키 버전)
+// - Guest: localStorage 로 오늘 CP 관리
+// - Wallet: users/{walletAddressLower} 문서에 cpToday/cp 읽기/쓰기
+// - cpToday가 0이고 lastDate가 오늘이면 총합 cp를 표시용으로 폴백
+//   (AUTO_BACKFILL_CP_TODAY=true면 1회 DB에도 보정)
 
 import { db, auth, authReady } from './firebase.js';
 import {
@@ -12,16 +12,16 @@ import {
 import { CLAIM_PASS } from './pass.js';
 
 /* ------------ 설정 ------------ */
-const AUTO_BACKFILL_CP_TODAY = false; // true로 바꾸면 cpToday가 0일 때 cp로 DB 채워넣음(1회)
+const AUTO_BACKFILL_CP_TODAY = false;
 
 /* ------------ DOM refs ------------ */
 const $ = (id)=> document.getElementById(id);
 const cpTodayEl     = $('cpToday');
 const addrEl        = $('addr');
-const levelViewEl   = $('levelView');     // 표기용
+const levelViewEl   = $('levelView');
 const levelGateEl   = $('levelGate');
 const btnConnect    = $('btnConnect');
-const btnSync       = $('btnSync');       // geohome.html 버튼과 연결
+const btnSync       = $('btnSync');
 const chainStatusEl = $('chainStatus');
 const btnResetGuest = $('btnResetGuest');
 const walletBox     = $('walletBox');
@@ -41,8 +41,7 @@ window.addEventListener('pf:modeChanged', async (e)=>{
 const { ethers } = window;
 const contractAddress = {
   pupbank: "0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D",
-  // gp: "0x35f7cfD9D3aE6Fdf1c080C3dd725EC68EB017caE",   // ❌ 사용 안 함(요청)
-  claim:  "0x94472d875EE776496EcE59aC41A1F8292AfE7FBe" // ✅ 이번에 사용할 컨트랙트
+  claim:   "0x1Af8EFFD3CA2CADd0C57F043C7c37e6684C97b28"
 };
 const pupbankAbi = [
   "function myinfo(address) view returns(uint256,uint256,uint256,address,uint256)",
@@ -52,18 +51,24 @@ const claimAbi = [ "function claimScore(uint256 _pass) external" ];
 
 let provider=null, signer=null, userAddress=null, pupbank=null, claimC=null;
 
-/* ------------ Auth / Firestore helpers ------------ */
+/* ------------ Helpers ------------ */
 const keyOf = (x)=> String(x||'').toLowerCase();
-function currentUid(){ return auth.currentUser?.uid || null; }
-function userDocRef(){
-  const uid = currentUid();
-  if (!uid) throw new Error('AUTH_REQUIRED');
-  return doc(db, 'users', uid);
+function todayStr(){
+  const d = new Date();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
+
+// 🔑 users/{walletAddressLower}
+function userDocRefByAddr(addrLower){
+  const k = keyOf(addrLower);
+  if (!k) throw new Error('WALLET_REQUIRED');
+  return doc(db, 'users', k);
+}
+
 async function ensureAuthReady(){
-  // 인증 완료까지 대기 (익명 로그인 포함)
-  await authReady;
-  if (!auth.currentUser) throw new Error('AUTH_REQUIRED');
+  await authReady; // (익명이라도) 인증 세션 확보
 }
 
 /* ---------- Provider & Wallet ---------- */
@@ -87,7 +92,7 @@ async function ensureProvider(){
   if (addrEl) addrEl.textContent = userAddress;
 }
 
-/* ---------- 패시브 주소 수화(연결 없이도 주소/CP 표출) ---------- */
+/* ---------- 패시브 주소 수화 ---------- */
 async function getPassiveAddress(){
   try{
     if (window.ethereum?.selectedAddress) return keyOf(window.ethereum.selectedAddress);
@@ -100,13 +105,13 @@ async function hydrateAddressFromSessionOrWallet(){
   const s = keyOf(sessionStorage.getItem('GH_WALLET') || '');
   if (s){
     userAddress = s;
-    if (addrEl) addrEl.textContent = userAddress;
+    addrEl && (addrEl.textContent = userAddress);
     return;
   }
   const a = await getPassiveAddress();
   if (a){
     userAddress = a;
-    if (addrEl) addrEl.textContent = userAddress;
+    addrEl && (addrEl.textContent = userAddress);
   }
 }
 if (window.ethereum?.on){
@@ -118,23 +123,14 @@ if (window.ethereum?.on){
   window.ethereum.on('chainChanged',   async ()=>{ await refreshCPUI(); });
 }
 
-/* ------------ 공통 유틸 ------------ */
-function todayStr(){
-  const d = new Date();
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
-/* ------------ Firestore: users/{auth.uid} ------------ */
+/* ------------ users/{wallet} 보장/일일 리셋 ------------ */
 async function ensureUserDoc(addressLower, level=1){
   await ensureAuthReady();
-  const ref = userDocRef();
+  const ref = userDocRefByAddr(addressLower);
   const snap = await getDoc(ref);
   const lv = Math.max(1, Number(level||1));
   if (!snap.exists()){
     await setDoc(ref, {
-      uid: currentUid(),
       address: keyOf(addressLower||''),
       level: lv,
       // 파생값(레벨 기준)
@@ -145,7 +141,6 @@ async function ensureUserDoc(addressLower, level=1){
       createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     }, { merge: true });
   } else {
-    // 주소/레벨 갱신
     await updateDoc(ref, {
       address: keyOf(addressLower||''),
       level: lv,
@@ -153,10 +148,9 @@ async function ensureUserDoc(addressLower, level=1){
     });
   }
 }
-
-async function ensureDailyReset(){
+async function ensureDailyReset(addressLower){
   await ensureAuthReady();
-  const ref = userDocRef();
+  const ref = userDocRefByAddr(addressLower);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
   const d = snap.data() || {};
@@ -171,8 +165,9 @@ async function getTodayCP(){
     await ensureAuthReady();
     if (!userAddress) await hydrateAddressFromSessionOrWallet();
     if (userAddress){
-      await ensureDailyReset();
-      const snap = await getDoc(userDocRef());
+      await ensureDailyReset(userAddress);
+      const ref  = userDocRefByAddr(userAddress);
+      const snap = await getDoc(ref);
       const data = snap.exists() ? (snap.data()||{}) : {};
       let daily  = Number(data.cpToday || 0) | 0;
       const last = String(data.lastDate || '');
@@ -181,7 +176,7 @@ async function getTodayCP(){
       if (daily === 0 && last === todayStr() && total > 0){
         if (AUTO_BACKFILL_CP_TODAY){
           try{
-            await updateDoc(userDocRef(), { cpToday: total, updatedAt: serverTimestamp() });
+            await updateDoc(ref, { cpToday: total, updatedAt: serverTimestamp() });
             daily = total;
           }catch(e){ console.warn('[cp-sync] backfill failed', e); daily = total; }
         } else {
@@ -204,8 +199,8 @@ async function addTodayCP(delta){
     localStorage.setItem('cp_today', String(cur + d));
   } else {
     await ensureAuthReady();
-    await ensureDailyReset();
-    await updateDoc(userDocRef(), {
+    await ensureDailyReset(userAddress);
+    await updateDoc(userDocRefByAddr(userAddress), {
       cpToday: increment(d),
       cp: increment(d),
       updatedAt: serverTimestamp()
@@ -215,7 +210,7 @@ async function addTodayCP(delta){
 }
 window.__cp_addToday = addTodayCP;
 
-/* ------------ Level 표기/버튼 상태 ------------ */
+/* ------------ 레벨/버튼 상태 ------------ */
 async function fetchLevel(address){
   let lv = 0;
   try {
@@ -226,7 +221,6 @@ async function fetchLevel(address){
   }
   return lv|0;
 }
-
 function updateSyncButtonState(level, cp){
   const eligible = (Number(level||0) >= 1) && (Number(cp||0) >= 5000) && (mode === 'wallet');
   if (btnSync) btnSync.disabled = !eligible;
@@ -236,10 +230,9 @@ function updateSyncButtonState(level, cp){
       : '조건: 레벨1 & 오늘 5000CP 이상';
   }
 }
-
 async function refreshCPUI(){
   const cp = await getTodayCP();
-  if (cpTodayEl) cpTodayEl.textContent = String(cp);
+  cpTodayEl && (cpTodayEl.textContent = String(cp));
   const lvl = Number(levelViewEl?.textContent || 0) || 0;
   updateSyncButtonState(lvl, cp);
 }
@@ -251,25 +244,25 @@ async function connectWallet(){
 
     // 체인 레벨 조회 → UI
     const level = await fetchLevel(userAddress);
-    if (levelViewEl) levelViewEl.textContent = String(level);
+    levelViewEl && (levelViewEl.textContent = String(level));
     if (level < 1){
       if (levelGateEl) levelGateEl.innerHTML = `레벨 1 이상 필요 → <a class="link-light" href="../memberjoin.html">회원가입</a>`;
       throw new Error('레벨 1 미만');
     } else {
-      if (levelGateEl) levelGateEl.textContent = '연결 허가됨';
+      levelGateEl && (levelGateEl.textContent = '연결 허가됨');
     }
 
-    // Firebase 인증 후 유저 문서 준비(문서키=auth.uid, address 필드=지갑주소)
+    // 🔑 users/{wallet} 문서 준비
     await ensureAuthReady();
     await ensureUserDoc(userAddress, level);
-    await ensureDailyReset();
+    await ensureDailyReset(userAddress);
 
     // 세션 상태 저장
     sessionStorage.setItem('GH_MODE', 'wallet');
     sessionStorage.setItem('GH_WALLET', userAddress);
 
     await refreshCPUI();
-    if (addrEl) addrEl.textContent = userAddress;
+    addrEl && (addrEl.textContent = userAddress);
   }catch(e){
     console.error(e);
     alert(e?.message || '지갑 연결 실패');
@@ -277,7 +270,6 @@ async function connectWallet(){
 }
 
 /* ------------ Chain sync (5000CP per batch) ------------ */
-// ✅ 요청 반영: claimScore(pass)를 호출, 성공 시 cpToday는 -5000으로 고정 저장
 async function syncOnChain(){
   try{
     if (mode !== 'wallet') throw new Error('지갑 모드가 아닙니다');
@@ -288,23 +280,21 @@ async function syncOnChain(){
 
     await ensureProvider();
     await ensureAuthReady();
-    await ensureDailyReset();
+    await ensureDailyReset(userAddress);
 
     const cp = await getTodayCP();
     const batches = Math.floor(cp / 5000);
     if (batches <= 0) throw new Error('오늘 5000CP 이상 필요');
 
-    // 1) 체인 트랜잭션 (가스는 유저 지갑에서 지출)
+    // 1) 체인 트랜잭션
     const tx = await claimC.claimScore(ethers.BigNumber.from(CLAIM_PASS));
     await tx.wait();
 
-    // 2) Firestore 업데이트 (문서키=auth.uid)
+    // 2) Firestore 업데이트 (문서키=wallet)
     const used = batches * 5000;
-    await updateDoc(userDocRef(), {
-      // 총합 cp는 사용량만큼 차감 (원 설계 유지)
+    await updateDoc(userDocRefByAddr(userAddress), {
       cp: increment(-used),
-      // 오늘 cpToday는 0 대신 -5000 고정(요청)
-      cpToday: -5000,
+      cpToday: -5000, // 요청 사양
       updatedAt: serverTimestamp()
     });
 
@@ -331,11 +321,9 @@ btnResetGuest?.addEventListener('click', ()=>{
 (async function boot(){
   try{
     renderModeBox();
-    // 인증 완료까지 미리 대기해 두면 초기 읽기에서 권한오류가 나지 않습니다.
-    await ensureAuthReady();
+    await ensureAuthReady(); // 초기 권한오류 예방
   }catch(e){
-    // 개발 단계에서 authReady가 실패할 일은 거의 없지만, 방어적으로 처리
-    console.warn('[cp-sync] authReady failed or delayed', e);
+    console.warn('[cp-sync] authReady delayed', e);
   }
   await hydrateAddressFromSessionOrWallet();
   await refreshCPUI();

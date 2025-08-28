@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 관리자: payload에 admin:true 포함되어야 함 (delete 요청 대비 null 가드)
+    function isDevAdminCreateOrMerge() {
+      return request.resource != null
+             && request.resource.data.admin == true;
+    }
+
+    /* ===== shops ===== */
+    match /shops/{shopId} {
+      allow read: if true;
+      allow write: if isDevAdminCreateOrMerge();
+    }
+
+    match /shops/{shopId}/items/{itemId} {
+      allow read: if true;
+      allow create, delete: if isDevAdminCreateOrMerge();
+
+      // 관리자 전권 OR (로그인 유저) 재고감소/타임스탬프-only
+      allow update: if isDevAdminCreateOrMerge()
+        || (
+          request.auth != null
+          && (
+              // 1) 재고가 숫자: 감소(+타임스탬프)만
+              (
+                resource.data.stock is int
+                && request.resource.data.stock is int
+                && request.resource.data.stock >= 0
+                && request.resource.data.stock <= resource.data.stock
+                && request.resource.data.keys().hasOnly(['stock','updatedAt','lastSoldAt'])
+                && request.resource.data.diff(resource.data).changedKeys()
+                     .hasOnly(['stock','updatedAt','lastSoldAt'])
+              )
+              // 2) 무한재고(null/미숫자): 타임스탬프만
+              || (
+                !(resource.data.stock is int)
+                && request.resource.data.keys().hasOnly(['updatedAt','lastSoldAt'])
+                && request.resource.data.diff(resource.data).changedKeys()
+                     .hasOnly(['updatedAt','lastSoldAt'])
+              )
+          )
+        );
+    }
+
+    /* ===== monsters/towers ===== */
+    match /monsters/{id} { allow read: if true; allow write: if isDevAdminCreateOrMerge(); }
+    match /towers/{id}   { allow read: if true; allow write: if isDevAdminCreateOrMerge(); }
+
+    /* ===== read-only ===== */
+    match /monstersRT/{id} { allow read: if true; allow write: if false; }
+    match /treasures/{id}  { allow read: if true; allow write: if false; }
+
+    /* ===== users / inventories ===== */
+    // users: 로그인된 유저만 (지갑 모드여도 Firestore 인증은 별개 → 익명 로그인 보장 필요)
+    match /users/{addr} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // inventories: 로그인 유저 또는 guest:* 문서 허용 (기존 정책 유지)
+    match /inventories/{invId} {
+      allow read: if true;
+      allow write: if request.auth != null || invId.matches('^guest:.*$');
+    }
+
+    /* ===== fallback deny ===== */
+    match /{document=**} { allow read, write: if false; }
+  }
+}

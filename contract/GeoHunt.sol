@@ -99,11 +99,45 @@ contract GeoHunt {
     function getpass() external view onlyOwner returns (uint256) {
         return pass;
     }
+     
 
-    function getmydefense(address user) external view returns (uint256) {
+       function getmydogi(address user) external view returns (uint256) {
+        uint256 pid = puppy.myPuppyid(user);
+        uint256 intell = puppy.geti(pid);
+        return intell;
+    }
+      function getmydogc(address user) external view returns (uint256) {
         uint pid = puppy.myPuppyid(user);
-        uint256 power = uint256(puppy.geti(pid)) + uint256(puppy.getc(pid)) + uint256(puppy.gets(pid))
+        uint256 cou = puppy.getc(pid);
+        return cou;
+    }
+  
+    
+        function getmydogs(address user) external view returns (uint256) {
+        uint pid = puppy.myPuppyid(user);
+        uint256 str = puppy.gets(pid);
+        return str;
+    }
+        function getmydoga(address user) external view returns (uint256) { //민첩성
+        uint pid = puppy.myPuppyid(user);
+        uint256 agi = puppy.geta(pid);
+        return agi;
+    }
+    function getmydoge(address user) external view returns (uint256) {  //지구력
+        uint pid = puppy.myPuppyid(user);
+        uint256 end = puppy.gete(pid);
+        return end;
+    }
+        function getmydogf(address user) external view returns (uint256) { //유연성 flexibility
+        uint pid = puppy.myPuppyid(user);
+        uint256 fle = puppy.getf(pid);
+        return fle;
+    }
+
+    function getmydogall(address user) external view returns (uint256) {
+        uint pid = puppy.myPuppyid(user);
+        uint256 allpower = uint256(puppy.geti(pid)) + uint256(puppy.getc(pid)) + uint256(puppy.gets(pid))
             + uint256(puppy.geta(pid)) + uint256(puppy.gete(pid)) + uint256(puppy.getf(pid));
-        return power;
+        return allpower;
     }
 }

@@ -1,9 +1,29 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ⚠️ 개발 전용: 모든 읽기/쓰기 허용
-    match /{document=**} {
-      allow read, write: if true;
+
+    // users 컬렉션: 로그인한 사용자는 누구나 읽고 쓸 수 있도록 허용
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // inventories 컬렉션: 로그인한 사용자는 누구나 읽고 쓸 수 있도록 허용
+    match /inventories/{inventoryId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 상점과 그 안의 아이템은 누구나 읽을 수 있고,
+    // 로그인한 사용자는 쓸 수 있습니다 (재고 업데이트 등).
+    match /shops/{shopId}/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // 다른 모든 컬렉션(monsters, towers 등):
+    // 누구나 읽을 수 있지만, 쓰기는 admin 플래그가 있어야만 허용
+    match /{other}/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.resource.data.admin == true;
     }
   }
 }

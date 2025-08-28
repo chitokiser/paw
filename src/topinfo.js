@@ -10,7 +10,7 @@
   const cA = {
     cyadexAddr: "0xa100276E165895d09A58f7ea27321943F50e7E61",
     betgp:      "0x35f7cfD9D3aE6Fdf1c080C3dd725EC68EB017caE",
-    mutbankAddr:"0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D",
+    mutbankAddr:"0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D",  //pup뱅크
     erc20:      "0xCC1ce312b7A7C4A78ffBf51F8fc0e087C1D4c72f",
   };
 

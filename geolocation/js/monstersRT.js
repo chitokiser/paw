@@ -1,14 +1,17 @@
 // /geolocation/js/monstersRT.js
 // - 타일 기반 로드(쿼리 in tiles)
-// - 거리 기반 애니메이션(가까우면 재생/멀면 정지 또는 슬로우)
+// - 거리 기반 애니메이션(가까우면 재생/멀면 정지/슬로우)
 // - 로컬 쿨다운/레거시 숨김 조건 준수
-// - ✅ 죽은 몬스터(또는 쿨다운 중) 완전 차단: isMonsterDead() 사용
+// - ✅ 죽은 몬스터(또는 쿨다운 중) 완전 차단: isMonsterDead()
 // - ✅ (옵션) AI 공격 틱: __applyPlayerDamage 호출 시에도 죽음/쿨다운/거리 체크
+// - ✅ 디버그 도우미: window.rt.start()/stop()/dump()
 
-import { collection, query, where, limit, getDocs, onSnapshot  } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+import {
+  collection, query, where, limit, getDocs
+} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 import { makeAniFirstFrameIcon, attachSpriteToMarker, getAniBase } from './fx.js';
 import { isMonsterDead } from './battle.js';
-import { db } from './firebase.js';
+
 /* ===============================
  * 로컬 쿨다운 유틸
  * =============================== */
@@ -159,6 +162,20 @@ export class RealTimeMonsters {
     this._onMoveEnd = this._onMoveEnd.bind(this);
     this._onZoomEnd = this._onZoomEnd.bind(this);
     this._aiTick = this._aiTick.bind(this);
+
+    // ── 디버그 핸들 to window.rt
+    try {
+      if (!window.rt) window.rt = {};
+      window.rt.start = () => this.start();
+      window.rt.stop  = () => this.stop();
+      window.rt.dump  = () => ({
+        started: this._started,
+        markers: this.reg.size,
+        tilesKey: this._lastTilesKey,
+        ids: [...this.reg.keys()]
+      });
+      window.rt._inst = this;
+    } catch {}
   }
 
   /** 현재 보이는 몬스터 id/data 목록 */
@@ -326,7 +343,7 @@ export class RealTimeMonsters {
 
       // attach battle (죽은 상태면 바인딩 생략)
       if (!isMonsterDead(id)) {
-        try { this.attachMonsterBattle(marker, id, d); rec.bound = true; } catch {}
+        try { rec.battleCtrl = this.attachMonsterBattle(marker, id, d); rec.bound = true; console.log('monstersRT.js: Assigned battleCtrl to rec:', rec.battleCtrl); } catch {}
       }
 
       // 최초 상태에 맞춰 애니 갱신
@@ -357,7 +374,7 @@ export class RealTimeMonsters {
     rec.data = d;
 
     if (!rec.bound && !isMonsterDead(id)){
-      try { this.attachMonsterBattle(rec.marker, id, d); rec.bound = true; } catch {}
+      try { rec.battleCtrl = this.attachMonsterBattle(rec.marker, id, d); rec.bound = true; } catch {}
     }
 
     // 거리 기반 애니 갱신
@@ -501,9 +518,6 @@ export class RealTimeMonsters {
 
   /* =========================================
    * 🧠 (옵션) AI 공격 틱
-   *  - 죽은 몬스터/쿨다운/거리 등 모든 조건을 만족할 때만
-   *    window.__applyPlayerDamage(id, dmg) 호출
-   *  - battle.js에서 __applyPlayerDamage는 추가 가드를 갖고 있음
    * ========================================= */
   _aiTick(){
     if (!this._started || !this.ai.enable) return;
@@ -540,3 +554,5 @@ export class RealTimeMonsters {
     }
   }
 }
+
+export default RealTimeMonsters;
