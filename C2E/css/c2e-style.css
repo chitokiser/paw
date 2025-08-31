@@ -1,0 +1,19 @@
+:root{
+  --bg:#0b0d14; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12);
+  --text:#e9eefc; --muted:#a9b1c7; --grad:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%);
+  --radius:18px;
+}
+*{box-sizing:border-box}
+body{ background:var(--bg); color:var(--text); font-family:system-ui,Segoe UI,Roboto,Arial; margin:0 }
+.container{ max-width:980px; margin:0 auto; padding:24px }
+.card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin:16px 0 }
+.row{ display:flex; gap:14px; flex-wrap:wrap }
+.row>*{ flex:1 1 320px }
+label{ display:block; margin-bottom:8px; color:var(--muted) }
+input,select,textarea,button{ width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:#0f1320; color:var(--text) }
+button{ background:var(--grad); border:none; cursor:pointer }
+.badge{ display:inline-block; padding:6px 10px; border-radius:999px; border:1px solid var(--border); color:var(--muted); font-size:12px }
+.code{ font-family:ui-monospace,Consolas; background:#0f1320; border:1px dashed var(--border); border-radius:10px; padding:4px 8px }
+table{ width:100%; border-collapse:collapse }
+th,td{ border-bottom:1px solid var(--border); padding:10px 12px; vertical-align:top }
+a{ color:#9ab4ff }

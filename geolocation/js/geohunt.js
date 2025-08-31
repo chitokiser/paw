@@ -1,21 +1,18 @@
 // /geolocation/js/geohunt.js
 // - 걷기 적립(10m → 1CP)
-// - 게스트: 로컬만 / 지갑: cp-sync.js의 __cp_addToday 훅을 통해 DB 반영
-// - geohome.html 안에 #geohunt-embed 컨테이너가 있으면 "미니 HUD"로 자동 마운트
+// - Wallet-only: cp-sync.js의 window.__cp_addToday 훅을 통해 DB 반영
+// - 게스트 모드 제거 (지갑/로그인 전이면 적립 시도 시 경고)
 
 import { WalkPoints } from './walk.js';
 
-// 모드 감지
-const mode = sessionStorage.getItem('GH_MODE') || localStorage.getItem('pf_mode') || 'guest';
-const isWallet = (mode === 'wallet');
-
-// cp-sync.js가 제공하는 전역 훅(없으면 로컬 폴백)
-const addTodayCP = (window.__cp_addToday)
-  ? window.__cp_addToday
-  : async (d) => {
-      const cur = Number(localStorage.getItem('cp_today') || 0) | 0;
-      localStorage.setItem('cp_today', String(cur + Math.max(0, d | 0)));
-    };
+// cp-sync.js 가 제공하는 전역 훅(필수)
+const addTodayCP = async (d) => {
+  if (typeof window.__cp_addToday !== 'function') {
+    alert('먼저 지갑을 연결하고 로그인하세요.');
+    throw new Error('__cp_addToday unavailable');
+  }
+  await window.__cp_addToday(d);
+};
 
 // 토스트 헬퍼(임베드용)
 function toast(msg) {
@@ -34,7 +31,7 @@ function mountEmbed(containerId = 'geohunt-embed') {
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <div>
           <div style="font-size:12px;opacity:.7">GeoHunt Mini</div>
-          <div class="fw-bold">모드: ${isWallet ? 'Wallet' : 'Guest'}</div>
+          <div class="fw-bold">모드: Wallet</div>
         </div>
         <div style="display:flex;gap:8px;">
           <button id="btnStart" class="btn btn-sm btn-grad">시작</button>
@@ -56,17 +53,18 @@ function mountEmbed(containerId = 'geohunt-embed') {
   return true;
 }
 
-// 걷기 → CP 적립 (여기서 DB 직접 저장하지 않음)
+// 걷기 → CP 적립
 const walker = new WalkPoints({
   awardEveryMeters: 10,
-  saveToServer: isWallet ? 'throttle' : 'none',
+  saveToServer: 'throttle',
   flushIntervalMs: 7000,
   flushMinGP: 5,
-  toast: (m) => {
+  toast: async (m) => {
     // "+N GP"에서 숫자만 추출 → CP 반영
     const gained = parseInt(String(m).match(/\+(\d+)/)?.[1] || '0');
     if (gained > 0) {
-      addTodayCP(gained).catch(() => {});
+      try { await addTodayCP(gained); }
+      catch { /* 지갑/로그인 전이면 경고 후 무시 */ }
     }
     toast(m);
   }
@@ -75,8 +73,7 @@ const walker = new WalkPoints({
 // 퍼미션 워밍업(모바일 UX 개선)
 if ('geolocation' in navigator) {
   navigator.geolocation.getCurrentPosition(
-    () => {},
-    () => {},
+    () => {}, () => {},
     { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 }
   );
 }

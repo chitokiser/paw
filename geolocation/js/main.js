@@ -7,7 +7,7 @@
 import { db } from './firebase.js';
 import {
   ensureAudio, playFail, playDeath, playAttackImpact,
-  playThunderBoom, playLightningImpact, playReward, playCrit
+  playThunderBoom, playLightningImpact, playReward, playCrit ,setMajesticSfxUrl 
 } from './audio.js';
 import { injectCSS, toast, ensureHUD, setHUD, addStartGate, mountCornerUI } from './ui.js';
 import { makePlayerDivIcon, getChallengeDurationMs, getGuestId, haversineM } from './utils.js';
@@ -55,7 +55,13 @@ function __updateCPDom(cpValue) {
   const sels = ['.hud-cp-text','#hudCPText','#hud .cp-text','#hud .bp-text'];
     for (const sel of sels) {   const el = document.querySelector(sel);  if (el) el.textContent = String(v); }
  }
-
+try {
+ const url = new URL('../sounds/hit/maje.mp3', import.meta.url).href;
+ setMajesticSfxUrl(url);
+} catch {
+  // 모듈이 아니거나 import.meta.url 미지원일 때(rare): 프로젝트 구조에 맞게 절대경로로
+  setMajesticSfxUrl('/geolocation/sounds/hit/maje.mp3');
+}
 
 /* =============================== 메인 =============================== */
 export async function main() {

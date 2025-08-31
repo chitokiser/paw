@@ -1,10 +1,11 @@
-<!-- geohome.html (dark-glass, mobile-first, PuppyWar style) -->
+<!-- geohome.html (Dark-Glass · Mobile-first · Wallet-only · 2025-08) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="theme-color" content="#0b0d14"/>
   <title>GeoHunt · Home</title>
   <link rel="shortcut icon" href="../images/logo.png"/>
 
@@ -12,78 +13,84 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
 
-  <!-- Libraries (ethers v5; axios optional). Your app modules are at the bottom. -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <!-- Libraries (ethers v5; axios optional) -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js" defer></script>
 
   <style>
     :root{
-      /* Dark + glass theme */
-      --bg:#0b0d14;
-      --text:#e9eefc;
-      --muted:#a9b1c7;
+      --bg:#0b0d14; --text:#e9eefc; --muted:#a9b1c7;
       --border:rgba(255,255,255,.12);
-      --card:rgba(255,255,255,.06);
-      --card-2:rgba(255,255,255,.08);
+      --card:rgba(255,255,255,.06); --card-2:rgba(255,255,255,.08);
       --grad:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%);
-      --radius:18px;
+      --radius:18px; --radius-sm:14px;
+      --pad:16px; --pad-sm:12px;
+      --shadow:0 10px 28px rgba(0,0,0,.35);
     }
-    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-    html,body{min-height:100%;background:var(--bg);color:var(--text)}
+    *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+    html,body{min-height:100%; background:var(--bg); color:var(--text)}
     body{
-      display:flex;align-items:center;justify-content:center;
-      padding:16px;padding-left:calc(env(safe-area-inset-left,0) + 16px);
-      padding-right:calc(env(safe-area-inset-right,0) + 16px);
+      display:flex; justify-content:center;
+      padding:16px;
+      padding-left:calc(env(safe-area-inset-left,0) + 12px);
+      padding-right:calc(env(safe-area-inset-right,0) + 12px);
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
     }
-    a,a:visited{color:#cbd5ff}
-
-    .wrap{width:min(1100px,100%);margin:auto}
+    .wrap{width:min(1100px,100%); margin:auto}
     .glass{
       background:var(--card);
       border:1px solid var(--border);
       border-radius:var(--radius);
-      backdrop-filter:blur(8px) saturate(140%);
-      -webkit-backdrop-filter:blur(8px) saturate(140%);
-      box-shadow:0 10px 28px rgba(0,0,0,.35);
+      box-shadow:var(--shadow);
     }
-    .panel{padding:18px}
-    .panel .title{font-weight:800}
+    @supports ((-webkit-backdrop-filter: blur(6px)) or (backdrop-filter: blur(6px))) {
+      .glass{
+        -webkit-backdrop-filter: blur(8px) saturate(140%);
+        backdrop-filter: blur(8px) saturate(140%);
+      }
+    }
+    .panel{padding:var(--pad)}
+    .title{font-weight:800}
     .muted{color:var(--muted)!important}
-
     .badge-soft{
-      display:inline-block;padding:4px 10px;border-radius:999px;font-weight:800;font-size:12px;
-      border:1px solid var(--border);background:var(--card-2)
+      display:inline-block; padding:4px 10px; border-radius:999px; font-weight:800; font-size:12px;
+      border:1px solid var(--border); background:var(--card-2)
     }
-
-    .btn-grad{background:var(--grad);color:#fff;border:0;border-radius:14px;padding:12px 16px;font-weight:800}
-    .btn-ghost{border:1px solid var(--border);background:var(--card-2);color:var(--text);border-radius:14px;padding:12px 16px}
-    .btn-ghost:hover{background:rgba(255,255,255,.12)}
-    .btn:focus{box-shadow:0 0 0 .24rem rgba(124,58,237,.28)}
 
     .metric{
-      background:var(--card-2);border:1px solid var(--border);border-radius:14px;padding:12px;
-      display:flex;flex-direction:column;gap:4px;height:100%
+      background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px;
+      display:flex; flex-direction:column; gap:4px; height:100%
     }
-    .metric .label{font-size:12px;color:var(--muted)}
-    .metric .value{font-size:clamp(22px,6vw,36px);font-weight:800;line-height:1.05}
-
-    .display-6{font-weight:800;font-size:clamp(28px,7vw,44px)}
+    .metric .label{font-size:12px; color:var(--muted)}
+    .metric .value{font-size:clamp(22px,6vw,36px); font-weight:800; line-height:1.05}
 
     /* Address line */
     #addr{
-      max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom;
-      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:14px
+      max-width:70vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; font-size:14px
     }
     @media (max-width:480px){
-      #addr{white-space:normal;overflow-wrap:anywhere;word-break:break-all;max-width:100%}
-      .panel{padding:14px}
-      .btn-grad,.btn-ghost{padding:12px 14px;font-size:15px;border-radius:12px}
+      #addr{white-space:normal; overflow-wrap:anywhere; word-break:break-all; max-width:100%}
+      .panel{padding:var(--pad-sm)}
     }
-
-    /* Spacing fix for mobile grid */
     .g-gap > [class*="col-"]{margin-bottom:8px}
     @media (min-width:992px){ .g-gap > [class*="col-"]{margin-bottom:0} }
+
+    /* Sticky action bar */
+    .actionbar{ position:sticky; bottom:0; z-index:10; margin-top:12px;
+      background:linear-gradient(180deg, rgba(11,13,20,0) 0%, rgba(11,13,20,.75) 40%, rgba(11,13,20,1) 100%);
+      padding-top:8px;
+    }
+    .actionbar-inner{ display:flex; gap:8px; align-items:center; justify-content:space-between }
+    .btn-grad{background:var(--grad); color:#fff; border:0; border-radius:14px; padding:12px 16px; font-weight:800; flex:1}
+    .btn:focus{box-shadow:0 0 0 .24rem rgba(124,58,237,.28)}
+
+    /* Embedded cards */
+    .embed-card .title{font-size:16px}
+    .embed-card #puppy-card > .puppy-card,
+    .embed-card #reqboard > .rb-wrap{
+      border-radius:14px; border:1px solid var(--border); background:var(--card-2);
+    }
   </style>
 </head>
 <body>
@@ -91,33 +98,22 @@
     <!-- Header -->
     <header class="mb-3 text-center">
       <a href="../p2e/WithPuppy.html" aria-label="Open WithPuppy">
-        <img src="../images/logo.png" width="44" height="44" alt="logo" class="rounded-3" style="border:1px solid var(--border)"/>
+        <img src="../images/logo.png" width="44" height="44" alt="logo" class="rounded-3" style="border:1px solid var(--border)" loading="lazy"/>
       </a>
       <h1 class="h4 mt-2 mb-1">GeoHunt Home</h1>
-      <div id="modeBadge" class="badge-soft">Mode: —</div>
+      <div id="modeBadge" class="badge-soft">Mode: Wallet</div>
     </header>
 
     <div class="row g-3 g-gap">
-      <!-- Left: Mode / Wallet -->
+      <!-- Left: Wallet only -->
       <div class="col-12 col-lg-5">
         <section class="glass panel">
           <div class="d-flex align-items-center justify-content-between">
-            <h2 class="title h5 mb-0">Mode</h2>
-            <span class="muted small">Choose how you want to play</span>
+            <h2 class="title h5 mb-0">Wallet</h2>
+            <span class="muted small">Connect to play & save</span>
           </div>
 
-          <div class="mt-2">
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="mode" id="modeGuest" value="guest">
-              <label class="form-check-label" for="modeGuest">Guest</label>
-            </div>
-            <div class="form-check form-check-inline">
-              <input class="form-check-input" type="radio" name="mode" id="modeWallet" value="wallet">
-              <label class="form-check-label" for="modeWallet">Wallet</label>
-            </div>
-          </div>
-
-          <div id="walletBox" class="glass panel mt-2" style="display:none">
+          <div id="walletBox" class="glass panel mt-2" style="display:block">
             <div class="d-flex align-items-center justify-content-between gap-2">
               <div class="flex-grow-1">
                 <div class="muted small">Wallet Address</div>
@@ -126,16 +122,25 @@
               <button id="btnConnect" class="btn btn-sm btn-grad" style="white-space:nowrap;">Connect</button>
             </div>
             <hr/>
-            <div class="muted small">Member Level</div>
-            <div id="levelView" class="fw-bold">-</div>
-            <div id="levelGate" class="mt-2 muted small"></div>
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="metric">
+                  <div class="label">Member Level</div>
+                  <div id="levelView" class="value">-</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="metric">
+                  <div class="label">Gate</div>
+                  <div id="levelGate" class="value" style="font-size:clamp(16px,4.5vw,22px)">—</div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="mt-3 muted small">
-            • Guest: not stored in DB; resets on logout/close<br/>
-            • Wallet: creates member DB on first connect; saves CP/EXP<br/>
-            • Only level 1+ can connect (if not, <a href="../memberjoin.html">Sign up</a>)
-          </div>
+          <p class="mt-3 muted small mb-0">
+            Only level 1+ can play and claim. If you are new, please <a href="../memberjoin.html">sign up</a>.
+          </p>
         </section>
       </div>
 
@@ -155,72 +160,63 @@
             <div class="col-6">
               <div class="metric">
                 <div class="label">On-chain Claim</div>
-                <div id="chainStatus" class="fw-bold">Req: Level 1 & 5000+ CP today</div>
-                <button id="btnSync" class="btn btn-sm btn-grad mt-2" disabled>Claim to chain</button>
-                <div class="label mt-1">The button activates when the condition is met.</div>
+                <div id="chainStatus" class="fw-bold" style="font-size:clamp(12px,3.5vw,14px)">Req: Level 1 & 5000+ CP today</div>
+                <button id="btnSync" class="btn btn-sm btn-grad mt-2 w-100" disabled>Claim to chain</button>
+                <div class="label mt-1">Activates when the condition is met.</div>
               </div>
             </div>
           </div>
 
-          <hr/>
-          <div class="d-flex gap-2">
-            <button id="btnStartGame" class="btn btn-grad flex-fill">Start Game</button>
-            <button id="btnResetGuest" class="btn btn-ghost flex-fill">Reset Guest Data</button>
+          <!-- Sticky reach bar -->
+          <div class="actionbar">
+            <div class="actionbar-inner">
+              <button id="btnStartGame" class="btn btn-grad">Start Game (Wallet)</button>
+            </div>
           </div>
+        </section>
+
+        <!-- Puppy Stats Card -->
+        <section class="glass panel embed-card mt-2">
+          <div class="d-flex align-items-center justify-content-between">
+            <h3 class="title mb-0">Puppy On-chain Stats</h3>
+            <span class="muted small">Auto-mapped to game</span>
+          </div>
+          <div id="puppy-card" class="mt-2"></div>
+        </section>
+
+        <!-- Requirements Board -->
+        <section class="glass panel embed-card mt-2">
+          <div class="d-flex align-items-center justify-content-between">
+            <h3 class="title mb-0">User Requirements Board</h3>
+            <span class="muted small">Level 1+ can post</span>
+          </div>
+          <div id="reqboard" class="mt-2"></div>
         </section>
       </div>
     </div>
   </div>
 
-  <!-- App modules -->
-  <!-- Load Firebase core once for the app (ES module) -->
-  <script type="module" src="./js/firebase.js"></script>
-  <!-- State/data sync -->
+  <!-- Modules -->
+   <script type="module" src="./js/firebase.js"></script>
+   <script type="module" src="../geolocation/js/board/rb_api.js"></script> <!-- (직접 로드 안해도 됨: ui가 import함) -->
+   <script type="module" src="../geolocation/js/ui/rb_view.js"></script>
+   <script type="module" src="../geolocation/js/ui/rb_view.js"></script>
   <script type="module" src="./js/cp-sync.js"></script>
-  <!-- Page logic (wallet, level, address fill, etc.) -->
   <script type="module" src="./js/geohunt.js"></script>
+  <script type="module" src="./js/ui/puppyStatsView.js"></script>
 
-  <!-- Page interactions (mode, routing, reset) -->
+  <!-- Minimal page script (wallet-only) -->
   <script>
-    (function initModeRadios(){
-      const $ = (id)=>document.getElementById(id);
+    (function(){
+      // 일부 기존 코드가 GH_MODE를 참고할 수 있어 강제로 'wallet'로 고정
+      try {
+        sessionStorage.setItem('GH_MODE', 'wallet');
+        localStorage.setItem('pf_mode', 'wallet');
+      } catch {}
 
-      function currentMode(){
-        const sel = document.querySelector('input[name="mode"]:checked');
-        if (sel?.value) return sel.value;
-        return sessionStorage.getItem('GH_MODE') || localStorage.getItem('pf_mode') || 'guest';
-      }
-      function setBadge(m){ $('modeBadge').textContent = 'Mode: ' + (m==='wallet' ? 'Wallet' : 'Guest'); }
-      function syncWalletBox(m){ $('walletBox').style.display = (m==='wallet') ? '' : 'none'; }
-      function setStartLabel(m){ $('btnStartGame').textContent = (m==='wallet') ? 'Start Game (Wallet)' : 'Start Game (Guest)'; }
-
-      // Init from storage
-      const init = sessionStorage.getItem('GH_MODE') || localStorage.getItem('pf_mode') || 'guest';
-      $('modeGuest').checked  = (init === 'guest');
-      $('modeWallet').checked = (init === 'wallet');
-      setBadge(init); syncWalletBox(init); setStartLabel(init);
-
-      // Radio change -> persist + announce
-      document.querySelectorAll('input[name="mode"]').forEach(r=>{
-        r.addEventListener('change', ()=>{
-          const v = r.value;
-          try{
-            sessionStorage.setItem('GH_MODE', v);
-            localStorage.setItem('pf_mode', v);
-          }catch{}
-          setBadge(v); syncWalletBox(v); setStartLabel(v);
-          window.dispatchEvent(new CustomEvent('pf:modeChanged', { detail:{ mode:v } }));
-        }, { passive:true });
-      });
-
-      // Start routing (protect against double-trigger on mobile)
-      const startBtn = $('btnStartGame');
-      let routed = false;
+      const startBtn = document.getElementById('btnStartGame');
       const routeStart = ()=>{
-        if (routed) return;
-        routed = true;
-        const m = currentMode();
-        const target = (m === 'wallet') ? './play2.html' : './play.html';
+        const target = './play2.html'; // 항상 Wallet 진입
         try { window.location.href = target; }
         catch { window.location.assign(target); }
         setTimeout(()=>{ try{ if (!location.href.includes(target)) location.assign(target); }catch{} }, 120);
@@ -228,19 +224,11 @@
       startBtn.addEventListener('click', routeStart, { passive:false });
       startBtn.addEventListener('touchend', routeStart, { passive:true });
 
-      // Guest reset
-      $('btnResetGuest').addEventListener('click', ()=>{
-        try{
-          localStorage.clear();
-          sessionStorage.removeItem('GH_MODE');
-          $('modeGuest').checked = true;
-          setBadge('guest'); syncWalletBox('guest'); setStartLabel('guest');
-          alert('Guest data has been reset.');
-        }catch(e){
-          console.warn('[reset guest] fail', e);
-          alert('Failed to reset guest data.');
-        }
-      });
+      // Wallet 박스는 항상 노출
+      const walletBox = document.getElementById('walletBox');
+      if (walletBox) walletBox.style.display = '';
+      const modeBadge = document.getElementById('modeBadge');
+      if (modeBadge) modeBadge.textContent = 'Mode: Wallet';
     })();
   </script>
 </body>

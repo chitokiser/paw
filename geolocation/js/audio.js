@@ -1,11 +1,11 @@
 // /geolocation/js/audio.js
 /* ============================================================
  * Audio Core (정리본)
- *  - 합성 임팩트 + mid별 mp3를 함께 사용 가능
- *  - 레벨업: /sounds/reward.mp3
- *  - 사망(플레이어): /sounds/death.mp3
- *  - 크리티컬: 강한 합성(Death Synth) 재사용
- *  - 캐싱/폴백/자동 resume 포함
+ * - 합성 임팩트 + mp3 재생 혼용
+ * - 번개/천둥 합성, 크리티컬 강화, 무기 휘두름 등
+ * - MID 기반 히트/데스 mp3 지원
+ * - 마제스틱볼 전용 SFX 지원 (/sounds/hit/maje.mp3)
+ * - 캐싱/폴백/자동 resume 포함
  * ============================================================ */
 
 let audioCtx;
@@ -55,8 +55,10 @@ function _deathSynthStrong(){
   groupGain.gain.setValueAtTime(0.0001, t);
   groupGain.gain.exponentialRampToValueAtTime(0.9, t+0.02);
   groupGain.gain.exponentialRampToValueAtTime(0.0001, t+0.6);
+
   const lfo = ac.createOscillator(); const lfoGain = ac.createGain();
   lfo.frequency.setValueAtTime(6, t); lfoGain.gain.setValueAtTime(5, t); lfo.connect(lfoGain);
+
   freqs.forEach((f,i)=>{
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = 'triangle'; o.frequency.setValueAtTime(f, t);
@@ -65,12 +67,14 @@ function _deathSynthStrong(){
     applyADSR(g, t + i*0.02, {a:0.01, d:0.12, s:0.5, r:0.25, peak:0.9, sus:0.2});
     o.start(t + i*0.02); o.stop(t + 0.6);
   });
+
   const nz = createNoise(); const bp = ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(3500, t); bp.Q.value = 3;
   const ng = ac.createGain(); ng.gain.setValueAtTime(0.0001, t);
   ng.gain.exponentialRampToValueAtTime(0.35, t+0.02);
   ng.gain.exponentialRampToValueAtTime(0.0001, t+0.25);
   nz.connect(bp); bp.connect(ng); ng.connect(ac.destination);
   nz.start(t); nz.stop(t+0.25);
+
   lfo.start(t); lfo.stop(t+0.6);
 }
 
@@ -240,20 +244,17 @@ export function playLightningImpact({ intensity = 1.0, withBoom = true, delayMs 
   try { ensureAudio(); } catch {}
   try { playLightning(); } catch {}
   if (withBoom) {
-    try {
-      setTimeout(() => { try { playThunderBoom({ intensity }); } catch {} }, Math.max(0, delayMs | 0));
-    } catch {}
+    try { setTimeout(() => { try { playThunderBoom({ intensity }); } catch {} }, Math.max(0, delayMs | 0)); } catch {}
   }
 }
 
-/* ─────────── MP3 헬퍼 ─────────── */
+/* ─────────── MP3 헬퍼 + 캐시 ─────────── */
 const _cache = new Map();
 function _getCachedAudio(url){
   let a = _cache.get(url);
   if (!a) { a = new Audio(url); a.preload = 'auto'; _cache.set(url, a); }
   return a;
 }
-
 export function playMp3(url, { volume = 1.0 } = {}) {
   try { ensureAudio(); } catch {}
   try {
@@ -265,7 +266,10 @@ export function playMp3(url, { volume = 1.0 } = {}) {
   } catch { return null; }
 }
 
-/* ─────────── 효과음 (MP3) ─────────── */
+/* ─────────── 효과음 (고정 MP3) ───────────
+   ※ 배포 구조가 /sounds/... 인 경우에 맞춘 절대경로.
+   경로가 다르면 setMajesticSfxUrl 처럼 직접 playMp3로 호출하세요.
+----------------------------------------------------------------- */
 const deathSound  = _getCachedAudio('/sounds/death.mp3');
 const rewardSound = _getCachedAudio('/sounds/reward.mp3');
 const critSound   = _getCachedAudio('/sounds/crit.mp3');
@@ -303,7 +307,8 @@ export function playDeathForMid(mid, { volume = 0.9 } = {}){
     a.play().catch(()=>{});
   } catch(e){ console.warn('[audio] playDeathForMid fail', e); }
 }
-// /geolocation/js/audio.js
+
+/* ─────────── 실패 효과 ─────────── */
 export function playFail(){
   const ac = ensureAudio(), t = ac.currentTime;
   const o1 = ac.createOscillator(), o2 = ac.createOscillator();
@@ -320,6 +325,22 @@ export function playFail(){
   o1.stop(t+0.75); o2.stop(t+0.75); nz.stop(t+0.5);
 }
 
-/* 레벨업/사망 MP3 직접 호출용 */
+/* ─────────── 마제스틱볼 전용 SFX ─────────── */
+let _majesticUrl = '/sounds/hit/maje.mp3'; // 배포 루트 기준. 필요 시 아래 setter로 변경 가능.
+export function setMajesticSfxUrl(url){ if (url) _majesticUrl = url; }
+/** 마제스틱볼 폭발 시 전용 효과음 */
+export function playMajesticBallSfx({ volume = 1 } = {}) {
+  try { ensureAudio?.(); } catch {}
+  try {
+    const a = _getCachedAudio(_majesticUrl);
+    a.volume = Math.max(0, Math.min(1, volume));
+    a.currentTime = 0;
+    a.play().catch(()=>{ /* 모바일 정책 등으로 실패 시 무시 */ });
+  } catch (e) {
+    console.warn('[audio] majestic sfx fail', e);
+  }
+}
+
+/* ─────────── 직접 호출용 헬퍼 ─────────── */
 export const playRewardMP3 = (v=1)=> playMp3('/sounds/reward.mp3', { volume:v });
 export const playDeathMP3  = (v=1)=> playMp3('/sounds/death.mp3',  { volume:v });

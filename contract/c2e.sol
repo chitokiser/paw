@@ -1,0 +1,344 @@
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.8.17;
+
+interface Ipaw {
+    function balanceOf(address account) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+}
+
+interface IpupBank {
+    function depoup(address user, uint256 depo) external;
+    function depodown(address user, uint256 depo) external;
+    function getprice() external view returns (uint256);
+    function getlevel(address user) external view returns (uint256);
+    function g9(address user) external view returns (uint256);
+    function getagent(address user) external view returns (address);
+    function getmento(address user) external view returns (address);
+    function expup(address user, uint256 exp) external;
+}
+
+/**
+ * @title c2e (Create-to-Earn) — 광고/미션 포인트 정산 컨트랙트
+ * @notice 내부 포인트(mypay/allow)를 적립하고, 충분할 때 PAW 토큰으로 인출합니다.
+ *         - 미션별 페이(pay[id])는 18 decimals 기준으로 저장합니다.
+ *         - 스태프가 검증(resolveClaim) 시 등급(grade:0~100)에 따라 리워드가 가중됩니다.
+ *         - 인출은 재진입 방지 및 쿨다운이 적용됩니다.
+ *         - 광고 의뢰(adrequest)는 유저가 선승인(approve)한 만큼만 결제됩니다.
+ */
+contract c2e {
+    Ipaw public paw;
+    IpupBank public pupbank;
+    address public admin;
+
+    // C2E 멤버가 되기 위한 요구 레벨 (pupbank.getlevel(user)와 비교)
+    uint256 public level;
+
+    // 누적 인출 금액(PAW 단위, 18 decimals)
+    uint256 public totalwithdraw;
+
+    // 전체 C2E 멤버 수 및 인덱스 → 주소 매핑
+    uint256 public mid; // 다음에 배정될 member index
+    mapping(uint256 => address) public memberid;
+    mapping(address => uint256) public ranking;
+
+    // 마지막 인출 시각(쿨다운 체크)
+    mapping(address => uint256) public allowt;
+
+    // ---------- 광고(가격/구매내역) ----------
+    // 광고 상품별 가격(18d)
+    mapping(uint256 => uint256) public adprice;
+    // 유저별 특정 광고상품에 대해 지불한 금액(누계)
+    mapping(address => mapping(uint256 => uint256)) public adPaid;
+    // 유저별 광고상품 마지막 결제 시각
+    mapping(address => mapping(uint256 => uint256)) public adPurchasedAt;
+
+    // 유저 상태
+    struct my {
+        uint256 mypay;     // 미션/검증을 통해 적립한 인출 가능 포인트(PAW 단위, 18d)
+        uint256 totalpay;  // 누적 인출 완료 합계
+        uint256 allow;     // 추천/멘토 수당(포인트, PAW 단위, 18d)
+        uint256 rating;    // 신용 점수: 0~100 (초기 100 권장)
+        bool white;        // 화이트 멤버(미션1 완료)
+        bool blacklisted;  // 블랙리스트
+    }
+
+    mapping(address => my) public myinfo;
+
+    // 운영/스태프 권한 (>=5면 스태프)
+    mapping(address => uint8) public staff;
+
+    // 미션별 기준 페이(18 decimals). 예: 1 토큰이면 pay[id] = 1e18
+    mapping(uint256 => uint256) public pay;
+
+    // 유저의 미션별 페이 요구 현황
+    mapping(address => mapping(uint256 => bool)) public claim;
+
+    // ---------- 이벤트 ----------
+    event PaySet(uint256 indexed missionId, uint256 amount);
+    event Mission1Joined(address indexed user, uint256 indexed memberIndex);
+    event ClaimRequested(address indexed user, uint256 indexed missionId);
+    event ClaimResolved(address indexed user, uint256 indexed missionId, uint8 grade, uint256 reward);
+    event Withdrawn(address indexed user, uint256 netAmount);
+    event StaffUpdated(address indexed account, uint8 level);
+    event LevelUpdated(uint256 newRequiredLevel);
+    event BlacklistUpdated(address indexed user, bool blacklisted);
+    event Funded(address indexed from, uint256 amount);
+    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
+    event AdPriceSet(uint256 indexed adId, uint256 price);
+    event AdPurchased(address indexed user, uint256 indexed adId, uint256 price, uint256 paidNow);
+
+    // ---------- 모디파이어 ----------
+    modifier onlyOwner() {
+        require(msg.sender == admin, "Not admin");
+        _;
+    }
+
+    modifier onlyStaff() {
+        require(staff[msg.sender] >= 5, "Not staff");
+        _;
+    }
+
+    // 간단한 재진입 방지 락
+    uint256 private _locked = 1;
+    modifier nonReentrant() {
+        require(_locked == 1, "Reentrancy");
+        _locked = 2;
+        _;
+        _locked = 1;
+    }
+
+    // 인출 쿨다운(기본 1일)
+    uint256 public withdrawCooldown = 1 days;
+
+    constructor(address _pupbank, address _paw) {
+        paw = Ipaw(_paw);
+        pupbank = IpupBank(_pupbank);
+        admin = msg.sender;
+        staff[msg.sender] = 10; // 배포자 최고 권한
+        level = 1;              // 기본 요구 레벨 = 1
+    }
+
+    // ---------- 운영 함수 ----------
+
+   
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "zero addr");
+        emit OwnershipTransferred(admin, newOwner);
+        admin = newOwner;
+    }
+
+    function setStaff(address account, uint8 lvl) external onlyOwner {
+        staff[account] = lvl;
+        emit StaffUpdated(account, lvl);
+    }
+
+    function setRequiredLevel(uint256 newLevel) external onlyOwner {
+        level = newLevel;
+        emit LevelUpdated(newLevel);
+    }
+
+    function setBlacklist(address user, bool b) external onlyOwner {
+        myinfo[user].blacklisted = b;
+        emit BlacklistUpdated(user, b);
+    }
+
+    function setWithdrawCooldown(uint256 seconds_) external onlyOwner {
+        withdrawCooldown = seconds_;
+    }
+
+    // 컨트랙트에 PAW 재원 적립(운영자 지갑에서 pull)
+    function fund(uint256 amount) external onlyOwner {
+        require(paw.transferFrom(msg.sender, address(this), amount), "transferFrom failed");
+        emit Funded(msg.sender, amount);
+    }
+
+    // 광고 가격 설정(단건/배치)
+    function setAdPrice(uint256 adId, uint256 price) external onlyStaff {
+        adprice[adId] = price;
+        emit AdPriceSet(adId, price);
+    }
+
+    function batchSetAdPrice(uint256[] calldata adIds, uint256[] calldata prices) external onlyStaff {
+        require(adIds.length == prices.length, "len mismatch");
+        for (uint256 i = 0; i < adIds.length; i++) {
+            adprice[adIds[i]] = prices[i];
+            emit AdPriceSet(adIds[i], prices[i]);
+        }
+    }
+
+    // ---------- 미션/정산 ----------
+    /**
+     * @notice 미션별 Pay 설정 (토큰 18 decimals 기준)
+     * @param _id   미션 ID
+     * @param _pay  "토큰 개수" 입력. 예: 1 토큰 => 1e18
+     */
+    function setPay(uint256 _id, uint256 _pay) external onlyStaff {
+        pay[_id] = _pay; // 18 decimals 그대로 받음
+        emit PaySet(_id, _pay);
+    }
+
+    /**
+     * @notice 미션1: 레벨 검증 후 화이트 멤버 등록
+     */
+    function m1() external {
+        require(!myinfo[msg.sender].white, "Already mission1");
+        require(pupbank.getlevel(msg.sender) >= level, "Level not enough");
+
+        myinfo[msg.sender].white = true;
+        if (myinfo[msg.sender].rating == 0) {
+            // 초기 진입 시 신용점수 100 부여
+            myinfo[msg.sender].rating = 100;
+        }
+
+        memberid[mid] = msg.sender;
+        emit Mission1Joined(msg.sender, mid);
+        mid += 1;
+    }
+
+    /**
+     * @notice 광고 의뢰(결제). 유저는 사전에 PAW에서 본 컨트랙트에 approve를 해두어야 합니다.
+     * @dev 멘토에게 결제액의 10%를 포인트(allow)로 적립합니다.
+     */
+    function adrequest(uint256 _aid) external nonReentrant {
+        require(!myinfo[msg.sender].blacklisted, "Blacklisted");
+        require(pupbank.getlevel(msg.sender) >= 1, "No member");
+
+        uint256 price = adprice[_aid];
+        require(price > 0, "Invalid ad price");
+
+        // 유저 보유 및 허용량 확인
+        require(paw.balanceOf(msg.sender) >= price, "Not enough PAW");
+        uint256 allowance_ = paw.allowance(msg.sender, address(this));
+        require(allowance_ >= price, "Approve first");
+
+        // 토큰 전송 (유저 -> 본 컨트랙트)
+         paw.approve(msg.sender, price); 
+    uint256 allowance = paw.allowance(msg.sender, address(this));
+    require(allowance >= price, "Check the token allowance");
+    paw.transferFrom(msg.sender, address(this), price);  
+
+        // 기록/적립
+        adPaid[msg.sender][_aid] += price;
+        adPurchasedAt[msg.sender][_aid] = block.timestamp;
+
+        address mentor = pupbank.getmento(msg.sender);
+        if (mentor != address(0)) {
+            myinfo[mentor].allow += (price * 10) / 100;
+        }
+
+        emit AdPurchased(msg.sender, _aid, price, price);
+    }
+
+    function claimpay(uint256 missionId) external {
+        require(myinfo[msg.sender].white, "Join first");
+        require(!myinfo[msg.sender].blacklisted, "Blacklisted");
+        require(myinfo[msg.sender].rating >= 10, "Low rating");
+        require(!claim[msg.sender][missionId], "Already requested");
+
+        claim[msg.sender][missionId] = true;
+        emit ClaimRequested(msg.sender, missionId);
+    }
+
+    function resolveClaim(address user, uint256 missionId, uint8 grade) external onlyStaff {
+        require(claim[user][missionId] == true, "No pending claim");
+        require(grade <= 100, "grade>100");
+
+        uint256 base = pay[missionId];
+        require(base > 0, "No pay set");
+
+        // 등급에 따른 보상(예: 80점 => 80%)
+        uint256 reward = (base * grade) / 100;
+
+        // 적립(인출 가능 포인트)
+        myinfo[user].mypay += reward;
+
+        // 클레임 완료 처리
+        claim[user][missionId] = false;
+
+        // 신용 점수 보정: 50 미만 감점, 50 초과 가점 (0~100 클램프)
+        uint256 r = myinfo[user].rating;
+        if (grade < 50) {
+            uint256 penalty = 50 - grade;
+            r = (r > penalty) ? (r - penalty) : 0;
+        } else if (grade > 50) {
+            uint256 bonus = grade - 50;
+            r = r + bonus;
+            if (r > 100) r = 100;
+        }
+        myinfo[user].rating = r;
+
+        emit ClaimResolved(user, missionId, grade, reward);
+    }
+
+    // ---------- 인출 ----------
+    /**
+     * @notice 적립 포인트(mypay + allow) 합계가 10 PAW 이상이면 인출
+     *         - 재진입 방지 및 쿨다운 적용
+     *         - 멘토에게 10%를 포인트로 적립(즉시 토큰 전송 X, 멘토가 추후 인출)
+     */
+    function withdraw() external nonReentrant {
+        require(!myinfo[msg.sender].blacklisted, "Blacklisted");
+
+        // 쿨다운 체크
+        uint256 last = allowt[msg.sender];
+        require(block.timestamp >= last + withdrawCooldown, "Cooldown");
+
+        // 최소 인출 한도(10 토큰)
+        uint256 threshold = 10 * 1e18;
+
+        uint256 mypay_ = myinfo[msg.sender].mypay;
+        uint256 allow_ = myinfo[msg.sender].allow;
+        uint256 amount = mypay_ + allow_;
+        require(amount >= threshold, "Collect more");
+
+        // 컨트랙트 보유 토큰 확인
+        require(paw.balanceOf(address(this)) >= amount, "Insufficient PAW pool");
+
+        // 내부 장부 정리(재진입 대비)
+        myinfo[msg.sender].totalpay += amount;
+        myinfo[msg.sender].mypay = 0;
+        myinfo[msg.sender].allow = 0;
+        totalwithdraw += amount;
+        allowt[msg.sender] = block.timestamp;
+        ranking[msg.sender] += amount;
+
+        // 멘토 추천 수당(10%)은 "멘토의 allow 포인트"로 적립 (즉시 전송 X)
+        address mentor = pupbank.getmento(msg.sender);
+        if (mentor != address(0)) {
+            uint256 mentorCut = (amount * 10) / 100;
+            myinfo[mentor].allow += mentorCut;
+        }
+
+        // 실제 토큰 송금
+        require(paw.transfer(msg.sender, amount), "PAW transfer failed");
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    // ---------- 뷰/헬퍼 ----------
+    function getlevel(address user) external view returns (uint256) {
+        return pupbank.getlevel(user);
+    }
+
+    function g1() public view returns (uint256) {
+        return paw.balanceOf(address(this));
+    }
+
+    function g2(address user) public view returns (uint256) {
+        return paw.balanceOf(user);
+    }
+
+    function availableToWithdraw(address user) external view returns (uint256) {
+        return myinfo[user].mypay + myinfo[user].allow;
+    }
+
+    function isClaimPending(address user, uint256 missionId) external view returns (bool) {
+        return claim[user][missionId];
+    }
+
+    function adInfo(address user, uint256 adId) external view returns (uint256 paid, uint256 lastTs, uint256 price) {
+        return (adPaid[user][adId], adPurchasedAt[user][adId], adprice[adId]);
+    }
+}

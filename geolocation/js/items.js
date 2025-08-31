@@ -1,6 +1,6 @@
 // /geolocation/js/items.js
 import { spawnLightningAt, spawnRadialFlamesAt, spawnImpactAt } from './fx.js';
-import { playThunderBoom, playAttackImpact } from './audio.js';
+import { playThunderBoom, playAttackImpact ,playMajesticBallSfx} from './audio.js';
 import { haversineM } from './utils.js';
 import { getCurrentBattleTarget as _getCurrentBattleTarget } from './battle.js';
 import { Score } from './score.js';
@@ -122,6 +122,7 @@ export async function useItem(id, ctx = {}) {
       // 1) 이펙트 + 사운드
       try { await spawnRadialFlamesAt(map, pLL.lat, pLL.lng, { count: 18, radiusPx: 150, durationMs: 560, shake: true }); } catch {}
       try { playAttackImpact?.({ intensity: 1.35 }); } catch {}
+      try { playMajesticBallSfx({ volume: 1 }); } catch {}
 
       // 2) 대상군 수집
       const victims = []; const uniq = new Set();

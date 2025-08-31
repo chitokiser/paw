@@ -1,0 +1,84 @@
+<!-- File: C2E/admin.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="description" content="C2E · Admin"/>
+  <link rel="shortcut icon" href="../images/logo.png"/>
+  <title>C2E · Admin</title>
+
+  <!-- Bootstrap (single) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"/>
+
+  <!-- Site base CSS -->
+  <link rel="stylesheet" href="/css/main.css"/>
+
+  <!-- 통일된 C2E 스타일 -->
+  <link rel="stylesheet" href="./css/c2e-style.css"/>
+</head>
+<body>
+
+  <!-- 공통 헤더(menu + 로고) -->
+  <div id="menu-placeholder" class="mb-3"></div>
+
+  <div class="container my-3">
+    <div class="card p-3" id="loginWrap">
+      <div class="d-flex align-items-center gap-3 mb-2">
+        <img src="../images/logo.png" alt="PAW" width="36" height="36" class="rounded"/>
+        <h3 class="m-0">C2E Admin</h3>
+      </div>
+      <form id="loginForm" class="row g-2">
+        <div class="col">
+          <label class="form-label">관리자 비번</label>
+          <input id="adminPass" type="password" class="form-control" placeholder="기본 1234"/>
+        </div>
+        <div class="col-auto" style="align-self:flex-end"><button class="btn btn-primary">Login</button></div>
+      </form>
+    </div>
+
+    <div class="card p-3 mt-3" id="panel" style="display:none">
+      <div class="d-flex justify-content-between align-items-center">
+        <h4 class="m-0">검증 대기/완료</h4>
+        <button id="btnLogout" class="btn btn-outline-secondary btn-sm">Logout</button>
+      </div>
+
+      <div class="table-responsive mt-3">
+        <table class="table align-middle">
+          <thead><tr><th>제출ID</th><th>작업ID</th><th>유저</th><th>URL</th><th>검증</th><th>승인</th></tr></thead>
+          <tbody id="subs"></tbody>
+        </table>
+      </div>
+
+      <div class="card p-3 mt-3">
+        <h5 class="m-0 mb-2">유저 포인트</h5>
+        <ul id="users" class="mb-0"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 공통 푸터 -->
+  <div id="footer" class="container-fluid px-0 mt-4"></div>
+
+  <!-- scripts -->
+  <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+
+  <!-- header/footer include -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      fetch('dashboard.html')
+        .then(r => r.text())
+        .then(html => { document.getElementById('menu-placeholder').innerHTML = html; })
+        .catch(err => console.error('Error loading dashboard:', err));
+
+      fetch('../footer.html')
+        .then(r => r.text())
+        .then(html => { document.getElementById('footer').innerHTML = html; })
+        .catch(err => console.error('Error loading footer:', err));
+    });
+  </script>
+
+  <!-- C2E admin -->
+  <script type="module" src="./js/c2e-admin.js"></script>
+</body>
+</html>
