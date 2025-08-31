@@ -1,18 +1,18 @@
-  <!-- main index.html -->
+<!-- main index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="description" content="Paw DAO · Home"/>
-  <link rel="shortcut icon" href="../images/logo.png"/>
+  <link rel="shortcut icon" href="images/logo.png"/>
   <title>Paw DAO</title>
 
   <!-- Bootstrap (single) -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"/>
 
   <!-- Site base CSS -->
-  <link rel="stylesheet" href="/css/main.css"/>
+  <link rel="stylesheet" href="css/main.css"/>
 
   <!-- Scoped styles: only affect .home-scope -->
   <style>
@@ -45,7 +45,7 @@
         <p>Install a wallet (Rabby Wallet recommended) and select the opBNB network.</p>
         <p><strong>1 PAW = 1 USD</strong></p>
         <p>PAW value is guaranteed by <strong>opBNB</strong>. Transparent and fair based on platform contribution.</p>
-        <img src="/images/poster.png" class="img-fluid w-100 rounded mt-2" alt="PAW DAO Poster">
+        <img src="images/poster.png" class="img-fluid w-100 rounded mt-2" alt="PAW DAO Poster">
       </div>
     </section>
 
@@ -55,7 +55,7 @@
         <!-- GP Charge -->
         <div class="col">
           <div class="card h-100">
-            <img src="/images/card/gpcharge.png" class="card-img-top" alt="Charge GP using PAW">
+            <img src="images/card/gpcharge.png" class="card-img-top" alt="Charge GP using PAW">
             <div class="card-body text-center">
               <h5 class="card-title">Charge GP using PAW</h5>
               <p class="mb-2">Charge game points (GP) with PAW to play and raise puppies.</p>
@@ -65,7 +65,7 @@
                 <li class="list-group-item">Sell the puppies you’ve raised</li>
                 <li class="list-group-item">Free 5000 GP on first sign up</li>
               </ul>
-              <a href="../gpcharg.html" class="btn btn-primary w-100 mt-3">Let’s go</a>
+              <a href="gpcharg.html" class="btn btn-primary w-100 mt-3">Let’s go</a>
             </div>
           </div>
         </div>
@@ -73,7 +73,7 @@
         <!-- Location RPG -->
         <div class="col">
           <div class="card h-100">
-            <img src="/images/card/rescue.png" class="card-img-top" alt="Location-based RPG">
+            <img src="images/card/rescue.png" class="card-img-top" alt="Location-based RPG">
             <div class="card-body text-center">
               <h5 class="card-title">Location-based RPG</h5>
               <p class="mb-2">Rewards for defeating monsters in specific locations.</p>
@@ -82,7 +82,7 @@
                 <li class="list-group-item">Mission 2: Find Treasure</li>
                 <li class="list-group-item">Mission 3: Defeat the Local Boss Monster</li>
               </ul>
-              <a href="../geohome.html" class="btn btn-primary w-100 mt-3">Let’s go</a>
+              <a href="geohome.html" class="btn btn-primary w-100 mt-3">Let’s go</a>
             </div>
           </div>
         </div>
@@ -90,7 +90,7 @@
         <!-- opBNB : PAW -->
         <div class="col">
           <div class="card h-100">
-            <img src="/images/card/pawex.png" class="card-img-top" alt="opBNB Exchange">
+            <img src="images/card/pawex.png" class="card-img-top" alt="opBNB Exchange">
             <div class="card-body text-center">
               <h5 class="card-title">opBNB : PAW Exchange</h5>
               <p class="mb-2">Exchange PAW according to opBNB price.</p>
@@ -99,7 +99,7 @@
                 <li class="list-group-item">Connected to opBNB</li>
                 <li class="list-group-item">Required to charge GP</li>
               </ul>
-              <a href="../pawex.html" class="btn btn-primary w-100 mt-3">Let’s go</a>
+              <a href="pawex.html" class="btn btn-primary w-100 mt-3">Let’s go</a>
             </div>
           </div>
         </div>
@@ -107,7 +107,7 @@
         <!-- PAW : PUT -->
         <div class="col">
           <div class="card h-100">
-            <img src="/images/card/pupex.png" class="card-img-top" alt="PUP Exchange">
+            <img src="images/card/pupex.png" class="card-img-top" alt="PUP Exchange">
             <div class="card-body text-center">
               <h5 class="card-title">PAW : PUT Exchange</h5>
               <p class="mb-2">Buy PUT at market price with PAW.</p>
@@ -116,7 +116,7 @@
                 <li class="list-group-item">Required for DAO governance</li>
                 <li class="list-group-item">PUP price depends on DAO performance</li>
               </ul>
-              <a href="../pupex.html" class="btn btn-primary w-100 mt-3">Move</a>
+              <a href="pupex.html" class="btn btn-primary w-100 mt-3">Move</a>
             </div>
           </div>
         </div>
@@ -153,8 +153,8 @@
   <script defer src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
   <!-- App scripts -->
-  <script defer src="../src/topinfo.js"></script>
-  <script defer src="../src/PawVote.js"></script>
+  <script defer src="src/topinfo.js"></script>
+  <script defer src="src/PawVote.js"></script>
 
   <!-- Fetch header/footer & kick off metrics -->
   <script>
@@ -164,7 +164,7 @@
         .then(html => { document.getElementById('menu-placeholder').innerHTML = html; })
         .catch(err => console.error('Error loading dashboard:', err));
 
-      fetch('../footer.html')
+      fetch('footer.html')
         .then(r => r.text())
         .then(html => { document.getElementById('footer').innerHTML = html; })
         .catch(err => console.error('Error loading footer:', err));

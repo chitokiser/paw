@@ -1,6 +1,6 @@
 [build]
-  # 정적 파일(C2E/index.html 등)이 들어 있는 폴더
-  publish = "C2E"
+  # 프로젝트 루트를 publish합니다.
+  publish = "."
   command = ""
 
 [functions]
