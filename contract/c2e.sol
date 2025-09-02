@@ -72,6 +72,9 @@ contract c2e {
 
     // 미션별 기준 페이(18 decimals). 예: 1 토큰이면 pay[id] = 1e18
     mapping(uint256 => uint256) public pay;
+    
+     //패일리 스마트계약인가 여부 판단
+       mapping(address => uint8) public fa;
 
     // 유저의 미션별 페이 요구 현황
     mapping(address => mapping(uint256 => bool)) public claim;
@@ -159,6 +162,12 @@ contract c2e {
     function setAdPrice(uint256 adId, uint256 price) external onlyStaff {
         adprice[adId] = price;
         emit AdPriceSet(adId, price);
+    }
+   
+    // 패밀리 여부
+    function setfa(address _fa) external onlyStaff {
+        fa[_fa] = 5;
+     
     }
 
     function batchSetAdPrice(uint256[] calldata adIds, uint256[] calldata prices) external onlyStaff {
@@ -273,12 +282,6 @@ contract c2e {
         emit ClaimResolved(user, missionId, grade, reward);
     }
 
-    // ---------- 인출 ----------
-    /**
-     * @notice 적립 포인트(mypay + allow) 합계가 10 PAW 이상이면 인출
-     *         - 재진입 방지 및 쿨다운 적용
-     *         - 멘토에게 10%를 포인트로 적립(즉시 토큰 전송 X, 멘토가 추후 인출)
-     */
     function withdraw() external nonReentrant {
         require(!myinfo[msg.sender].blacklisted, "Blacklisted");
 
@@ -316,7 +319,13 @@ contract c2e {
         require(paw.transfer(msg.sender, amount), "PAW transfer failed");
         emit Withdrawn(msg.sender, amount);
     }
+     
+     //외부호출에 의한 mypoint up 
+    function mypayup(address user,uint _pay)public {
+    require(fa[msg.sender] >=5, "no family");
+    myinfo[user].mypay += _pay;
 
+    }
     // ---------- 뷰/헬퍼 ----------
     function getlevel(address user) external view returns (uint256) {
         return pupbank.getlevel(user);
