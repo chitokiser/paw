@@ -156,7 +156,7 @@ export async function buildMissions({ wrap, onClaim, onBuffing, onM1 }) {
       rewardEl.textContent = "5000 GP + 5000 EXP";
     } else {
       try {
-        const p = await api.pay(id);
+        const p = await api.adprice(id);
         rewardEl.textContent = fmtPAW(Number(p) / 1e18);
       } catch {
         rewardEl.textContent = "0 PAW";
