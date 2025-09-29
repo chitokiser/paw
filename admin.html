@@ -43,10 +43,15 @@
     .examples{display:grid;gap:6px;margin-top:6px}
     .examples code{display:block;background:#0b1020;color:#d1e7ff;padding:8px;border-radius:8px;overflow:auto}
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.12.1/dist/ethers.umd.min.js"></script>
 </head>
 <body>
   <header>
     <h2>GeoHunt 관리자 페이지</h2>
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+      <span id="walletStatus" style="font-size: 14px; font-family: monospace; color: #333;"></span>
+      <button id="btnConnectWallet" style="padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 8px; cursor: pointer;">지갑 연결</button>
+    </div>
   </header>
 
   <div class="layout">
@@ -422,7 +427,7 @@ mystic_orb|Mystic Orb|rare|0.1|1|1
   </div>
 
   <!-- 앱 스크립트 -->
-  <script type="module" src="./js/admin.js"></script>
+  <script type="module" src="/geolocation/js/admin.js"></script>
   <noscript>이 페이지를 사용하려면 자바스크립트가 필요합니다.</noscript>
 </body>
 </html>

@@ -1,87 +1,85 @@
-// mission.api.js — EVM/provider & contract calls (safe against 4900)
-// ES Module (import 되는 파일). ethers는 UMD로 window.ethers에 로드됨.
+// mission.api.js — EVM/provider & contract calls (opBNB 204)
+// ethers UMD(window.ethers) 전제. ES 모듈.
+
 const ethers = globalThis.ethers;
 
-export const C2E_ADDR     = "0x44deEe33ca98094c40D904BFf529659a742db97E";
-export const PUPBANK_ADDR = "0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D";
-export const CHAIN_ID_DEC = 204; // opBNB
+// === 네트워크/컨트랙트 주소 (필요 시 교체) ===
+export const C2E_ADDR     = "0xe650d115F07370e4A35cD2b85899F6Cc651c8d3C"; // C2E 컨트랙트
+export const PUPBANK_ADDR = "0x535E13885fCAAAeF61aD1A5c7b70d9a97C151F4D"; // PupBank(옵션)
+export const CHAIN_ID_DEC = 204;                       // opBNB
 export const CHAIN_ID_HEX = "0x" + CHAIN_ID_DEC.toString(16);
 
+// === ABI (미션별 claim/resolve + 모니터링 getter 포함) ===
 const C2E_ABI = [
+  // 읽기
   "function g1() view returns (uint256)",
   "function totalwithdraw() view returns (uint256)",
   "function mid() view returns (uint256)",
   "function memberid(uint256) view returns (address)",
   "function ranking(address) view returns (uint256)",
   "function pay(uint256) view returns (uint256)",
+
+  // myinfo 구조는 컨트랙트 실제 정의를 따릅니다.
+  // (여기 표기는 일반적인 필드명 예시)
   "function myinfo(address) view returns (uint256 mypay, uint256 totalpay, uint256 allow, uint256 rating, bool white, bool blacklisted)",
+
   "function allowt(address) view returns (uint256)",
-  "function adprice(uint256) view returns (uint256)",  //미션수행 보상 가져와서 보여주기
+  "function adprice(uint256) view returns (uint256)",
   "function availableToWithdraw(address) view returns (uint256)",
-  "function isClaimPending(address,uint256) view returns (bool)",
-  "function m1()", "function claimpay(uint256)", "function withdraw()", "function resolveClaim(address,uint256,uint8)",
+  "function isClaimPending2(address,uint256) view returns (bool)",
+  "function isClaimPending3(address,uint256) view returns (bool)",
+  "function isClaimPending4(address,uint256) view returns (bool)",
+
+  // 쓰기(레거시)
+  "function m1()",
+  "function claimpay(uint256)",
+  "function withdraw()",
+  "function resolveClaim(address,uint256,uint8)",
+
+  // ★ 미션별 보상요구/처리
+  "function claimpay2(uint256)",
+  "function claimpay3(uint256)",
+  "function claimpay4(uint256)",
+  "function resolveClaim2(address,uint256,uint8)",
+  "function resolveClaim3(address,uint256,uint8)",
+  "function resolveClaim4(address,uint256,uint8)",
+
+  // ★ 모니터링용 public mapping getter
+  "function claim2(address,uint256) view returns (bool)",
+  "function claim3(address,uint256) view returns (bool)",
+  "function claim4(address,uint256) view returns (bool)",
+  "function claim44(uint256,address) view returns (uint256)",
+
   "function staff(address) view returns (uint8)"
 ];
 
 const PUPBANK_ABI = [
-  "function buffing()",
-  "function getlevel(address) view returns (uint256)",
-  "function myinfo(address) view returns(uint256,uint256,uint256,address,uint256)"
+  // 필요 시만 사용
+  "function buffing()"
 ];
 
-let provider, signer, me, c2e, pupbank;
-
-export const getState = () => ({ provider, signer, me, c2e, pupbank });
-
-export function fmt18(x){ try{ return Number(ethers.formatUnits(x,18)); } catch { return 0; } }
-export function shortAddr(a){ return a ? a.slice(0,6)+"…"+a.slice(-4) : "-"; }
-
-// --- 4900 방지 유틸 ---
-export function isEthConnected() {
-  const eth = globalThis.ethereum;
-  if (!eth) return false;
-  if (typeof eth.isConnected === "function") {
-    try { return !!eth.isConnected(); } catch {}
-  }
-  return !!eth._state?.isConnected;
-}
-
-async function safeRequest(method, params = []) {
-  const eth = globalThis.ethereum;
-  if (!eth) throw new Error("No wallet provider");
-  if (!isEthConnected() && method !== "eth_requestAccounts") {
-    const err = new Error("Provider disconnected");
-    err.code = 4900;
-    throw err;
-  }
-  return await eth.request({ method, params });
-}
-
-// 온체인 스태프
-async function staffLevel(addr){
-  const { c2e } = getState();
-  if (!addr) return 0;
-  const n = await c2e.staff(addr);
-  return Number(n);
-}
-async function isStaff(addr){ return (await staffLevel(addr)) >= 5; }
-
-// --- Provider / Chain ---
-export async function ensureProvider(){
-  if (!globalThis.ethereum) throw new Error("No wallet provider");
-  provider = new ethers.BrowserProvider(globalThis.ethereum, "any");
-  return provider;
-}
+// ——————————————————————————————————————
+// provider / signer / contracts
+// ——————————————————————————————————————
+let provider = null;
+let signer   = null;
+let me       = null;
+let c2e      = null;
+let pupbank  = null;
 
 export async function ensureChain(){
-  if (!isEthConnected()) return null; // 연결 전이면 생략
-  const net = await safeRequest("eth_chainId");
-  if ((net||"").toLowerCase() !== CHAIN_ID_HEX){
+  // connect() 이후 보통 호출됨. provider 없을 경우 지갑만 연결 없이 provider 생성
+  if (!provider) {
+    if (!globalThis.ethereum) throw new Error("No wallet provider");
+    provider = new ethers.BrowserProvider(globalThis.ethereum, "any");
+  }
+  const net = await provider.getNetwork();
+  if (net.chainId !== BigInt(CHAIN_ID_DEC)) {
     try {
-      await safeRequest("wallet_switchEthereumChain", [{ chainId: CHAIN_ID_HEX }]);
+      await provider.send("wallet_switchEthereumChain", [{ chainId: CHAIN_ID_HEX }]);
     } catch (e) {
       if (e?.code === 4902) {
-        await safeRequest("wallet_addEthereumChain", [{
+        await provider.send("wallet_addEthereumChain", [{
           chainId: CHAIN_ID_HEX, chainName: "opBNB Mainnet",
           nativeCurrency:{ name:"BNB", symbol:"BNB", decimals:18 },
           rpcUrls:["https://opbnb-mainnet-rpc.bnbchain.org"],
@@ -90,104 +88,154 @@ export async function ensureChain(){
       } else { throw e; }
     }
   }
-  return await safeRequest("eth_chainId");
+  const final = await provider.getNetwork();
+  return "0x" + final.chainId.toString(16);
 }
 
 export async function connect(){
-  await ensureProvider();
-  const accs = await safeRequest("eth_requestAccounts");
-  me = ethers.getAddress(accs[0]);
+  if (!globalThis.ethereum) throw new Error("지갑(메타마스크 등)이 필요합니다");
+  if (!provider) provider = new ethers.BrowserProvider(globalThis.ethereum, "any");
+  await provider.send("eth_requestAccounts", []);
   signer = await provider.getSigner();
+  me     = await signer.getAddress();
   await ensureChain();
-  c2e = new ethers.Contract(C2E_ADDR, C2E_ABI, signer);
+
+  c2e     = new ethers.Contract(C2E_ADDR, C2E_ABI, signer);
   pupbank = new ethers.Contract(PUPBANK_ADDR, PUPBANK_ABI, signer);
 
+  // 계정/체인 변경 시 새로고침
   const eth = globalThis.ethereum;
-  eth?.removeAllListeners?.("disconnect");
-  eth?.on?.("disconnect", () => {
-    provider = undefined; signer = undefined; me = undefined; c2e = undefined; pupbank = undefined;
-  });
   eth?.removeAllListeners?.("accountsChanged");
-  eth?.on?.("accountsChanged", () => location.reload());
+  eth?.on?.("accountsChanged", ()=>location.reload());
   eth?.removeAllListeners?.("chainChanged");
-  eth?.on?.("chainChanged", () => location.reload());
+  eth?.on?.("chainChanged", ()=>location.reload());
 
   return { me };
 }
 
-// 읽기 인스턴스 (지갑 없을 때 RPC 폴백)
-export async function getReaders(){
-  if (provider) {
-    const c2eR = new ethers.Contract(C2E_ADDR, C2E_ABI, provider);
-    const pupR = new ethers.Contract(PUPBANK_ADDR, PUPBANK_ABI, provider);
-    return { c2eR, pupR };
-  }
-  if (globalThis.ethereum) {
-    // 지갑은 있으나 ensureProvider 전이면 브라우저 프로바이더로
-    await ensureProvider();
-    const c2eR = new ethers.Contract(C2E_ADDR, C2E_ABI, provider);
-    const pupR = new ethers.Contract(PUPBANK_ADDR, PUPBANK_ABI, provider);
-    return { c2eR, pupR };
-  }
-  // 완전 읽기 전용
+export function getState(){ return { provider, signer, me, c2e, pupbank }; }
+
+async function getReaders(){
+  // 읽기 전용 빠른 조회
   const ro = new ethers.JsonRpcProvider("https://opbnb-mainnet-rpc.bnbchain.org");
-  const c2eR = new ethers.Contract(C2E_ADDR, C2E_ABI, ro);
-  const pupR = new ethers.Contract(PUPBANK_ADDR, PUPBANK_ABI, ro);
-  return { c2eR, pupR };
+  return {
+    c2eR: new ethers.Contract(C2E_ADDR, C2E_ABI, ro),
+    pupR: new ethers.Contract(PUPBANK_ADDR, PUPBANK_ABI, ro),
+  };
 }
 
-// ====== adprice helpers ======
-async function getAdPrice(id) {
-  const { c2eR } = await getReaders();
-  return c2eR.adprice(id); // uint256 (18dec)
-}
-async function getAdPrices(ids = [2,3,4,5,6,7]) {
-  const { c2eR } = await getReaders();
-  const vals = await Promise.all(ids.map(i => c2eR.adprice(i)));
-  return ids.map((id, idx) => ({ id, raw: vals[idx], paw: fmt18(vals[idx]) }));
-}
-
-// --- Read/Write API ---
+// ——————————————————————————————————————
+// 공개 API
+// ——————————————————————————————————————
 export const api = {
-  adprice:  getAdPrice,
-  adprices: getAdPrices,
-
-  async global() {
+  // 전체 정보
+  async global(){
     const { c2eR } = await getReaders();
-    const [pool, totalW, mid] = await Promise.all([ c2eR.g1(), c2eR.totalwithdraw(), c2eR.mid() ]);
-    return { pool, totalW, mid: Number(mid) };
+    const [pool, totalW, mid] = await Promise.all([
+      c2eR.g1(), c2eR.totalwithdraw(), c2eR.mid()
+    ]);
+    return { pool, totalW, mid:Number(mid) };
   },
-  async my(meAddr){
+
+  // 개인 정보
+  async my(addr){
     const { c2eR } = await getReaders();
     const [info, last, avail] = await Promise.all([
-      c2eR.myinfo(meAddr), c2eR.allowt(meAddr), c2eR.availableToWithdraw(meAddr)
+      c2eR.myinfo(addr),        // { mypay, totalpay, allow, rating, white, blacklisted, ... }
+      c2eR.allowt(addr),        // last withdraw timestamp 등 (컨트랙트 구현에 맞춰 사용)
+      c2eR.availableToWithdraw(addr)
     ]);
     return { info, last, avail };
   },
-  async pay(id){ const { c2eR } = await getReaders(); return c2eR.pay(id); },
-  async isPending(user, id){ const { c2eR } = await getReaders(); return c2eR.isClaimPending(user, id); },
+
+  async adprice(id){
+    const { c2eR } = await getReaders();
+    return c2eR.adprice(id);
+  },
+
+  async isPending(addr, id){
+    const { c2eR } = await getReaders();
+    const n = Number(id);
+    if (n === 2) return c2eR.isClaimPending2(addr, n);
+    if (n === 3) return c2eR.isClaimPending3(addr, n);
+    if (n >= 4) return c2eR.isClaimPending4(addr, n);
+    return false; // Default to false for other mission IDs
+  },
+
+  // 랭킹 Top 스캔
   async ranking(limit=300){
     const { c2eR } = await getReaders();
     const mid = Number(await c2eR.mid());
-    const scan = Math.min(mid, limit);
-    const out = [];
-    for(let i=0;i<scan;i++){
+    const n = Math.min(mid, limit);
+    const rows = [];
+    for (let i=0;i<n;i++){
       try{
         const addr = await c2eR.memberid(i);
-        if(addr && addr !== ethers.ZeroAddress){
-          const val = await c2eR.ranking(addr);
-          if (BigInt(val) > 0n) out.push({ addr, val: BigInt(val) });
-        }
+        if (!addr || addr === ethers.ZeroAddress) continue;
+        const val = await c2eR.ranking(addr);
+        rows.push({ addr, val });
       }catch{}
     }
-    out.sort((a,b)=> (b.val>a.val?1:-1));
-    return out.slice(0,10);
+    rows.sort((a,b)=> (a.val > b.val ? -1 : 1));
+    return rows.slice(0,10);
   },
+
+  // 미션1 등록
   async m1(){ return (await getState()).c2e.m1(); },
-  async claim(id){ return (await getState()).c2e.claimpay(id); },
+
+  // (레거시) 단일 클레임
+  async claim(id){ return (await getState()).c2e.claimpay(Number(id)); },
+
+  // ★ 미션별 분기 클레임: 2→claimpay2, 3→claimpay3, 4+→claimpay4
+  async claimByMission(id){
+    const s = await getState();
+    const n = Number(id);
+    if (n === 2) return s.c2e.claimpay2(n);
+    if (n === 3) return s.c2e.claimpay3(n);
+    if (n >= 4)  return s.c2e.claimpay4(n);
+    return s.c2e.claimpay(n); // 미션1 등 레거시
+  },
+
+  // 인출
   async withdraw(){ return (await getState()).c2e.withdraw(); },
-  async resolve(u,id,g){ return (await getState()).c2e.resolveClaim(u,id,g); },
-  async buffing(){ return (await getState()).pupbank.buffing(); },
-  staffLevel,
-  isStaff,
+
+  // (레거시) 단일 resolve
+  async resolve(u,id,g){ return (await getState()).c2e.resolveClaim(u, Number(id), Number(g)); },
+
+  // ★ 미션별 분기 resolve: 2→resolveClaim2, 3→resolveClaim3, 4+→resolveClaim4
+  async resolveByMission(user, id, grade){
+    const s = await getState();
+    const u = String(user);
+    const n = Number(id);
+    const g = Number(grade);
+    if (n === 2) return s.c2e.resolveClaim2(u, n, g);
+    if (n === 3) return s.c2e.resolveClaim3(u, n, g);
+    if (n >= 4)  return s.c2e.resolveClaim4(u, n, g);
+    return s.c2e.resolveClaim(u, n, g); // 레거시
+  },
+
+  // ★ 모니터링: claim2/3/4/44 값 조회 (필요 시 사용)
+  async claimStatus(user, id){
+    const { c2eR } = await getReaders();
+    const u = String(user).toLowerCase();
+    const n = Number(id);
+    const [c2, c3, c4, c44] = await Promise.all([
+      c2eR.claim2(u, n),
+      c2eR.claim3(u, n),
+      c2eR.claim4(u, n),
+      c2eR.claim44(n, u)
+    ]);
+    return { c2, c3, c4, c44 };
+  },
+
+  // PupBank (옵션)
+  async buffing(){
+    // pupbank에 buffing()이 없으면 에러 → 상위에서 토스트 처리
+    return (await getState()).pupbank.buffing();
+  },
+
+  async isStaff(addr){
+    const { c2eR } = await getReaders();
+    try{ return Number(await c2eR.staff(addr)) >= 5; }catch{ return false; }
+  }
 };

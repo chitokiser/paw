@@ -6,7 +6,7 @@
   <title>M2E · Earn tokens by completing marketing missions</title>
   <link rel="shortcut icon" href="../images/logo.png"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
-  <!-- ethers UMD (전역) -->
+  <!-- ethers UMD -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.12.1/dist/ethers.umd.min.js"></script>
   <style>
     :root{ --bg:#0b0d14; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12); --text:#e9eefc; --muted:#a9b1c7; --grad:linear-gradient(135deg,#7c3aed 0%,#2563eb 100%); --radius:18px; }
@@ -42,52 +42,20 @@
   <main class="container-xl my-4">
     <div class="glass p-3 p-md-4">
       <ul class="nav nav-pills" id="tabs" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button class="nav-link active" id="tab-global" data-bs-toggle="tab" data-bs-target="#pane-global" type="button" role="tab">① 전체 정보</button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="tab-me" data-bs-toggle="tab" data-bs-target="#pane-me" type="button" role="tab">② 개인 정보</button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="tab-missions" data-bs-toggle="tab" data-bs-target="#pane-missions" type="button" role="tab">③ 미션</button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="tab-staff" data-bs-toggle="tab" data-bs-target="#pane-staff" type="button" role="tab">⚙ 스태프 전용</button>
-        </li>
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pane-global" type="button" role="tab">① 전체 정보</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pane-me" type="button" role="tab">② 개인 정보</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pane-missions" type="button" role="tab">③ 미션</button></li>
+
       </ul>
 
       <div class="tab-content mt-3">
         <!-- GLOBAL -->
         <div class="tab-pane fade show active" id="pane-global" role="tabpanel">
           <div class="row g-3">
-            <div class="col-12 col-lg-3">
-              <div class="glass p-3 h-100">
-                <div class="muted small">계약 잔고</div>
-                <div class="h4 mb-0" id="valPool">-</div>
-                <div class="small-note">컨트랙트 보유 PAW (g1)</div>
-              </div>
-            </div>
-            <div class="col-12 col-lg-3">
-              <div class="glass p-3 h-100">
-                <div class="muted small">검증요구 현황(내 미션)</div>
-                <div class="h4 mb-0" id="valMyPending">-</div>
-                <div class="small-note">내가 요청한 보상 심사 대기 수</div>
-              </div>
-            </div>
-            <div class="col-12 col-lg-3">
-              <div class="glass p-3 h-100">
-                <div class="muted small">누적 인출 금액</div>
-                <div class="h4 mb-0" id="valTotalWithdraw">-</div>
-                <div class="small-note">totalwithdraw</div>
-              </div>
-            </div>
-            <div class="col-12 col-lg-3">
-              <div class="glass p-3 h-100">
-                <div class="muted small">Advertising PUPPY</div>
-                <div class="h4 mb-0" id="valMembers">-</div>
-                <div class="small-note">mid</div>
-              </div>
-            </div>
+            <div class="col-12 col-lg-3"><div class="glass p-3 h-100"><div class="muted small">계약 잔고</div><div class="h4 mb-0" id="valPool">-</div><div class="small-note">컨트랙트 보유 PAW (g1)</div></div></div>
+            <div class="col-12 col-lg-3"><div class="glass p-3 h-100"><div class="muted small">검증요구 현황(내 미션)</div><div class="h4 mb-0" id="valMyPending">-</div><div class="small-note">내가 요청한 보상 심사 대기 수</div></div></div>
+            <div class="col-12 col-lg-3"><div class="glass p-3 h-100"><div class="muted small">누적 인출 금액</div><div class="h4 mb-0" id="valTotalWithdraw">-</div><div class="small-note">totalwithdraw</div></div></div>
+            <div class="col-12 col-lg-3"><div class="glass p-3 h-100"><div class="muted small">Advertising PUPPY</div><div class="h4 mb-0" id="valMembers">-</div><div class="small-note">mid</div></div></div>
           </div>
 
           <div class="section-title">수당 순위 Top 10</div>
@@ -98,9 +66,7 @@
             </div>
             <div class="table-responsive">
               <table class="table table-dark table-sm align-middle mb-0">
-                <thead>
-                  <tr><th style="width:60px">순위</th><th>주소</th><th class="text-end">누적 포인트</th></tr>
-                </thead>
+                <thead><tr><th style="width:60px">순위</th><th>주소</th><th class="text-end">누적 포인트</th></tr></thead>
                 <tbody id="topRankBody"><tr><td colspan="3" class="text-center text-muted">-</td></tr></tbody>
               </table>
             </div>
@@ -111,16 +77,10 @@
         <div class="tab-pane fade" id="pane-me" role="tabpanel">
           <div class="glass p-3 mb-3">
             <div class="d-flex justify-content-between align-items-center">
-              <div>
-                <div class="muted small">연결된 지갑</div>
-                <div class="addr h5 m-0" id="meAddr">-</div>
-              </div>
-              <div>
-                <button id="btnWithdraw" class="btn btn-sm btn-grad" disabled>인출하기</button>
-              </div>
+              <div><div class="muted small">연결된 지갑</div><div class="addr h5 m-0" id="meAddr">-</div></div>
+              <div><button id="btnWithdraw" class="btn btn-sm btn-grad" disabled>인출하기</button></div>
             </div>
           </div>
-
           <div class="row g-3">
             <div class="col-6 col-lg-3"><div class="glass p-3 h-100"><div class="muted small">활동 수당</div><div class="h4 mb-0" id="meMypay">-</div></div></div>
             <div class="col-6 col-lg-3"><div class="glass p-3 h-100"><div class="muted small">멘토 수당</div><div class="h4 mb-0" id="meAllow">-</div></div></div>
@@ -137,7 +97,6 @@
           <div class="glass p-3 mb-3">
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <a class="btn btn-sm btn-outline-light" href="https://puppi.netlify.app/memberjoin" target="_blank" rel="noopener">회원 등록 페이지 열기</a>
-              <button id="btnM1" class="btn btn-sm btn-grad">미션1 등록 </button>
               <span class="small-note">미션1 완료 시 화이트 멤버가 되고 다음 미션을 수행할 수 있습니다.</span>
             </div>
           </div>
@@ -148,30 +107,24 @@
             <div class="section-title">운영자 메신저 QR (미션2)</div>
             <p class="small-note mb-2">아래 QR코드를 스캔하여 카카오톡, Zalo, 텔레그램을 추가하세요.</p>
             <div class="d-flex flex-wrap gap-3">
-              <div class="text-center">
-                <img src="../images/qr/kakao.png" alt="Kakao QR" width="120" class="border rounded"/>
-                <div class="small mt-1">Kakao</div>
-              </div>
-              <div class="text-center">
-                <img src="../images/qr/zalo.png" onerror="this.onerror=null;this.src='../images/qr/qrzalo.png'" alt="Zalo QR" width="120" class="border rounded"/>
-                <div class="small mt-1">Zalo</div>
-              </div>
-              <div class="text-center">
-                <img src="../images/qr/telegram.png" alt="Telegram QR" width="120" class="border rounded"/>
-                <div class="small mt-1">Telegram</div>
-              </div>
+              <div class="text-center"><img src="../images/qr/kakao.png" width="120" class="border rounded"/><div class="small mt-1">Kakao</div></div>
+              <div class="text-center"><img src="../images/qr/zalo.png" onerror="this.onerror=null;this.src='../images/qr/qrzalo.png'" width="120" class="border rounded"/><div class="small mt-1">Zalo</div></div>
+              <div class="text-center"><img src="../images/qr/telegram.png" width="120" class="border rounded"/><div class="small mt-1">Telegram</div></div>
             </div>
+
+
+
+
+
           </div>
 
           <div class="glass p-3 mt-3">
             <div class="section-title">미션 참고 데이터 제출</div>
             <p class="small-note">운영자 검토용 메모/링크 등을 제출하세요. 지갑 주소를 키로 DB에 저장됩니다.</p>
             <form id="noteForm" class="row g-2">
-              <div class="col-12">
-                <textarea id="noteText" class="form-control" rows="2" placeholder="예) 작업 링크, 추가 설명 등"></textarea>
-              </div>
+              <div class="col-12"><textarea id="noteText" class="form-control" rows="2" placeholder="예) 작업 링크, 추가 설명 등"></textarea></div>
               <div class="col-12 d-flex align-items-center gap-3">
-                <button id="noteSaveBtn" type="submit" class="btn btn-sm btn-outline-light">참고 데이터 저장</button>
+                <button id="noteSaveBtn" class="btn btn-sm btn-outline-light" type="submit">참고 데이터 저장</button>
                 <span class="small text-muted">내 지갑주소: <span class="addr" id="noteAddr">-</span></span>
                 <span id="noteStatus" class="small"></span>
               </div>
@@ -179,42 +132,11 @@
           </div>
         </div>
 
-        <!-- STAFF -->
-        <div class="tab-pane fade" id="pane-staff" role="tabpanel">
-          <div class="glass p-3">
-            <div class="section-title">보상 검증(Resolve)</div>
-            <form id="formResolve" class="row g-3">
-              <div class="col-12 col-lg-4">
-                <label class="form-label">유저 주소</label>
-                <input type="text" id="resUser" class="form-control addr" placeholder="0x..."/>
-              </div>
-              <div class="col-6 col-lg-3">
-                <label class="form-label">미션 ID</label>
-                <input type="number" id="resMission" class="form-control" min="1" value="1"/>
-              </div>
-              <div class="col-6 col-lg-3">
-                <label class="form-label">등급 (0~100)</label>
-                <input type="number" id="resGrade" class="form-control" min="0" max="100" value="100"/>
-              </div>
-              <div class="col-12 col-lg-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-grad w-100">검증 완료</button>
-              </div>
-            </form>
-            <div class="small-note mt-2">* 스태프 권한 계정만 실행됩니다. isClaimPending(user, id)로 대기 여부 확인 권장.</div>
-            <hr/>
-            <div class="section-title">요청 상태 확인</div>
-            <form id="formCheck" class="row g-3">
-              <div class="col-12 col-lg-5"><input id="chkUser" class="form-control addr" placeholder="0x... (생략 시 내 주소)"/></div>
-              <div class="col-6 col-lg-3"><input id="chkMission" type="number" class="form-control" min="1" value="1"/></div>
-              <div class="col-6 col-lg-2 d-grid"><button class="btn btn-outline-light" type="submit">조회</button></div>
-              <div class="col-12 col-lg-2 d-grid"><span id="chkResult" class="badge badge-soft align-self-center p-2">-</span></div>
-            </form>
-          </div>
-        </div>
+
       </div>
     </div>
 
-    <div class="text-center mt-3 small-note">Chain: <span id="chainInfo">-</span> · Contract: <span class="addr" id="caddr">0x1c29...B4980</span></div>
+    <div class="text-center mt-3 small-note">Chain: <span id="chainInfo">-</span> · Contract: <span class="addr" id="caddr">0xe650d115F07370e4A35cD2b85899F6Cc651c8d3C</span></div>
   </main>
 
   <template id="tplMission">
@@ -233,8 +155,7 @@
   </template>
 
   <!-- 진입점 하나만 -->
-  <!-- 기존 한 줄만 남기고, 중복된 mission.main.js include는 모두 제거 -->
-<script type="module" src="./js/mission.main.js?v=2025-09-03-01"></script>
+  <script type="module" src="./js/mission.main.js?v=2025-09-27f"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>

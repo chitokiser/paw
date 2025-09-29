@@ -1,84 +1,192 @@
-<!-- File: C2E/admin.html -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <meta name="description" content="C2E · Admin"/>
-  <link rel="shortcut icon" href="../images/logo.png"/>
-  <title>C2E · Admin</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>관리자 모드 · 보상요구 현황</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0b0f14; color:#e7eef7; margin:0; }
+    header { padding:16px 20px; border-bottom:1px solid #233040; display:flex; align-items:center; gap:12px; }
+    button { cursor:pointer; border:none; border-radius:10px; padding:10px 14px; background:#1b6bf2; color:#fff; }
+    button.secondary { background:#2a3444; }
+    main { padding:20px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .card { background:#0f1621; border:1px solid #1f2c3c; border-radius:16px; padding:16px; }
+    .wide { width:100%; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom:1px solid #1f2c3c; padding:8px 10px; text-align:left; font-size:14px; }
+    th { color:#9fb2c9; font-weight:600; }
+    .pill { font-size:12px; padding:4px 8px; border-radius:999px; background:#243247; color:#d7e3f3; display:inline-block; }
+    .ok { background:#114d2f; }
+    .fail { background:#5b1c1c; }
+    input, select { background:#0b121b; border:1px solid #213044; color:#e7eef7; padding:8px 10px; border-radius:10px; }
+    .muted { color:#92a6bd; font-size:13px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .split { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    @media (max-width: 980px) { .split { grid-template-columns: 1fr; } }
 
-  <!-- Bootstrap (single) -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"/>
-
-  <!-- Site base CSS -->
-  <link rel="stylesheet" href="/css/main.css"/>
-
-  <!-- 통일된 C2E 스타일 -->
-  <link rel="stylesheet" href="./css/c2e-style.css"/>
+    /* Mission2 Card List Styles */
+    .mission-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-height: 800px; /* Add scroll for long lists */
+      overflow-y: auto;
+      padding: 8px;
+      background: #0b121b;
+      border-radius: 8px;
+    }
+    .mission-card {
+      background: #141c27;
+      border: 1px solid #2a3b50;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .mission-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #2a3b50;
+      padding-bottom: 12px;
+    }
+    .mission-card-header .addr {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 600;
+      color: #a6c5e9;
+    }
+    .mission-card-body .field {
+      font-size: 14px;
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      align-items: start;
+      gap: 8px;
+    }
+    .mission-card-body .field-label {
+      font-weight: 600;
+      color: #88a1c0;
+    }
+    .mission-card-body .field-value {
+      word-break: break-all;
+      white-space: pre-wrap;
+      color: #c5d9f2;
+      background: #0f1621;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+    .mission-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .btn-tab.active {
+      background: #1b6bf2;
+      color: #fff;
+      font-weight: 600;
+    }
+  </style>
 </head>
 <body>
+  <header>
+    <button id="btnConnect">지갑 연결</button>
+    <div id="net" class="muted"></div>
+    <div id="me" class="muted mono"></div>
+  </header>
 
-  <!-- 공통 헤더(menu + 로고) -->
-  <div id="menu-placeholder" class="mb-3"></div>
-
-  <div class="container my-3">
-    <div class="card p-3" id="loginWrap">
-      <div class="d-flex align-items-center gap-3 mb-2">
-        <img src="../images/logo.png" alt="PAW" width="36" height="36" class="rounded"/>
-        <h3 class="m-0">C2E Admin</h3>
-      </div>
-      <form id="loginForm" class="row g-2">
-        <div class="col">
-          <label class="form-label">관리자 비번</label>
-          <input id="adminPass" type="password" class="form-control" placeholder="기본 1234"/>
+  <main class="split">
+    <!-- 좌측: 보상요구 현황 -->
+    <section class="card">
+      <div class="row" style="justify-content:space-between; align-items: center; margin-bottom: 12px;">
+        <div class="row">
+          <h2 style="margin:0; margin-right: 16px;">보상요구 현황</h2>
+          <button class="btn-tab secondary active" data-kind-tab="2">미션 2</button>
+          <button class="btn-tab secondary" data-kind-tab="3">미션 3</button>
+          <button class="btn-tab secondary" data-kind-tab="4">미션 4</button>
         </div>
-        <div class="col-auto" style="align-self:flex-end"><button class="btn btn-primary">Login</button></div>
-      </form>
-    </div>
+        <div class="row">
+          <label class="muted">from block</label>
+          <input id="fromBlock" type="number" placeholder="예: 0" style="width:120px"/>
+          <button id="btnReload" class="secondary">새로고침</button>
+        </div>
+      </div>
+      <p class="muted">ClaimRequested − ClaimResolved 를 매칭하여 “미처리”만 나열합니다. (kind: 2, 3, 4)</p>
 
-    <div class="card p-3 mt-3" id="panel" style="display:none">
-      <div class="d-flex justify-content-between align-items-center">
-        <h4 class="m-0">검증 대기/완료</h4>
-        <button id="btnLogout" class="btn btn-outline-secondary btn-sm">Logout</button>
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>사용자</th>
+            <th>Mission</th>
+            <th>Kind</th>
+            <th>요청 Tx/Block</th>
+            <th>상태</th>
+            <th>Grade</th>
+            <th>처리</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="7" class="muted">불러오는 중…</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 🔹 미션2 연락처 입력 (Firestore) -->
+    <section class="card">
+      <h2 style="margin:0;">미션2 연락처 입력 (Firestore)</h2>
+      <p class="muted">사용자가 미션2를 위해 제출한 연락처 정보입니다.</p>
+      <div id="mission2-list" class="mission-list">
+        <div class="muted" style="text-align:center; padding: 20px;">로딩…</div>
+      </div>
+    </section>
+
+    <!-- 우측: 퀵 액션 -->
+    <aside class="card">
+      <h3 style="margin-top:0;">퀵 액션</h3>
+      <div class="row wide">
+        <input id="qaUser" placeholder="0x사용자주소" class="wide"/>
+      </div>
+      <div class="row wide">
+        <input id="qaMission" type="number" placeholder="missionId" style="width:50%"/>
+        <select id="qaKind" style="width:50%">
+          <option value="2">kind=2 (claim2)</option>
+          <option value="3">kind=3 (claim3)</option>
+          <option value="4">kind=4 (claim4)</option>
+        </select>
+      </div>
+      <div class="row wide">
+        <select id="qaGrade" class="wide">
+          <option value="1">grade 1</option>
+          <option value="2">grade 2</option>
+          <option value="3">grade 3</option>
+          <option value="4">grade 4</option>
+          <option value="5">grade 5</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="btnResolve">즉시 처리 (resolve)</button>
       </div>
 
-      <div class="table-responsive mt-3">
-        <table class="table align-middle">
-          <thead><tr><th>제출ID</th><th>작업ID</th><th>유저</th><th>URL</th><th>검증</th><th>승인</th></tr></thead>
-          <tbody id="subs"></tbody>
-        </table>
+      <hr style="border-color:#1f2c3c; margin:16px 0;"/>
+
+      <h4>화이트멤버 지정</h4>
+      <p class="muted">선택한 사용자 주소를 화이트멤버로 등록합니다. (m1 호출)</p>
+      <div class="row wide">
+        <input id="whiteUser" placeholder="0x사용자주소" class="wide"/>
       </div>
-
-      <div class="card p-3 mt-3">
-        <h5 class="m-0 mb-2">유저 포인트</h5>
-        <ul id="users" class="mb-0"></ul>
+      <div class="row">
+        <button id="btnWhite">화이트멤버 등록 (m1)</button>
       </div>
-    </div>
-  </div>
+    </aside>
+  </main>
 
-  <!-- 공통 푸터 -->
-  <div id="footer" class="container-fluid px-0 mt-4"></div>
+  <!-- Ethers v6 -->
 
-  <!-- scripts -->
-  <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+  <!-- Ethers.js -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.12.1/dist/ethers.umd.min.js"></script>
 
-  <!-- header/footer include -->
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      fetch('dashboard.html')
-        .then(r => r.text())
-        .then(html => { document.getElementById('menu-placeholder').innerHTML = html; })
-        .catch(err => console.error('Error loading dashboard:', err));
-
-      fetch('../footer.html')
-        .then(r => r.text())
-        .then(html => { document.getElementById('footer').innerHTML = html; })
-        .catch(err => console.error('Error loading footer:', err));
-    });
-  </script>
-
-  <!-- C2E admin -->
-  <script type="module" src="./js/c2e-admin.js"></script>
+  <!-- Admin logic -->
+  <script type="module" src="/C2E/js/c2e-admin.js"></script>
 </body>
 </html>

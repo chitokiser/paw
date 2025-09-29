@@ -1,53 +1,76 @@
-// mission.main.js — bootstrap & wiring (safe refresh / 4900 guard)
-import { connect, ensureProvider, ensureChain, api, getState } from "./mission.api.js";
-import { $, toast, showChain, showMe, showContractShort, renderTop10 } from "./mission.ui.js";
+// mission.main.js — bootstrap & wiring (no ensureProvider)
+import { connect, ensureChain, api, getState } from "./mission.api.js";
+import { $, toast, showChain, showMe, showContractShort, renderTop10, formatWei } from "./mission.ui.js";
 import { buildMissions } from "./mission.missions.js";
 import { saveNoteExtra } from "./mission.storage.js";
 
+const IDS = [1,2,3,4,5,6,7,8];
+
 async function refreshAll(){
-  // 글로벌 (연결 안 돼 있거나 provider 문제가 있어도 UI는 유지)
-  let g;
+  // ── 글로벌 카드
   try {
-    g = await api.global();
-    $("#valPool").textContent         = `${(Number(g.pool)/1e18).toLocaleString(undefined,{maximumFractionDigits:4})} PAW`;
-    $("#valTotalWithdraw").textContent= `${(Number(g.totalW)/1e18).toLocaleString(undefined,{maximumFractionDigits:4})} PAW`;
-    $("#valMembers").textContent      = g.mid.toString();
-    $("#scanLimit").textContent       = `최대 ${Math.min(g.mid, 300)}명 스캔`;
-  } catch {
-    // provider 끊김 등: 표시값 유지
+    const g = await api.global();
+    $("#valPool").textContent          = formatWei(g.pool);
+    $("#valTotalWithdraw").textContent = formatWei(g.totalW);
+    $("#valMembers").textContent       = g.mid.toString();
+    $("#scanLimit").textContent        = `최대 ${Math.min(g.mid, 300)}명 스캔`;
+  } catch(e) {
+    console.error("Error in refreshAll (global):", e);
   }
 
+  // ── 내 상태
   const { me } = getState();
-  if(me){
+  if (me){
+    // 대기중 카운트
     try{
       let cnt = 0;
-      for(const id of [1,2,3,4,5,6,7,8]){ try{ if(await api.isPending(me, id)) cnt++; }catch{} }
+      for (const id of IDS){
+        try{ if (await api.isPending(me,id)) cnt++; }catch(e){ console.warn(`isPending check failed for mission ${id}`, e); }
+      }
       $("#valMyPending").textContent = String(cnt);
-    }catch{ $("#valMyPending").textContent = "-"; }
+    }catch(e){
+      $("#valMyPending").textContent = "-";
+      console.error("Error in refreshAll (pending count):", e);
+    }
 
+    // myinfo
     try{
       const m = await api.my(me);
-      $("#meMypay").textContent    = `${(Number(m.info.mypay)/1e18).toLocaleString(undefined,{maximumFractionDigits:4})} PAW`;
-      $("#meAllow").textContent    = `${(Number(m.info.allow)/1e18).toLocaleString(undefined,{maximumFractionDigits:4})} PAW`;
-      $("#meTotalpay").textContent = `${(Number(m.info.totalpay)/1e18).toLocaleString(undefined,{maximumFractionDigits:4})} PAW`;
-      $("#meRating").textContent   = m.info.rating.toString();
+      $("#meMypay").textContent    = formatWei(m.info.mypay || 0n);
+      $("#meAllow").textContent    = formatWei(m.info.allow || 0n);
+      $("#meTotalpay").textContent = formatWei(m.info.totalpay || 0n);
+      $("#meRating").textContent   = (m.info.rating ?? "-").toString();
       $("#meWhite").textContent    = m.info.white ? "✅ Yes" : "❌ No";
-      $("#meLastW").textContent    = new Date(Number(m.last)*1000).toLocaleString();
-      $("#meAvail").textContent    = `${(Number(m.avail)/1e18).toLocaleString(undefined,{maximumFractionDigits:4})} PAW`;
-    }catch{}
+      $("#meLastW").textContent    = new Date(Number(m.last||0)*1000).toLocaleString();
+      $("#meAvail").textContent    = formatWei(m.avail || 0n);
+      // 인출 버튼 활성화(10 PAW 이상)
+      const canW = (typeof m.avail==="bigint" ? m.avail : BigInt(m.avail||0)) >= 10n*10n**18n;
+      $("#btnWithdraw").disabled = !canW;
+    }catch(e){
+      console.error("Error in refreshAll (my info):", e);
+    }
   } else {
     $("#valMyPending").textContent = "-";
+    $("#btnWithdraw").disabled = true;
   }
 
-  // 미션 (실패해도 전체 UI가 멈추지 않도록 try)
-  try {
+  // ── Top10
+  try{
+    const rows = await api.ranking?.(300);
+    if (Array.isArray(rows)) renderTop10(rows);
+  }catch(e){
+    console.error("Error in refreshAll (ranking):", e);
+  }
+
+  // ── 미션 카드
+  try{
     await buildMissions({
       wrap: document.getElementById("missionsWrap"),
       onClaim: async (id)=>{
         try{
           if(!getState().signer) await connect();
-          const tx = await api.claim(id);
-          toast("보상 요구 제출");
+          const tx = await api.claimByMission(id);  // ← 미션별 자동 분기
+          toast("보상 요구 제출됨");
           await tx.wait();
           toast("보상 요구 완료");
           await refreshAll();
@@ -70,44 +93,32 @@ async function refreshAll(){
           await tx.wait();
           toast("화이트 멤버 등록 완료");
           await refreshAll();
-        }catch(e){ toast(e?.shortMessage||e?.message||"미션1 실패", false); }
+        }catch(e){ toast(e?.shortMessage||e?.message||"실패", false); }
       }
     });
-  } catch (e) {
-    console.warn("buildMissions failed", e);
+  }catch(e){
+    console.error("Error in refreshAll (buildMissions):", e);
   }
-
-  // 랭킹
-  try {
-    const rows = await api.ranking(300);
-    renderTop10(rows);
-  } catch {}
 }
 
 async function boot(){
   showContractShort();
-  try{
-    await ensureProvider();
-    const cid = await ensureChain(); // 연결 전이면 null일 수 있음
-    if (cid) showChain(cid);
-  }catch(e){
-    // 지갑 미설치/비연결 상태 — 연결 버튼으로 처리
-  }
-  await refreshAll();
+  await showChain();
+  // showMe / refreshAll 등은 지갑 연결 후 호출
 }
 
 function bindUI(){
   // 지갑 연결
   $("#btnConnect")?.addEventListener("click", async ()=>{
     try{
-      const { me } = await connect();
-      showMe(me);
-      const cid = await ensureChain();
-      if (cid) showChain(cid);
+      await connect();
+      await showChain();
+      await showMe();
       await refreshAll();
+      toast("지갑 연결 완료");
     }catch(e){
-      if (e?.code === 4900) toast("지갑이 끊겼습니다. 확장에서 네트워크를 선택하고 다시 시도하세요.", false);
-      else toast(e?.message||"지갑 연결 실패", false);
+      toast(e?.message||"지갑 연결 실패", false);
+      console.error("Wallet connection failed:", e);
     }
   });
 
@@ -116,23 +127,23 @@ function bindUI(){
     try{
       if(!getState().signer) await connect();
       const tx = await api.withdraw();
-      toast("인출 제출");
+      toast("인출 제출됨");
       await tx.wait();
-      toast("인출 성공");
+      toast("인출 완료");
       await refreshAll();
     }catch(e){ toast(e?.shortMessage||e?.message||"인출 실패", false); }
   });
 
-  // 스태프
-  $("#formResolve")?.addEventListener("submit", async (ev)=>{
+  // 스태프: resolve
+  $("#formResolve")?.addEventListener("submit", async(ev)=>{
     ev.preventDefault();
     try{
       if(!getState().signer) await connect();
-      const u  = document.getElementById("resUser").value.trim();
+      const u = document.getElementById("resUser").value.trim();
       const id = Number(document.getElementById("resMission").value);
       const g  = Number(document.getElementById("resGrade").value);
       if(!globalThis.ethers.isAddress(u)) return toast("유효한 주소가 아닙니다", false);
-      const tx = await api.resolve(u, id, g);
+      const tx = await api.resolveByMission?.(u,id,g) || await api.resolve(u,id,g);
       toast("검증 제출");
       await tx.wait();
       toast("검증 완료");
@@ -140,20 +151,21 @@ function bindUI(){
     }catch(e){ toast(e?.shortMessage||e?.message||"검증 실패(권한/상태 확인)", false); }
   });
 
-  $("#formCheck")?.addEventListener("submit", async (ev)=>{
+  // 스태프: 상태 조회
+  $("#formCheck")?.addEventListener("submit", async(ev)=>{
     ev.preventDefault();
     try{
       const uIn = document.getElementById("chkUser").value.trim();
       const u = uIn || getState().me;
       const id = Number(document.getElementById("chkMission").value);
       if(!u || !globalThis.ethers.isAddress(u)) return toast("유효한 주소가 아닙니다", false);
-      const ok = await api.isPending(u, id);
+      const ok = await api.isPending(u,id);
       document.getElementById("chkResult").textContent = ok ? "대기 중 (true)" : "없음 (false)";
     }catch{ toast("조회 실패", false); }
   });
 
-  // 하단 참고 데이터 저장
-  $("#noteForm")?.addEventListener("submit", async (ev)=>{
+  // 참고 데이터 저장
+  $("#noteForm")?.addEventListener("submit", async(ev)=>{
     ev.preventDefault();
     try{
       if(!getState().signer) await connect();
@@ -161,14 +173,15 @@ function bindUI(){
       if(!note) return toast("내용을 입력하세요.", false);
       await saveNoteExtra(getState().me, note);
       document.getElementById("noteStatus").textContent = "✅ 저장됨";
-      document.getElementById("noteStatus").className = "small text-success";
+      document.getElementById("noteStatus").className  = "small text-success";
       toast("참고 데이터가 저장되었습니다.");
     }catch(e){ toast(e?.message||"저장 실패", false); }
   });
 }
 
-
-
 document.addEventListener("DOMContentLoaded", async ()=>{
-  try{ await boot(); bindUI(); }catch(e){ console.error(e); }
+  try{
+    bindUI(); // 1. UI 버튼 먼저 연결
+    await boot(); // 2. 지갑 연결과 무관한 초기화만 실행
+  }catch(e){ console.error(e); }
 });

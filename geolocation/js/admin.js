@@ -617,3 +617,53 @@ if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded
 else { ensureBulkButton(); }
 
 /* 끝 */
+
+/* =========================
+ * 지갑 연결 기능 추가
+ * ========================= */
+(function setupWalletConnection() {
+  function init() {
+    const btn = document.getElementById('btnConnectWallet');
+    const statusEl = document.getElementById('walletStatus');
+
+    if (!btn || !statusEl) {
+      console.log('[GeoHunt Admin] Wallet UI elements not found');
+      return;
+    }
+
+    async function connect() {
+      if (typeof window.ethers === 'undefined') {
+        return alert('Ethers.js 라이브러리가 로드되지 않았습니다.');
+      }
+      if (typeof window.ethereum === 'undefined') {
+        statusEl.textContent = 'MetaMask가 설치되지 않았습니다.';
+        return;
+      }
+
+      try {
+        statusEl.textContent = '연결 시도 중...';
+        const provider = new window.ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const address = await signer.getAddress();
+        
+        const shortAddress = `${address.slice(0, 6)}...${address.slice(-4)}`;
+        statusEl.textContent = `연결됨: ${shortAddress}`;
+        btn.textContent = '연결됨';
+        btn.disabled = true;
+
+      } catch (err) {
+        console.error('[GeoHunt Admin] wallet connection error', err);
+        statusEl.textContent = '연결 실패';
+        alert(`지갑 연결 실패: ${err.message}`);
+      }
+    }
+
+    btn.addEventListener('click', connect);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

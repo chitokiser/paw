@@ -4,7 +4,7 @@
 // - Auto long-poll detection for restricted networks.
 // - Exports: app, db, auth, authReady.
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 
 import {
   getAuth,
@@ -12,7 +12,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   inMemoryPersistence
-} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 import {
   initializeFirestore,
@@ -20,7 +20,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   memoryLocalCache
-} from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================
  * App Config

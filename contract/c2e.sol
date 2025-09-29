@@ -20,18 +20,12 @@ interface IpupBank {
     function expup(address user, uint256 exp) external;
 }
 
-/**
- * @title c2e (Create-to-Earn) — 광고/미션 포인트 정산 컨트랙트
- * @notice 내부 포인트(mypay/allow)를 적립하고, 충분할 때 PAW 토큰으로 인출합니다.
- *         - 미션별 페이(pay[id])는 18 decimals 기준으로 저장합니다.
- *         - 스태프가 검증(resolveClaim) 시 등급(grade:0~100)에 따라 리워드가 가중됩니다.
- *         - 인출은 재진입 방지 및 쿨다운이 적용됩니다.
- *         - 광고 의뢰(adrequest)는 유저가 선승인(approve)한 만큼만 결제됩니다.
- */
+
 contract c2e {
     Ipaw public paw;
     IpupBank public pupbank;
     address public admin;
+    address public pbank;
 
     // C2E 멤버가 되기 위한 요구 레벨 (pupbank.getlevel(user)와 비교)
     uint256 public level;
@@ -41,6 +35,7 @@ contract c2e {
 
     // 전체 C2E 멤버 수 및 인덱스 → 주소 매핑
     uint256 public mid; // 다음에 배정될 member index
+    uint256 public cid; // 3~나머지 미션 수당요구 인덱스
     mapping(uint256 => address) public memberid;
     mapping(address => uint256) public ranking;
 
@@ -70,19 +65,20 @@ contract c2e {
     // 운영/스태프 권한 (>=5면 스태프)
     mapping(address => uint8) public staff;
 
-    // 미션별 기준 페이(18 decimals). 예: 1 토큰이면 pay[id] = 1e18
-    mapping(uint256 => uint256) public pay;
     
      //패일리 스마트계약인가 여부 판단
        mapping(address => uint8) public fa;
 
     // 유저의 미션별 페이 요구 현황
-    mapping(address => mapping(uint256 => bool)) public claim;
-
+    mapping(address => mapping(uint256 => bool)) public claim2;
+    mapping(address => mapping(uint256 => bool)) public claim3;
+    mapping(address => mapping(uint256 => bool)) public claim4; //요구 처리 현황
+    mapping(uint256 => mapping(address =>uint256))public claim44; //cid를 키값으로 해서 주소 및 미션번호
+ 
     // ---------- 이벤트 ----------
     event PaySet(uint256 indexed missionId, uint256 amount);
     event Mission1Joined(address indexed user, uint256 indexed memberIndex);
-    event ClaimRequested(address indexed user, uint256 indexed missionId);
+    event ClaimRequested(address indexed user, uint256 indexed missionId, uint8 kind);
     event ClaimResolved(address indexed user, uint256 indexed missionId, uint8 grade, uint256 reward);
     event Withdrawn(address indexed user, uint256 netAmount);
     event StaffUpdated(address indexed account, uint8 level);
@@ -122,6 +118,7 @@ contract c2e {
         admin = msg.sender;
         staff[msg.sender] = 10; // 배포자 최고 권한
         level = 1;              // 기본 요구 레벨 = 1
+        pbank = _pupbank;
     }
 
     // ---------- 운영 함수 ----------
@@ -157,6 +154,12 @@ contract c2e {
         require(paw.transferFrom(msg.sender, address(this), amount), "transferFrom failed");
         emit Funded(msg.sender, amount);
     }
+    // 컨트랙트에 PAW 재원 적립(운영자 지갑에서 pull)
+    function PawTransfer(uint256 amount) external onlyOwner {
+    paw.transfer(pbank, amount);
+     
+    }
+
 
     // 광고 가격 설정(단건/배치)
     function setAdPrice(uint256 adId, uint256 price) external onlyStaff {
@@ -178,84 +181,69 @@ contract c2e {
         }
     }
 
-    // ---------- 미션/정산 ----------
-    /**
-     * @notice 미션별 Pay 설정 (토큰 18 decimals 기준)
-     * @param _id   미션 ID
-     * @param _pay  "토큰 개수" 입력. 예: 1 토큰 => 1e18
-     */
-    function setPay(uint256 _id, uint256 _pay) external onlyStaff {
-        pay[_id] = _pay; // 18 decimals 그대로 받음
-        emit PaySet(_id, _pay);
+    // 뱅크에게 매출 10% 이체 
+  
+    function SetAdprice(uint256 _id, uint256 _pay) external onlyStaff {
+        adprice[_id] = _pay; // 18 decimals 그대로 받음
     }
 
-    /**
-     * @notice 미션1: 레벨 검증 후 화이트 멤버 등록
-     */
-    function m1() external {
-        require(!myinfo[msg.sender].white, "Already mission1");
-        require(pupbank.getlevel(msg.sender) >= level, "Level not enough");
+    //notice 미션1: 레벨 검증 후 화이트 멤버 등록
 
-        myinfo[msg.sender].white = true;
-        if (myinfo[msg.sender].rating == 0) {
+    function m1(address _user) public onlyStaff {
+        require(pupbank.getlevel(_user) >= level, "Level not enough");
+        require(myinfo[_user].white == false, "Already a white member");
+
+        myinfo[_user].white = true;
+        if (myinfo[_user].rating == 0) {
             // 초기 진입 시 신용점수 100 부여
-            myinfo[msg.sender].rating = 100;
+            myinfo[_user].rating = 100;
         }
 
-        memberid[mid] = msg.sender;
-        emit Mission1Joined(msg.sender, mid);
+        memberid[mid] = _user;
+        emit Mission1Joined(_user, mid);
         mid += 1;
     }
 
-    /**
-     * @notice 광고 의뢰(결제). 유저는 사전에 PAW에서 본 컨트랙트에 approve를 해두어야 합니다.
-     * @dev 멘토에게 결제액의 10%를 포인트(allow)로 적립합니다.
-     */
-    function adrequest(uint256 _aid) external nonReentrant {
-        require(!myinfo[msg.sender].blacklisted, "Blacklisted");
-        require(pupbank.getlevel(msg.sender) >= 1, "No member");
-
-        uint256 price = adprice[_aid];
-        require(price > 0, "Invalid ad price");
-
-        // 유저 보유 및 허용량 확인
-        require(paw.balanceOf(msg.sender) >= price, "Not enough PAW");
-        uint256 allowance_ = paw.allowance(msg.sender, address(this));
-        require(allowance_ >= price, "Approve first");
-
-        // 토큰 전송 (유저 -> 본 컨트랙트)
-         paw.approve(msg.sender, price); 
-    uint256 allowance = paw.allowance(msg.sender, address(this));
-    require(allowance >= price, "Check the token allowance");
-    paw.transferFrom(msg.sender, address(this), price);  
-
-        // 기록/적립
-        adPaid[msg.sender][_aid] += price;
-        adPurchasedAt[msg.sender][_aid] = block.timestamp;
-
-        address mentor = pupbank.getmento(msg.sender);
-        if (mentor != address(0)) {
-            myinfo[mentor].allow += (price * 10) / 100;
-        }
-
-        emit AdPurchased(msg.sender, _aid, price, price);
-    }
-
-    function claimpay(uint256 missionId) external {
+   
+  
+    function claimpay2(uint256 missionId) external {   //미션2 블로그 등록 보상
         require(myinfo[msg.sender].white, "Join first");
         require(!myinfo[msg.sender].blacklisted, "Blacklisted");
         require(myinfo[msg.sender].rating >= 10, "Low rating");
-        require(!claim[msg.sender][missionId], "Already requested");
+        require(claim2[msg.sender][missionId] == false, "Already requested");
 
-        claim[msg.sender][missionId] = true;
-        emit ClaimRequested(msg.sender, missionId);
+        claim2[msg.sender][missionId] = true;
+        emit ClaimRequested(msg.sender, missionId, 2);
     }
 
-    function resolveClaim(address user, uint256 missionId, uint8 grade) external onlyStaff {
-        require(claim[user][missionId] == true, "No pending claim");
-        require(grade <= 100, "grade>100");
+   
+    function claimpay3(uint256 missionId) external {  //미션3 SNS등록 보상
+        require(myinfo[msg.sender].white, "Join first");
+        require(!myinfo[msg.sender].blacklisted, "Blacklisted");
+        require(myinfo[msg.sender].rating >= 10, "Low rating");
+        require(claim3[msg.sender][missionId] == false, "Already requested");
 
-        uint256 base = pay[missionId];
+        claim3[msg.sender][missionId] = true;
+        emit ClaimRequested(msg.sender, missionId, 3);
+    }
+    
+
+    
+    function claimpay4(uint256 missionId) external { //매일보상 
+        require(!myinfo[msg.sender].blacklisted, "Blacklisted");
+        require(myinfo[msg.sender].rating >= 10, "Low rating");
+        require(claim4[msg.sender][missionId] == false , "Already requested");
+
+        claim4[msg.sender][missionId] = true;
+        claim44[cid][msg.sender] = missionId;
+        cid += 1;
+        emit ClaimRequested(msg.sender, missionId, 4);
+    }
+
+    function resolveClaim2(address user, uint256 missionId, uint8 grade) external onlyStaff {
+        require(claim2[user][missionId] == true, "No pending claim");
+        require(grade <= 100, "grade>100");
+        uint256 base = adprice[missionId];
         require(base > 0, "No pay set");
 
         // 등급에 따른 보상(예: 80점 => 80%)
@@ -265,7 +253,7 @@ contract c2e {
         myinfo[user].mypay += reward;
 
         // 클레임 완료 처리
-        claim[user][missionId] = false;
+        claim2[user][missionId] = false;
 
         // 신용 점수 보정: 50 미만 감점, 50 초과 가점 (0~100 클램프)
         uint256 r = myinfo[user].rating;
@@ -278,9 +266,69 @@ contract c2e {
             if (r > 100) r = 100;
         }
         myinfo[user].rating = r;
-
         emit ClaimResolved(user, missionId, grade, reward);
     }
+
+
+        function resolveClaim3(address user, uint256 missionId, uint8 grade) external onlyStaff {
+        require(claim3[user][missionId] == true, "No pending claim");
+        require(grade <= 100, "grade>100");
+        uint256 base = adprice[missionId];
+        require(base > 0, "No pay set");
+
+        // 등급에 따른 보상(예: 80점 => 80%)
+        uint256 reward = (base * grade) / 100;
+
+        // 적립(인출 가능 포인트)
+        myinfo[user].mypay += reward;
+
+        // 클레임 완료 처리
+        claim3[user][missionId] = false;
+
+        // 신용 점수 보정: 50 미만 감점, 50 초과 가점 (0~100 클램프)
+        uint256 r = myinfo[user].rating;
+        if (grade < 50) {
+            uint256 penalty = 50 - grade;
+            r = (r > penalty) ? (r - penalty) : 0;
+        } else if (grade > 50) {
+            uint256 bonus = grade - 50;
+            r = r + bonus;
+            if (r > 100) r = 100;
+        }
+        myinfo[user].rating = r;
+        emit ClaimResolved(user, missionId, grade, reward);
+    }
+   
+
+       function resolveClaim4(address user, uint256 missionId, uint8 grade) external onlyStaff {
+        require(claim4[user][missionId] == true, "No pending claim");  //타
+        require(grade <= 100, "grade>100");
+        uint256 base = adprice[missionId];
+        require(base > 0, "No pay set");
+
+        // 등급에 따른 보상(예: 80점 => 80%)
+        uint256 reward = (base * grade) / 100;
+
+        // 적립(인출 가능 포인트)
+        myinfo[user].mypay += reward;
+
+        // 클레임 완료 처리
+        claim4[user][missionId] = false;
+
+        // 신용 점수 보정: 50 미만 감점, 50 초과 가점 (0~100 클램프)
+        uint256 r = myinfo[user].rating;
+        if (grade < 50) {
+            uint256 penalty = 50 - grade;
+            r = (r > penalty) ? (r - penalty) : 0;
+        } else if (grade > 50) {
+            uint256 bonus = grade - 50;
+            r = r + bonus;
+            if (r > 100) r = 100;
+        }
+        myinfo[user].rating = r;
+        emit ClaimResolved(user, missionId, grade, reward);
+    }
+
 
     function withdraw() external nonReentrant {
         require(!myinfo[msg.sender].blacklisted, "Blacklisted");
@@ -343,8 +391,15 @@ contract c2e {
         return myinfo[user].mypay + myinfo[user].allow;
     }
 
-    function isClaimPending(address user, uint256 missionId) external view returns (bool) {
-        return claim[user][missionId];
+       function isClaimPending2(address user, uint256 missionId) external view returns (bool) {
+        return claim2[user][missionId];
+    }
+        function isClaimPending3(address user, uint256 missionId) external view returns (bool) {
+        return claim3[user][missionId];
+    }
+
+        function isClaimPending4(address user, uint256 missionId) external view returns (bool) {
+        return claim4[user][missionId];
     }
 
     function adInfo(address user, uint256 adId) external view returns (uint256 paid, uint256 lastTs, uint256 price) {
