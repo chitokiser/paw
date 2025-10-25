@@ -30,6 +30,35 @@
       .home-scope .btn{padding:.9rem 1rem}
       .home-scope .card-title{font-size:1.05rem}
     }
+
+      .banner-wrapper {
+    position: relative;
+    overflow: hidden;
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    transition: transform .3s ease, box-shadow .3s ease;
+  }
+
+  .banner-wrapper:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  }
+
+  .banner-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 18px;
+  }
+
+  @media (max-width:768px) {
+    .banner-wrapper {
+      border-radius: 12px;
+    }
+    .banner-img {
+      border-radius: 12px;
+    }
+  }
   </style>
 </head>
 <body>
@@ -49,6 +78,21 @@
         <img src="images/poster.png" class="img-fluid w-100 rounded mt-2" alt="PAW DAO Poster">
       </div>
     </section>
+
+<!-- Banner -->
+<section class="container my-4">
+  <div class="banner-wrapper text-center">
+    <a href="https://herix.netlify.app/" target="_blank" rel="noopener noreferrer" aria-label="HERIX 바로가기">
+      <img
+        src="images/baner/ban1.png"
+        alt="HERIX 프로모션 배너"
+        class="banner-img"
+        loading="lazy"
+        decoding="async"
+      />
+    </a>
+  </div>
+</section>
 
     <!-- Feature Cards -->
     <section class="container my-3">
